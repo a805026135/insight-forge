@@ -1,8 +1,8 @@
-# InsightForge（智析）智能秒杀 / 大促平台（Agent 辅助）— 设计文档（v0.7 评审稿）
+# InsightForge（智析）智能秒杀 / 大促平台（Agent 辅助）— 设计文档（v0.8 评审稿）
 
 > 流程说明：本文档由 brainstorming 阶段产出，遵循 **GitHub spec-kit** 流程——先定 spec（本文件），经评审调整后再出 `plan.md` 与 `tasks.md`，最后进入实现。
-> 状态：评审稿 v0.7。
-> 修订记录：[2026-08-05] v0.1 初始；v0.2 后端与 Agent 深度融合；v0.3 锚定商家经营分析场景；v0.4 尝试从"共享资源争用"挖并发/互斥（被否，因读多写少、并发读不构成挑战）；v0.5 pivot 到「智能秒杀/大促平台（agent 辅助）」，Agent 实时控盘走同一套锁；v0.6 据"大模型延迟红线"改为控制面/数据面分离（Guardrail Policy Agent 离线生成 DSL → 规则引擎在线走锁，LLM 不进热路径）；**v0.7 据整体评价加固**：① 独立 `insightforge-rule-engine` 模块；② Seckill-Worker/Agent-Worker 资源隔离；③ 分布式锁粒度细化（activityId:skuId、读写锁、分段锁）；④ 护栏 DSL 规范+工具权限三级校验；⑤ Milvus 分层检索+A/B 实验；⑥ 缓存防护体系+库存 MySQL-Redis 一致性+Kafka 可靠性；⑦ 双轨评估+可观测补点+YAGNI 范围红线+架构图/数据结构/故障预案。详见 `analysis.md`。
+> 状态：评审稿 v0.8。
+> 修订记录：[2026-08-05] v0.1 初始；v0.2 后端与 Agent 深度融合；v0.3 锚定商家经营分析场景；v0.4 尝试从"共享资源争用"挖并发/互斥（被否，因读多写少、并发读不构成挑战）；v0.5 pivot 到「智能秒杀/大促平台（agent 辅助）」，Agent 实时控盘走同一套锁；v0.6 据"大模型延迟红线"改为控制面/数据面分离（Guardrail Policy Agent 离线生成 DSL → 规则引擎在线走锁，LLM 不进热路径）；v0.7 据整体评价加固（独立规则引擎/资源隔离/锁粒度/DSL规范/权限分级/缓存防护/库存一致性/Kafka可靠性/双轨评估/图与故障预案）；**v0.8 据"隐患/硬伤"补强（落地前必堵）**：① 锁超时分级 Fail-Fast（用户 10ms 优先、规则引擎 0ms 失败重入队）；② 分段调拨只建新段 O(1)、绝不追加热段；③ DSL 静态编译器 Fail-Close（Antlr/纯 Java 校验，编译不过阻断上线）；④ 预测性调拨（滑动窗口线性回归算 TTL，提前调度，无 LLM）；⑤ 两阶段预留（pending_stock）杜绝补偿超卖；⑥ 大屏策略可解释性（后端模板，非 LLM）。详见 `analysis.md`。
 
 ---
 
@@ -84,7 +84,8 @@
 - **分布式锁粒度设计（防止锁竞争与性能隐患）**：
   - **细粒度锁 Key**：锁以 `lock:activity:{activityId}:sku:{skuId}` 为粒度，单 SKU 独立加锁，避免全局锁导致并发吞吐量暴跌。
   - **读写分离锁**：库存/价格**查询**用 Redisson `ReadLock`（读多写少不互斥）；**扣减 / 调价 / 调拨**用 `WriteLock`（排他）。
-  - **分段锁**：热点 SKU 库存拆分为 N 段（如 `segment1..N`），分别加锁，批量调拨支持跨段分段锁，避免一次性占用大量 SKU 锁阻塞抢购流量。
+  - **分段锁 + 调拨只建新段（O(1)，避免阻塞热段）**：热点 SKU 库存拆分为 N 段（`segment1..N`），用户扣减时 Lua 脚本**遍历所有段汇总扣减**；**调拨（Reallocate）永远只 `SET` 一个新段 `segment_{N+1}`（O(1)），绝不向正在热卖的旧段追加写**——新段只锁自身 Key，完全不影响旧段的锁竞争。
+  - **锁超时分级 Fail-Fast（用户流量绝对优先）**：用户抢购 `tryLock(timeout=10ms)`，抢不到立即返回「拥挤，请重试」，绝不长时间排队；规则引擎调拨 `tryLock(timeout=0ms)`（尝试一次，拿不到立即放弃本次调拨），将事件重新放回 Kafka **延迟 5s 重试**。Agent 策略流量永远让位于用户流量。
   - **可靠性**：Redisson 看门狗自动续期（默认 30s，每 10s 续约）防死锁；锁等待 / 持有耗时埋点进 Prometheus，超阈值告警。
 - **削峰与限流**：Kafka 异步下单；Nginx+Lua 令牌桶 + Redis+Lua 滑动窗口 + Sentinel 多层限流；模型调用单独限流（DeepSeek 配额，仅在离线/异步路径）。
 - **幂等（exactly-once）**：订单 `orderId = hash(userId, productId, activityId)`，Redis SETNX 去重，Kafka 重投不重复下单。
@@ -131,7 +132,11 @@
 ### 3.7 消息可靠性与降级
 - **下单 Topic**：生产者 `acks=all` + 重试；消费者手动提交 offset；失败订单进**死信队列（DLQ）**后台补偿；订单幂等（`orderId`+SETNX）保证 exactly-once。
 - **销量事件 Topic**：至少一次投递；次要消息可丢弃，但**库存调拨/调价失败事件**进 DLQ 并触发人工告警。
-- **规则引擎消费失败回滚**：控盘动作（调价/调拨）执行异常 → 反向 Lua 恢复库存/价格 + 记审计 + 告警；**不影响用户抢购主流程（fail-open）**。
+- **规则引擎消费失败回滚**：控盘动作（调价/调拨）执行异常 → **删除 `pending_stock` 预留标记（绝不反向改硬库存）+ 记审计 + 告警**；**不影响用户抢购主流程（fail-open）**。
+
+### 3.8 库存调拨与补偿事务（两阶段预留 + 预测性调拨）
+- **两阶段预留（pending_stock，杜绝补偿超卖）**：调拨（Reallocate）**不是直接加硬库存**，而是先加 `pending_stock`（预留缓冲池）。用户扣减只消耗硬库存；**反向补偿时仅删除 `pending` 标记，绝不触碰已售硬库存**——彻底规避「恢复时库存已被他人抢光 → 恢复成负数」的超卖风险。
+- **预测性调拨（Predictive Reallocation，从被动救火到主动调度）**：在规则引擎内引入**滑动窗口线性回归（确定性算法，无 LLM）**，实时计算 `TTL = 剩余库存 / 当前流速`（预计售罄时间）。当 `TTL < 5min` 即**提前触发预调拨**，而非等「售罄速率超预期 2 倍」才事后响应。AI 控盘的「智能感」拉满，且全程不进大模型热路径。
 
 ---
 
@@ -193,7 +198,8 @@
   - `bounds`：参数上限（单次调价 ±5%、单次调拨 ≤ 池总量 10%）、熔断阈值（连续触发次数 / 时间窗）。
   - `human_gate`：人工判定边界（超 `bounds` 的重大动作转人工审批）。
 - **版本化存储**：DSL 以版本号存入 **MySQL**（如 `guardrail_policy` 表，`activity_id + version` 唯一），支持单活动多版本策略、**灰度切换、一键回滚**。
-- **热更新**：当前生效 DSL 缓存至 **Redis**；规则引擎监听配置变更事件（或定时拉取）实现**规则热更新，无需重启服务**。DSL 样例见 §12 附录。
+- **热更新**：当前生效 DSL 缓存至 **Redis**；规则引擎监听配置变更事件（或定时拉取）实现**规则热更新，无需重启服务**。DSL 样例见 §13 附录。
+- **DSL 静态编译器（Fail-Close，防 LLM 幻觉/冷启动裸奔）**：`insightforge-rule-engine` **启动前（及每个 DSL 新版本发布时）**必须先过一道**静态编译器**——用 **Antlr 或纯 Java** 做语法校验 + 类型检查：引用的 `metric` 是否在预定义枚举内、运算符/阈值合法、`AND/OR` 嵌套合法、`action` 类型与 `bounds` 匹配。**编译不通过 → Fail-Close 直接阻断上线（绝不把解析异常留到运行时）**；同时 Guardrail Policy Agent 产出 DSL 后先自编译一次，失败则携带错误回 Critic 修订，最多 `maxRetry=3`。
 
 ### 5.6 工具权限分级管控（三层校验，防幻觉/误复用）
 `reallocator` / `repricer` 直接操作库存与价格，仅靠 Critic 前置校验不足，建立三层防护：
@@ -283,7 +289,7 @@ specs/insightforge/             # spec.md / plan.md / tasks.md
 - **M2 秒杀核心（高并发心脏）**：Redis 预扣 + Lua 原子 + Redisson 防超卖 + Kafka 异步 + 订单/活动状态机 + Nginx+Lua 限流 + 幂等。
 - **M3 Agent Core**：工具注册、ReAct/Plan-Execute、记忆、反思重试、秒杀域工具 + 沙箱（Guardrail Policy Agent 离线生成 DSL、复盘 Critic）。
 - **M4 多智能体编排 + 护栏规则引擎**：Planner + 专员 + GuardrailPolicy + Monitor/Alert + Critic + Orchestrator + **确定性护栏规则引擎（在线走锁）** + WS + 多级缓存。
-- **M5 前端与部署**：商户后台（建活动/看策略）+ 实时大屏 + Docker + Nginx + 监控看板。
+- **M5 前端与部署**：商户后台（建活动/看策略）+ 实时大屏 + Docker + Nginx + 监控看板；**大屏增加「策略可解释性」**：规则引擎每次调价/调拨用**后端模板**生成自然语言说明（非 LLM 实时生成），如「因 SKU-A 流速超预期 210%，触发 DSL Rule#r1，自动从池B调入 50 件」——直观展示 Agent 后台在干活，面试演示冲击力强。
 - **M6 评估闭环**：评测集（无超卖 + Agent 质量）+ harness + LLM-as-judge + CI 回归 + JMeter 压测（百万抢购 + 规则引擎并发控盘，**热路径无 LLM**）。
 
 每个 M 都有可演示产出。
@@ -375,7 +381,8 @@ sequenceDiagram
 | Key | 含义 | 类型 |
 |---|---|---|
 | `stock:a:{aid}:s:{sid}` | SKU 剩余库存 | int |
-| `stock:a:{aid}:s:{sid}:seg:{n}` | 分段库存（分段锁） | int |
+| `stock:a:{aid}:s:{sid}:seg:{n}` | 分段库存（分段锁，调拨只新建 `seg_{N+1}`） | int |
+| `pending_stock:a:{aid}:s:{sid}` | 调拨预留缓冲池（两阶段预留，补偿仅删此标记） | int |
 | `price:a:{aid}:s:{sid}` | 当前秒杀价 | decimal |
 | `lock:a:{aid}:s:{sid}` | Redisson 锁 Key（细粒度） | lock |
 | `order:idemp:{hash(uid,pid,aid)}` | 订单幂等去重（SETNX） | string |
