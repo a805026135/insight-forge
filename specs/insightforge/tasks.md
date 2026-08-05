@@ -11,7 +11,7 @@
 - [x] Spring Boot 3.3 启动类 + `application.yml`，`/actuator/health` 可访问（actuator 暴露 health/info/metrics）
 - [x] `docker-compose.yml` 起 MySQL 8 / Redis 7 / Kafka（含 Kafka 延时/DLQ 主题）
 - [x] 统一依赖管理（MyBatis-Plus、Redisson、Spring-Kafka、Spring-AI；Drools 入 BOM 待 Phase 9）
-- [ ] **验收**：`mvn clean package` 通过；`docker compose up` 后应用连上 MySQL/Redis/Kafka（⚠️ 本机需本地执行，沙箱无 Java/Maven）
+- [ ] **验收**：`mvn clean package` 通过；`docker compose up` 后应用连上 MySQL/Redis/Kafka（⚠️ 沙箱二进制 CDN 限速/封锁，无法本会话内跑通构建与 Docker；按 `tutorials/phase0.md` §0.6–§0.7 本机执行；Maven 已装入 D:/devtools，JDK 后台下载中）
 - [x] 已确认：JDK 21、Maven（见 plan §10 / tutorial 附录 A）
 
 ## Phase 1 — 最小秒杀主流程（M1，故意不安全）

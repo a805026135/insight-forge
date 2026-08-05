@@ -1,6 +1,6 @@
 # InsightForge（智析）从零搭建教学文档 — tutorial.md
 
-> 配套：`plan.md`（方案）、`tasks.md`（任务清单）、`spec.md`（v0.8 设计）、`glossary.md`（大白话术语速查，看不懂词先查这里）。
+> 配套：`plan.md`（方案）、`tasks.md`（任务清单）、`spec.md`（v0.8 设计）、`glossary.md`（大白话术语速查，看不懂词先查这里）、`tutorials/`（**每个 Phase 的逐行详解文档**，如 `phase0.md`）。
 > 本文是你的**动手指南**：从空目录开始，按 **最小功能叠加** 一步步真实搭出这个项目。每个 Phase 只加一点功能，并讲清：**用了什么技术、为什么选它（对比其他选型）、解决了什么需求/问题、怎么验证**。
 
 ---
@@ -25,16 +25,18 @@
 
 ## Phase 0 — 环境与骨架（M1）
 
-**目标**：有一个能跑的 Maven 多模块工程 + Docker 起的依赖（MySQL/Redis/Kafka）。
-**你会做**：`mvn archetype` 或手写 parent `pom.xml`；建空模块 `api / seckill-core / common / persistence`；写 `docker-compose.yml` 起三个中间件；Spring Boot 启动类 + `/actuator/health`。
+> 📘 **逐行详解**：`tutorials/phase0.md`（环境安装校验 + 目录结构 + 所有关键文件逐行讲 + mermaid 流程图 + 验证/排错）。本阶段跟着它做即可。
 
-**技术选型与目的**
-- **Maven 多模块**：职责分离（高并发引擎、规则引擎、Agent 各自独立模块），依赖统一管理。对比 **Gradle**——Gradle 构建更快、DSL 灵活，但 Maven 的 `pom.xml` 在 Java 面试/企业里更主流、资料最多，教学优先选 Maven。⚠️ 待确认：Maven vs Gradle。
-- **Java 21 + Spring Boot 3.3**：虚拟线程、Record、更好性能；Spring 生态成熟。对比 **Java 17**——21 的虚拟线程对高并发 I/O 有帮助，但 17 也够用且更稳。⚠️ 待确认：21 vs 17。
+**目标**：有一个能跑的 Maven 多模块工程 + Docker 起的依赖（MySQL/Redis/Kafka）。
+**你会做**：手写 parent `pom.xml`；建模块 `api / seckill-core / common / persistence`；写 `docker-compose.yml` 起三个中间件；Spring Boot 启动类 + `/actuator/health` + `/api/ping`。
+
+**技术选型与目的（均已确认，见附录 A）**
+- **Maven 多模块**：职责分离（高并发引擎、规则引擎、Agent 各自独立模块），父 POM `dependencyManagement` 统一版本，子模块不写版本号即不冲突。对比 **Gradle**——更快但多一门 DSL，教学优先 Maven。
+- **Java 21 + Spring Boot 3.3**：虚拟线程、Record；对比 **Java 17**——21 虚拟线程对高并发 I/O 有帮助，17 也够用更稳，已选 21。
 - **Docker Compose**：一条命令拉起全部依赖，环境可复现（你换电脑也能一键起）。
 
 **解决什么**：告别"在我机器能跑"，所有人/面试环境一致。
-**验证**：`mvn clean package` 通过；`docker compose up` 后 `/actuator/health` 返回 UP，应用能连 MySQL/Redis/Kafka。
+**验证**：`mvn clean package` 通过；`docker compose up` 后 `/actuator/health` 三组件 UP，`/api/ping` 返回 pong。
 
 ---
 
