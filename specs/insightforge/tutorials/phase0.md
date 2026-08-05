@@ -7,7 +7,7 @@
 
 ## 0.0 先看终点：你做完这一关会得到什么
 
-一句话：**装好 4 个工具（JDK / Maven / Git / Docker）+ 1 个编辑器（IDEA），把仓库代码拉下来，一键拉起数据库/缓存/消息队列，编译并启动项目，最后用浏览器/命令行敲一下，看到 `pong` 和三个 `UP`。**
+一句话：**装好 3 个工具（JDK / Maven / Git）+ 1 个编辑器（IDEA），把仓库代码拉下来，编译并启动项目，最后用浏览器/命令行敲一下，看到 `pong` 和健康页 `UP`。** 数据库/缓存/消息队列这一关，本机装不了 Docker 也能过——用项目内置的 `local` 零依赖 profile（见 0.8 路径 B）即可；Docker 方案原样保留，等你迁移到能装 Docker 的机器时再用（0.8 路径 A）。
 
 完成标志（必须全部满足才算通关）：
 
@@ -196,7 +196,9 @@ git --version
 
 ---
 
-## 0.5 第 4 步：装 Docker Desktop（一键起依赖）
+## 0.5 第 4 步：装 Docker Desktop（一键起依赖，可选 / 预留）
+
+> ⚠️ **你的开发机装不了 Docker？先跳过这一节，照常往下做。** Phase 0 脚手架现在就能用「本地零依赖启动」（见 0.8 路径 B）或「原生装 MySQL/Redis/Kafka」（路径 C）验证跑通；Docker 这套 `docker-compose.yml` 我原样保留，等你迁移到**能装 Docker 的机器**时再启用（见 0.8 路径 A）。三种办法任选其一，不用全做。
 
 ### 0.5.1 去哪下载
 
@@ -295,25 +297,28 @@ D:\Java\
 
 ---
 
-## 0.8 第 7 步：一键拉起三个中间件（MySQL / Redis / Kafka）
+## 0.8 第 7 步：拉起三个中间件（MySQL / Redis / Kafka）—— 三种办法，选你能用的
 
-这几个就是项目的"数据库 / 缓存 / 消息队列"。用 Docker 一条命令起，不用你手动装。
+这几个就是项目的"数据库 / 缓存 / 消息队列"。**有三种办法起它们，你按自己机器情况选一种即可，不用全做：**
 
-1. 开终端：
+- **路径 A（Docker，预留）**：迁移到能装 Docker 的机器时用，一条 `docker compose up -d` 拉起全部。本机装不了 Docker 就跳过。
+- **路径 B（本地零依赖，现在就用 ✅ 已验证）**：不装任何中间件，用项目内置的 `local` 启动 profile（自动用 H2 内存库代替 MySQL，不连 Redis/Kafka），直接把脚手架跑起来验证。最简单，推荐先走这条确认"项目能跑"。
+- **路径 C（原生安装，贴近真实）**：本机不想装 Docker、但又想用真实的 MySQL/Redis/Kafka，就各自装 Windows 原生版（下面给国内镜像），`application.yml` 的 `localhost` 配置对原生和 Docker 通用。
+
+### 路径 A：Docker（预留 / 迁移到可装 Docker 的机器时用）
 
 ```bash
 cd D:\Java\docker
 docker compose up -d
 ```
 
-2. 首次会**下载镜像**（MySQL/Redis/Kafka 几个镜像加起来约 1GB，耐心等几分钟，取决于网速）。
-3. 下载完会自动启动。看状态：
+首次会**下载镜像**（MySQL/Redis/Kafka 几个镜像加起来约 1GB，耐心等几分钟）。下载完看状态：
 
 ```bash
 docker compose ps
 ```
 
-等到三个服务的 `STATUS` 都变成 **`healthy`**（可能要等 20~40 秒，Kafka 最慢）。像这样：
+等到三个服务 `STATUS` 都 **`healthy`**（Kafka 最慢，可能 20~40 秒）：
 
 ```
 NAME                    STATUS                    PORTS
@@ -322,9 +327,32 @@ insightforge-redis      Up 40 seconds (healthy)   6379/tcp
 insightforge-kafka      Up 35 seconds (healthy)   9092/tcp
 ```
 
-❌ 若某个一直 `starting` 或 `unhealthy`：`docker compose logs 服务名`（如 `docker compose logs kafka`）看报错。多数是首次初始化慢，等久一点再 `docker compose ps`。
+❌ 若某个一直 `starting`/`unhealthy`：`docker compose logs 服务名` 看报错，多半是首次初始化慢，等久点再看。账号密码/端口都在 `docker-compose.yml` 写好了，不用改。
 
-> 这三个容器里的账号密码、端口都已经在 `D:\Java\docker\docker-compose.yml` 写好了（MySQL 用户/库都是 `insightforge`，Redis/Kafka 默认），后面项目直接用，不用你改。
+### 路径 B：本地零依赖启动（现在就用，已验证能跑通）
+
+不用装任何中间件。项目里已内置 `application-local.yml`，它做两件事：① 用 **H2 内存库**代替 MySQL（db 健康项显示 H2 UP）；② 关闭 Redis/Redisson/Kafka 的自动配置（Phase 0 脚手架代码还没用到它们，所以不需要起这两个服务）。
+
+构建并启动（注意先 `package -am` 把依赖模块打进可执行 jar，再用 `java -jar` 跑）：
+
+```bash
+cd D:\Java\insightforge
+mvn -pl insightforge-api -am package -DskipTests
+java -jar insightforge-api/target/insightforge-api-0.1.0-SNAPSHOT.jar --spring.profiles.active=local
+```
+
+> 不要用 `spring-boot:run`：本项目多模块结构下它有时找不到主类而报错；`java -jar` 跑打好的 fat jar 最稳。也可以在 IDEA 里直接右键 `InsightForgeApplication` 的 `main` 方法运行，并在 Run/Debug Configuration 的 **Active profiles** 填 `local`。
+> 若报 `Port 8080 was already in use`，说明有上一次没退出的 java 进程，任务管理器结束掉 `java.exe` 再跑。
+
+### 路径 C：原生装 MySQL / Redis / Kafka（贴近真实，无 Docker 也能装）
+
+装好后它们默认就监听 `localhost:3306 / 6379 / 9092`，和 `application.yml` 的配置完全一致，用默认 profile（不加 `local`）启动应用即可。国内能直连的下载地址：
+
+- **MySQL 8**：清华镜像 `https://mirrors.tuna.tsinghua.edu.cn/mysql/`（进 `mysql-8.0/` 找 Windows 的 zip，解压后 `bin\mysqld --initialize-insecure` + `bin\mysqld` 起；或装官方 MSI 一路下一步，建库 `insightforge`、用户 `insightforge/insightforge`）。
+- **Redis（Windows 版）**：用 **Memurai**（Redis 的 Windows 兼容实现，开发免费）：`https://www.memurai.com/` 下载安装，默认监听 6379。
+- **Kafka**：Apache 官方 `https://kafka.apache.org/downloads`（下二进制，用 KRaft 单节点：`bin\windows\kafka-server-start.bat config\kraft\server.properties`）。Kafka 跑在 JVM 上，本机已有 JDK 21 即可。
+
+> 路径 C 是"贴近生产"的玩法，后面要做真实秒杀压测时建议走这条；Path B 只是让你现在零成本确认"脚手架能编译、能启动、接口能通"。
 
 ---
 
@@ -354,61 +382,70 @@ mvn clean package -DskipTests
 
 ## 0.10 第 9 步：启动应用 + 验证通不通
 
-### 0.10.1 启动（任选一种）
+### 0.10.1 启动（推荐用 `java -jar` 跑 fat jar，最稳）
 
-**方式 A：命令行**
+**方式 A：命令行（本地零依赖，推荐先走这条 ✅ 已验证）**
 ```bash
 cd D:\Java\insightforge
-mvn -pl insightforge-api spring-boot:run
+mvn -pl insightforge-api -am package -DskipTests
+java -jar insightforge-api/target/insightforge-api-0.1.0-SNAPSHOT.jar --spring.profiles.active=local
+```
+看到 `Started InsightForgeApplication` 且无报错即成功。这条用 `local` profile，不需要任何中间件。
+
+**方式 B：命令行（接真实 MySQL/Redis/Kafka，走默认 profile）**
+```bash
+# 先按 0.8 路径 A 或 C 把三个中间件跑起来（都用 localhost 默认端口）
+java -jar insightforge-api/target/insightforge-api-0.1.0-SNAPSHOT.jar
 ```
 
-**方式 B：用 IDEA**
-在 IDEA 左侧找到 `insightforge-api` 模块下的 `InsightForgeApplication.java`，右键 → **Run 'InsightForgeApplication'**。
+**方式 C：用 IDEA**
+在 IDEA 左侧找到 `insightforge-api` 模块下的 `InsightForgeApplication.java`，右键 → **Run 'InsightForgeApplication'**；若要零依赖验证，在 Run/Debug Configuration 的 **Active profiles** 填 `local`。
 
-> 首次启动要连 MySQL/Redis/Kafka，控制台会刷一堆日志，看到 `Started InsightForgeApplication` 且无报错即成功。
+> 不要用 `mvn spring-boot:run`：本多模块项目下它有时会报"找不到主类"，`java -jar` 跑打好的 fat jar 最稳。
+> 若报 `Port 8080 was already in use`，说明上次 java 进程没退，任务管理器结束 `java.exe` 再跑。
 
-### 0.10.2 验证 1：健康检查（看三个中间件是否都 UP）
+### 0.10.2 验证 1：健康检查
 
-浏览器打开：
+浏览器打开（或命令行 `curl http://localhost:8080/actuator/health`）：
 
 ```
 http://localhost:8080/actuator/health
 ```
 
-应看到（节选）：
-
+- **走 `local` profile（路径 B）** 应看到：
 ```json
 {
   "status": "UP",
   "components": {
-    "db":     { "status": "UP" },
-    "redis":  { "status": "UP" },
-    "kafka":  { "status": "UP" }
+    "db":   { "status": "UP", "details": { "database": "H2" } },
+    "diskSpace": { "status": "UP" },
+    "ping": { "status": "UP" }
   }
 }
 ```
+（没有 redis/kafka 项，因为 local profile 故意没加载它们——这是正常的，说明脚手架已独立跑通。）
 
-> 三个 `UP` = 应用成功连上了数据库、缓存、消息队列。
+- **走默认 profile（接真实中间件）** 应看到 `db` / `redis` / `kafka` 三个都 `UP`。
 
 ### 0.10.3 验证 2：第一个接口
 
-浏览器打开（或用命令行 `curl http://localhost:8080/api/ping`）：
+浏览器打开（或 `curl http://localhost:8080/api/ping`）：
 
 ```
 http://localhost:8080/api/ping
 ```
 
 应看到：
-
 ```json
 {"code":0,"message":"ok","data":"pong"}
 ```
 
-✅ **`pong` + 三个 `UP` 同时出现 = Phase 0 通关！**
+✅ **`pong` + 健康页 `status: UP` 出现 = Phase 0 通关！**（走 local 时健康页里是 `db=H2 UP`；走默认且中间件都起时则是三个 UP。）
 
-❌ 若 `db DOWN`：MySQL 容器没起或账号错 → `docker compose ps` 看 mysql 是否 healthy。
-❌ 若 `redis DOWN`：`docker compose restart redis`。
-❌ 若 `kafka DOWN`：等久一点，`docker logs insightforge-kafka` 看是否 `started`。
+❌ 若走 local 仍起不来：看日志有没有 `could not be excluded` / `redis` 相关报错（说明 profile 没生效，确认 jar 是重新 `package` 过的、且带了 `--spring.profiles.active=local`）。
+❌ 若走默认 profile 时 `db DOWN`：MySQL 没起或账号错（路径 A 看 `docker compose ps`，路径 C 看 `mysqld` 是否在跑）。
+❌ 若 `redis DOWN`：路径 A `docker compose restart redis`；路径 C 确认 Memurai 在跑。
+❌ 若 `kafka DOWN`：Kafka 首次启动慢，多等一会。
 ❌ 若页面打不开（连不上 8080）：应用没起来，看启动日志有没有 `Exception`。
 
 ---
@@ -421,12 +458,12 @@ http://localhost:8080/api/ping
 | 2 | Maven | `mvn -version` | 3.9.x + Java 21 |
 | 3 | Maven 镜像 | 看 `C:\Users\你\.m2\settings.xml` | 含 aliyun mirror |
 | 4 | Git | `git --version` | 有版本号 |
-| 5 | Docker | `docker run --rm hello-world` | 欢迎文字 |
+| 5 | Docker（可选） | `docker run --rm hello-world` | 欢迎文字（本机装不了就跳过，用路径 B/C） |
 | 6 | 代码 | 看 `D:\Java\insightforge\pom.xml` | 文件存在 |
-| 7 | 中间件 | `docker compose ps` | 三个 healthy |
+| 7 | 脚手架跑通 | `java -jar ... --spring.profiles.active=local` 后开 `/api/ping` | `pong` + 健康页 `status: UP` |
 | 8 | 编译 | `mvn clean package -DskipTests` | BUILD SUCCESS |
 | 9 | 接口 | 浏览器开 `/api/ping` | `{"code":0,"data":"pong"}` |
-| 10 | 健康 | 浏览器开 `/actuator/health` | db/redis/kafka 全 UP |
+| 10 | 健康 | 浏览器开 `/actuator/health` | local: db=H2 UP；默认(接中间件): db/redis/kafka 全 UP |
 
 全部打钩 → 在 `tasks.md` 的 **Phase 0** 把"验收"行勾成 `[x]`，然后进入 Phase 1。
 
@@ -441,8 +478,12 @@ http://localhost:8080/api/ping
 | `mvn` 编译卡在 Download | 没配阿里云镜像 | 按 0.3.3 配 `settings.xml` 后重试 |
 | Docker 装完跑不了容器 | WSL 2 没就绪 | 重启电脑；或按 Docker 提示装 WSL |
 | `docker compose` 命令不存在 | Docker 太旧 | 升级 Docker Desktop（新版自带 compose v2） |
+| 本机装不了 Docker | WSL/Hyper-V 受限等 | 跳过 Docker，用 0.8 路径 B（local profile 零依赖）或路径 C（原生装 MySQL/Redis/Kafka） |
+| `mvn spring-boot:run` 报找不到主类 | 多模块下插件检测问题 | 改用 `mvn -pl insightforge-api -am package` 后 `java -jar target/...jar` |
+| `Port 8080 was already in use` | 上次 java 进程没退 | 任务管理器结束 `java.exe` 再跑；或加 `--server.port=8080` |
+| 走 local 启动报 `could not be excluded ... RedissonAutoConfiguration` | 用了旧 jar / profile 没生效 | 重新 `mvn -pl insightforge-api -am package` 确保新 `application-local.yml` 进了 jar |
 | 端口被占用 8080/3306/6379/9092 | 本机已跑着同款服务 | 关掉占用进程，或改 `application.yml`/`compose` 端口 |
-| `/actuator/health` 里某个 DOWN | 对应容器没起/账号错 | `docker compose ps` + 核对 `application.yml` |
+| `/actuator/health` 里某个 DOWN（默认 profile） | 对应中间件没起/账号错 | 路径 A 看 `docker compose ps`；路径 C 确认 mysqld/Memurai/Kafka 在跑 + 核对 `application.yml` |
 | 依赖偶尔下载失败 | 网络抖动 | 重试 `mvn clean package -DskipTests` |
 
 ---

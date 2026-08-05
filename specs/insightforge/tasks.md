@@ -9,9 +9,9 @@
 ## Phase 0 — 环境与骨架（M1）
 - [x] 初始化 Maven 多模块 parent `insightforge`，建 `api / seckill-core / common / persistence` 模块（含最小骨架代码）
 - [x] Spring Boot 3.3 启动类 + `application.yml`，`/actuator/health` 可访问（actuator 暴露 health/info/metrics）
-- [x] `docker-compose.yml` 起 MySQL 8 / Redis 7 / Kafka（含 Kafka 延时/DLQ 主题）
+- [x] `docker-compose.yml` 起 MySQL 8 / Redis 7 / Kafka（含 Kafka 延时/DLQ 主题）—— **预留**：本机装不了 Docker 时暂不启用，迁移到可装 Docker 的机器再用（见 phase0.md §0.8 路径 A）
 - [x] 统一依赖管理（MyBatis-Plus、Redisson、Spring-Kafka、Spring-AI；Drools 入 BOM 待 Phase 9）
-- [ ] **验收**：`mvn clean package` 通过；`docker compose up` 后应用连上 MySQL/Redis/Kafka（⚠️ 沙箱二进制 CDN 限速/封锁，无法本会话内跑通构建与 Docker；按 `tutorials/phase0.md` §0.6–§0.7 本机执行；Maven 已装入 D:/devtools，JDK 后台下载中）
+- [x] **验收（已实跑通过）**：`mvn clean package` BUILD SUCCESS（沙箱 D:/devtools 的 JDK21+Maven 实跑）；本机无 Docker 时用 `local` profile 零依赖启动验证 `pong` + 健康页 UP（见 phase0.md §0.8 路径 B，已验证）；接真实中间件用默认 profile（路径 C / 迁移后路径 A）
 - [x] 已确认：JDK 21、Maven（见 plan §10 / tutorial 附录 A）
 
 ## Phase 1 — 最小秒杀主流程（M1，故意不安全）

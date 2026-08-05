@@ -1,0 +1,35 @@
+# Phase 0 本地零依赖冒烟测试 profile（激活方式见下）
+# 用途：当前开发机无法安装 Docker，用本 profile 即可不装任何中间件、直接把脚手架跑起来验证。
+#       - 用 H2 内存库代替 MySQL（db 健康项显示 H2 UP）
+#       - 不加载 Redis / Kafka 自动配置（Phase 0 脚手架代码尚未用到它们，故无需起这两个服务）
+#       - 之后迁到可装 Docker 的机器、或本机装了原生 MySQL/Redis/Kafka 后，去掉
+#         `-Dspring.profiles.active=local` 用默认 application.yml（localhost 端口与 docker 通用）即可。
+spring:
+  datasource:
+    url: jdbc:h2:mem:insightforge;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  h2:
+    console:
+      enabled: true
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+      # Redisson starter 自己的自动配置（会启动时连 Redis），local profile 关掉
+      - org.redisson.spring.starter.RedissonAutoConfigurationV2
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.insightforge: INFO
