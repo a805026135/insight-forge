@@ -1,8 +1,8 @@
-# InsightForge（智析）智能秒杀 / 大促平台（Agent 辅助）— 设计文档（v0.6 评审稿）
+# InsightForge（智析）智能秒杀 / 大促平台（Agent 辅助）— 设计文档（v0.7 评审稿）
 
 > 流程说明：本文档由 brainstorming 阶段产出，遵循 **GitHub spec-kit** 流程——先定 spec（本文件），经评审调整后再出 `plan.md` 与 `tasks.md`，最后进入实现。
-> 状态：评审稿 v0.6。
-> 修订记录：[2026-08-05] v0.1 初始；v0.2 后端与 Agent 深度融合；v0.3 锚定商家经营分析场景；v0.4 尝试从"共享资源争用"挖并发/互斥（被否，因读多写少、并发读不构成挑战）；v0.5 据联网调研（MagTrade 等） pivot 到「智能秒杀/大促平台（agent 辅助）」——秒杀核心是经典高并发+互斥心脏，Agent 规划期出策略、大促期实时控盘（走同一套锁）；v0.6 据用户"大模型延迟红线"反馈修订——**LLM 永不进入秒杀热路径**，原"Live Control Agent 实时控盘走锁"改为「Guardrail Policy Agent 离线生成护栏策略 DSL → 确定性规则引擎在线执行（走同一套锁）」，即控制面/数据面分离。详见 `analysis.md` §4/§5。
+> 状态：评审稿 v0.7。
+> 修订记录：[2026-08-05] v0.1 初始；v0.2 后端与 Agent 深度融合；v0.3 锚定商家经营分析场景；v0.4 尝试从"共享资源争用"挖并发/互斥（被否，因读多写少、并发读不构成挑战）；v0.5 pivot 到「智能秒杀/大促平台（agent 辅助）」，Agent 实时控盘走同一套锁；v0.6 据"大模型延迟红线"改为控制面/数据面分离（Guardrail Policy Agent 离线生成 DSL → 规则引擎在线走锁，LLM 不进热路径）；**v0.7 据整体评价加固**：① 独立 `insightforge-rule-engine` 模块；② Seckill-Worker/Agent-Worker 资源隔离；③ 分布式锁粒度细化（activityId:skuId、读写锁、分段锁）；④ 护栏 DSL 规范+工具权限三级校验；⑤ Milvus 分层检索+A/B 实验；⑥ 缓存防护体系+库存 MySQL-Redis 一致性+Kafka 可靠性；⑦ 双轨评估+可观测补点+YAGNI 范围红线+架构图/数据结构/故障预案。详见 `analysis.md`。
 
 ---
 
@@ -26,11 +26,12 @@
 - **两条主线都硬**：① 后端高并发工程（Redis+Lua 原子 / 分布式锁 / Kafka 削峰 / 限流 / 状态机 / 压测）；② Agent 知识（规划 / 工具调用 / 记忆 / 反思 / 多 Agent 协作 / 实时控盘）。
 - **有评估闭环**：硬指标证明系统靠谱（无超卖 / exactly-once / 锁等待 / Agent 策略质量 / 控盘有效性）。
 
-### 1.4 非目标 / YAGNI
+### 1.4 非目标 / YAGNI（范围红线）
 - 不做完整多租户 SaaS 基础设施（租户后台 / 计费中心），先做简单多用户 + 数据隔离 + 限流。
 - 不追求覆盖所有商品模型，先标准 SKU + 库存扣减。
 - 不内置训练 / 微调，专注推理与编排。
-- Agent 实时控盘默认"护栏内自动 + 重大人工"，不做完全无人值守自治。
+- Agent 控盘默认"护栏内自动 + 重大人工"，不做完全无人值守自治。
+- **范围红线（防膨胀）**：每个里程碑限定新增功能，**非核心需求（优惠券、积分、多渠道分销、支付网关对接等）一律延后至 M7+（可选扩展）**，不在 M1–M6 范围内；任何新增跨域功能须先回此红线确认，避免范围蔓延。
 
 ---
 
@@ -80,14 +81,23 @@
 - **库存扣减（互斥心脏）**：单 key 用 **Redis+Lua 原子脚本**（`DECR`+库存≥0 校验）保证不超卖；跨资源（库存+订单+预算）用 **Redisson 分布式锁**。
 - **大模型延迟红线（控制面 / 数据面分离）**：LLM 推理延迟秒级、非确定、知识截止、会幻觉，与秒杀"毫秒级+强一致+exactly-once"直接冲突 → **LLM 永不进入秒杀热路径（扣减/调价/再分配/下单）**。采用控制面/数据面分离：**控制面（LLM 离线）** = Guardrail Policy Agent 把活动目标编译成护栏策略 DSL + 复盘 Critic 写 Milvus；**数据面（确定性）** = 护栏规则引擎读取 DSL，在 LIVE 期消费 Kafka 销量流执行 `REPRICE`/`REALLOCATE`。在线零 LLM 调用，策略与特征规划期预计算入 Redis（空间换时间），超时降级到硬编码兜底（fail-open）。
 - **Agent 策略共用锁（关键差异，但 LLM 不进热路径）**：护栏规则引擎执行的 `REPRICE` / `REALLOCATE` 改的是与用户抢购**同一个**库存/价格资源 → 走**同一 Redisson 锁 + Lua 原子**。Agent 通过它离线生成的策略 DSL 间接驱动这一写动作（差异化保留），但 LLM 推理本身不在热路径。**混合执行**：小幅调价/再分配在护栏内（单次幅度上限 + 熔断）自动执行；超阈值或涉及大额预算的重大动作转人工确认（human-in-the-loop，非 LLM 现场决策）。
+- **分布式锁粒度设计（防止锁竞争与性能隐患）**：
+  - **细粒度锁 Key**：锁以 `lock:activity:{activityId}:sku:{skuId}` 为粒度，单 SKU 独立加锁，避免全局锁导致并发吞吐量暴跌。
+  - **读写分离锁**：库存/价格**查询**用 Redisson `ReadLock`（读多写少不互斥）；**扣减 / 调价 / 调拨**用 `WriteLock`（排他）。
+  - **分段锁**：热点 SKU 库存拆分为 N 段（如 `segment1..N`），分别加锁，批量调拨支持跨段分段锁，避免一次性占用大量 SKU 锁阻塞抢购流量。
+  - **可靠性**：Redisson 看门狗自动续期（默认 30s，每 10s 续约）防死锁；锁等待 / 持有耗时埋点进 Prometheus，超阈值告警。
 - **削峰与限流**：Kafka 异步下单；Nginx+Lua 令牌桶 + Redis+Lua 滑动窗口 + Sentinel 多层限流；模型调用单独限流（DeepSeek 配额，仅在离线/异步路径）。
 - **幂等（exactly-once）**：订单 `orderId = hash(userId, productId, activityId)`，Redis SETNX 去重，Kafka 重投不重复下单。
 - **进程内并发**：单请求内 Agent DAG 无依赖节点线程池 + `CompletableFuture` 并行；Worker 多实例横向扩展。
 
 ### 3.2 部署架构
-- `docker-compose` 编排服务：`MySQL / Redis / Kafka / Milvus / API / Seckill-Worker / Agent-Worker / 前端(Nginx)`。
+- `docker-compose` 编排服务：`MySQL / Redis / Kafka / Milvus / API / Seckill-Worker / Rule-Engine-Worker / Agent-Worker / 前端(Nginx)`。
 - Nginx：API 负载均衡 + 前端静态托管 + WebSocket 反代 + Lua 令牌桶限流；Worker 多实例、Kafka 分区并行 → 水平扩展。
-- 可观测：Actuator + Prometheus + Grafana 看板（扣减耗时 / 锁等待 / 超卖告警 / 限流触发）。
+- **资源隔离（核心流量 vs Agent 异步任务）**：防止大促峰值时 Agent 规划/复盘/向量检索抢占 CPU 内存，导致锁等待变长、下单时延毛刺，或沙箱异常拖垮核心服务。
+  - **容器级**：`Seckill-Worker`（核心流量，高优先级、独立 CPU/内存配额、反亲和部署）与 `Agent-Worker`（离线/异步任务，低优先级、`cgroup` 限额）拆分为两类容器；新增独立的 `Rule-Engine-Worker` 承载在线护栏执行（与 Seckill-Worker 同高优先级域，但不跑 LLM）。
+  - **线程池级**：API 接入、库存扣减、Kafka 消费、Agent 任务使用**独立线程池**；核心业务线程池设最高优先级，Agent 任务线程池限并发、可排队丢弃。
+  - **沙箱隔离**：Agent 规划计算（SQL/Python）跑在**独立进程/容器**，禁与核心服务同进程；沙箱崩溃不影响 Seckill-Worker。
+- 可观测：Actuator + Prometheus + Grafana 看板（扣减耗时 / 锁等待 / 超卖告警 / 限流触发 / **Agent 与规则引擎维度指标见 §7.2**）。
 
 ### 3.3 一次请求的全链路（看 Agent 与高并发如何纠缠）
 以 **US-3「SKU-A 售罄速度超预期 2 倍，护栏规则引擎自动再分配库存」** 为例：
@@ -105,6 +115,23 @@
 - **活动生命周期**：`DRAFT`(Agent 规划) → `ARMED`(库存预热 Redis) → `LIVE`(用户抢 + Agent 控) → `SETTLING`(对账) → `CLOSED`。
 - **单请求（订单）**：`PRE_CHECK → LOCK_STOCK`(Lua 原子) `→ CREATE_ORDER`(Kafka 异步) `→ PAY → DONE` / 超时 `CANCEL`(释放库存)。
 - **护栏规则引擎控盘动作**作为 `LIVE` 态内事件：`REPRICE` / `REALLOCATE`（由 Agent 离线生成的策略 DSL 驱动），自身受锁保护并触发子状态迁转；订单幂等用 `orderId`+SETNX 去重。
+
+---
+
+### 3.5 缓存防护体系（击穿 / 雪崩 / 穿透 实战兜底）
+- **缓存击穿（热点 Key）**：活动配置、商品详情等热点 Key 采用「**互斥锁重建 + 逻辑过期**」——值内嵌逻辑过期时间，后台异步刷新，高并发下仅一个线程回源 DB；辅以随机 TTL 打散初始过期。避免「先查缓存 miss → 并发回源」击穿 DB。
+- **缓存雪崩**：Redis 集群分片；Key TTL 加随机抖动避免同时失效；Redis 不可用时降级读本地 **Caffeine**（stale-while-revalidate，返回旧值并异步刷新），保护核心读路径。
+- **缓存穿透**：布隆过滤器拦截不存在的 `productId`/`activityId`；空值缓存短 TTL，防止恶意遍历打穿到 DB。
+
+### 3.6 库存预热一致性（MySQL ↔ Redis 双写）
+- **上线对账**：预热 Agent 把库存 Lua 预载 Redis 后，进入 `ARMED` 前做一次 **MySQL-Redis 库存对账**，不一致直接阻断活动上线。
+- **增量同步**：活动中库存变更（后台手动改库存、退款回补）走 **Canal 监听 Binlog → 增量同步 Redis**，保证双写一致，避免超卖/少卖。
+- **巡检修复**：定时后台任务比对 MySQL 与 Redis 库存，修复偏差（修复动作本身走同一套锁）。
+
+### 3.7 消息可靠性与降级
+- **下单 Topic**：生产者 `acks=all` + 重试；消费者手动提交 offset；失败订单进**死信队列（DLQ）**后台补偿；订单幂等（`orderId`+SETNX）保证 exactly-once。
+- **销量事件 Topic**：至少一次投递；次要消息可丢弃，但**库存调拨/调价失败事件**进 DLQ 并触发人工告警。
+- **规则引擎消费失败回滚**：控盘动作（调价/调拨）执行异常 → 反向 Lua 恢复库存/价格 + 记审计 + 告警；**不影响用户抢购主流程（fail-open）**。
 
 ---
 
@@ -145,6 +172,10 @@
 - **短期**：当前任务消息窗口；超长触发摘要压缩。
 - **长期**：用户级偏好存 Redis；历史活动策略与结果向量化入 **Milvus**，供规划参考与相似活动复用。
 - **跨 Agent 共享**：经 Orchestrator 消息总线传递结构化 `Artifact`（选品清单/定价方案/库存计划），不把一切塞进 prompt。
+- **Milvus 分层检索优化（活动量大后控延迟）**：
+  - **分区**：按时间/热度分区（近一年热活动 / 历史冷活动），检索时按需路由，减少计算量。
+  - **召回权重**：同品类、同 GMV 目标的活动优先召回（metadata 过滤 + 加权）。
+  - **热向量缓存**：高频复用的相似策略向量缓存至 Redis，避免每次规划都查 Milvus。
 
 ### 5.3 规划与执行（Plan-and-Execute）
 - 规划期：Planner 产出子任务 DAG，Orchestrator 按拓扑序调度，无依赖节点 `CompletableFuture` 并行。
@@ -153,6 +184,22 @@
 ### 5.4 反思/自检循环
 - Critic 输出结构化 JSON：`{passed, issues:[{type, severity, detail, fix_suggestion}]}`。
 - 策略/动作不通过 → 携带 issues 回到对应 Agent 修订，最多 `maxRetry=3`；超限降级交付或转人工。
+
+### 5.5 护栏策略 DSL 规范（Guardrail DSL）
+> 解决"DSL 是纸上设计"问题：统一语法、存储、版本、热更新，支撑灰度/回滚。
+- **格式**：结构化 **JSON（可序列化为 YAML）**，由 Guardrail Policy Agent 离线产出，Schema 含四段：
+  - `trigger`：触发条件（指标 + 运算符 + 阈值，如 `sellout_rate > 1.8×expected AND remaining_ratio < 0.1`）。
+  - `action`：动作类型（`REPRICE` / `REALLOCATE`），指向 `insightforge-tools` 原子接口。
+  - `bounds`：参数上限（单次调价 ±5%、单次调拨 ≤ 池总量 10%）、熔断阈值（连续触发次数 / 时间窗）。
+  - `human_gate`：人工判定边界（超 `bounds` 的重大动作转人工审批）。
+- **版本化存储**：DSL 以版本号存入 **MySQL**（如 `guardrail_policy` 表，`activity_id + version` 唯一），支持单活动多版本策略、**灰度切换、一键回滚**。
+- **热更新**：当前生效 DSL 缓存至 **Redis**；规则引擎监听配置变更事件（或定时拉取）实现**规则热更新，无需重启服务**。DSL 样例见 §12 附录。
+
+### 5.6 工具权限分级管控（三层校验，防幻觉/误复用）
+`reallocator` / `repricer` 直接操作库存与价格，仅靠 Critic 前置校验不足，建立三层防护：
+1. **离线规划期（静态）**：Critic Agent 校验策略参数合理性（价 > 成本？调拨量 ≤ 池总量？）。
+2. **规则引擎执行前（动态护栏）**：硬编码兜底阈值拦截——单次调价 ±5% 上限、单次调拨 ≤ 池总量 10%、熔断（单位时间触发上限）；越界直接拒绝执行。
+3. **权限分级 + 审计**：自动动作仅允许小幅调整；大额调拨、大幅降价**必须走人工审批流**；所有控盘动作写**操作审计日志**（谁/何时/何参数/结果），供复盘与追溯。
 
 ---
 
@@ -183,18 +230,25 @@
 - **秒杀正确性集**：构造百万级并发抢购脚本（JMeter），初始库存 N，验证最终库存 = N - 成功单数、且无重复订单。
 - **Agent 质量集**：构造带黄金策略/黄金控盘动作的活动样例（黄金选品/定价由确定性脚本+专家标注）；覆盖趋势/对比/占比/异常。
 
-### 7.3 指标
-- **秒杀正确性（高并发心脏）**：无超卖（库存≥0 且 = 初始-成功单数）、exactly-once（无重复订单）、锁等待可控、限流生效、缓存击穿无雪崩。
-- **Agent 质量**：选品/定价合理性（LLM-as-judge 按 rubric，对照黄金）、控盘动作有效性（调价后售罄率/毛利变化）、预警准确率、反思重试次数。
+### 7.3 双轨评估指标（客观硬指标优先，LLM 仅补充定性）
+- **客观硬指标（纯数值、无主观、权重优先）**：毛利率、库存周转、售罄时长、限流触发次数、无超卖（库存≥0 且 = 初始-成功单数）、exactly-once（无重复订单）、锁等待 P99、缓存击穿/雪崩次数。
+- **LLM 定性（补充，权重低于客观）**：选品/定价合理性、控盘动作解释质量（LLM-as-judge 按 rubric），仅做辅助分析，不单独决定通过。
 - **效率/成本**：端到端时延（P50/P95）、token 消耗、￥成本。
 
 ### 7.4 评估 harness
 - `eval` 模块：跑评测集 → 调系统 → 收集产出 → 对照黄金算指标 → 输出 JSON+Markdown。
-- **LLM-as-judge**：DeepSeek 按 rubric 结构化评分 Agent 策略/动作。
-- **CI 集成**：GitHub Actions 跑 `./mvnw eval:run`，关键指标低于阈值则失败。
+- **LLM-as-judge 作为补充定性**，权重低于客观指标；评测集持续迭代，将线上运营点赞/踩样本自动加入黄金数据集。
+- **CI 集成**：GitHub Actions 跑 `./mvnw eval:run`，客观关键指标低于阈值则失败。
 
-### 7.5 在线评估
+### 7.5 在线评估 + A/B 实验
 - 运营对 Agent 方案/控盘动作点赞/点踩 → 反馈表 → 复盘进 Milvus 与评测集（数据飞轮）。
+- **A/B 实验**：活动按组分配，一部分商家用 **AI 自动控盘**、一部分用**传统人工规则**；评估模块自动对比 GMV、售罄率、毛利，量化"AI 策略是否真提升经营指标"，形成数据飞轮。
+
+### 7.6 可观测指标（补充 AI / 规则引擎维度）
+- **Agent 维度**：LLM 调用耗时、token 消耗、策略校验失败次数、人工介入次数。
+- **规则引擎维度**：DSL 匹配命中次数、自动调价/调拨次数、熔断拦截次数。
+- **资源指标**：Milvus 检索时延、沙箱 CPU/内存占用。
+- 看板：Actuator + Prometheus + Grafana（含上述新增维度 + 扣减耗时 / 锁等待 / 超卖告警 / 限流触发）。
 
 ---
 
@@ -206,8 +260,9 @@ Maven 多模块（parent：`insightforge`）：
 insightforge
 ├── insightforge-api            # REST + WebSocket 接入层（限流/Nginx 配合）
 ├── insightforge-seckill-core   # 高并发引擎：Lua 脚本、Redisson 锁、Kafka 消费者、状态机、防超卖  ★核心
+├── insightforge-rule-engine    # 独立护栏规则引擎：DSL 加载/解析、Kafka 销量事件消费、条件匹配、熔断/幅度校验、输出标准化控盘指令，调用 seckill-core 原子接口  ★核心（AI 策略与并发原语解耦）
 ├── insightforge-agent-core     # 自研 Agent 运行时（循环/工具/记忆/反思）
-├── insightforge-agents        # Planner/选品/定价/预热/风控/LiveControl/Critic
+├── insightforge-agents        # Planner/选品/定价/预热/风控/GuardrailPolicy/Monitor-Alert/Critic
 ├── insightforge-tools         # 秒杀域工具（repricer/reallocator/preloader…）+ web_search
 ├── insightforge-datasource     # 历史销量 + 实时流接入
 ├── insightforge-sandbox       # Agent 规划计算沙箱
@@ -244,13 +299,127 @@ specs/insightforge/             # spec.md / plan.md / tasks.md
 
 ---
 
-## 11. 开放问题（待用户调整）
-1. 向量库：**Milvus** vs **pgvector**（pgvector 更简单但企业级感弱）。
-2. 消息队列：**Kafka** vs **RabbitMQ**（RabbitMQ 更轻，Kafka 更企业级且原生支持实时流）。
-3. 前端 **React**（默认） vs **Vue**。
-4. 报告导出：是否要 **PDF / Word**（运营方案文档导出）。
-5. 多用户：先做 JWT 单用户，还是上简单多用户。
+## 11. 开放问题（含倾向性选型建议）
+1. 向量库：**Milvus**（**推荐**，企业级独立扩展、千万~百亿级、多索引；本项目已选）。仅在长期 < 百万向量且想省运维时降级 **pgvector**。
+2. 消息队列：**Kafka**（**推荐**，异步削峰 + 原生事件流驱动规则引擎；已选）。RabbitMQ 仅当团队更熟且无需事件流回放时考虑。
+3. 前端：**React**（**默认推荐**，生态/类型成熟度）。Vue 亦可。
+4. 报告导出：是否要 **PDF / Word**（运营方案文档导出，M5/M6 后期可选）。
+5. 多用户：先做 **JWT 单用户**（**推荐**，最快验证主线），后期再上简单多用户。
+6. 护栏规则引擎：自研轻量 Java 规则引擎（**推荐**，可控、贴合项目）vs **Drools**（成熟但偏重）。
 
 ---
 
-> 下一步：用户审阅本文档并反馈调整 → 我据此修订 → 产出 `plan.md`（实现方案）+ `tasks.md`（任务拆解）→ 进入实现（spec-kit 工作流）。
+## 12. 架构图与核心流程
+
+### 12.1 控制面 / 数据面分层架构（LLM 不进热路径）
+```mermaid
+flowchart TB
+  subgraph CP["控制面（离线 / LLM，非热路径）"]
+    A["Guardrail Policy Agent"] --> B["护栏策略 DSL"]
+    B --> E["MySQL 版本化存储"]
+    E --> F["Redis 当前生效 DSL"]
+    C["复盘 Critic Agent"] --> D["(Milvus 历史策略)"]
+  end
+  subgraph DP["数据面（在线 / 确定性，无 LLM）"]
+    G["Kafka 销量事件"] --> H["护栏规则引擎"]
+    F --> H
+    H -->|"REPRICE / REALLOCATE"| I["seckill-core 原子接口"]
+    J["用户抢购 API"] -->|"Lua 原子扣减"| I
+  end
+  I <-->|"同一 Redisson 锁"| K["Redis 库存/价格"]
+  H -. "超护栏阈值" .-> L["人工审批流"]
+```
+
+### 12.2 分布式锁共用逻辑（用户抢购 vs 规则引擎调拨争用同一锁）
+```mermaid
+sequenceDiagram
+  participant U as 用户抢购
+  participant R as 规则引擎控盘
+  participant L as Redisson 锁(activity:sku)
+  participant Rd as Redis 库存/价格
+  U->>L: 获取 WriteLock（扣减）
+  L-->>U: 获锁
+  U->>Rd: Lua 原子扣减
+  U->>L: 释放锁
+  R->>L: 获取 WriteLock（调拨/调价）
+  L-->>R: 获锁（与用户串行互斥）
+  R->>Rd: Lua 原子调拨/改价
+  R->>L: 释放锁
+  Note over U,R: 二者争用同一把细粒度锁，互斥执行
+```
+
+### 12.3 端到端时序（规划 → 抢购 → 控盘 → 复盘）
+```mermaid
+sequenceDiagram
+  participant O as 运营
+  participant P as Planner/专员 Agent
+  participant GP as GuardrailPolicy Agent
+  participant Rd as Redis
+  participant U as 用户
+  participant SE as seckill-core
+  participant RE as 规则引擎
+  O->>P: 大促目标（GMV/ROI）
+  P->>GP: 选品/定价/预热/风控方案
+  GP->>Rd: 预载护栏 DSL + 库存（ARMED，下线前对账）
+  U->>SE: 抢购
+  SE->>Rd: Lua 原子扣减（不超卖）
+  SE->>RE: Kafka 销量事件
+  RE->>Rd: 命中 DSL → 调拨/调价（走同一锁）
+  Note over RE: 在线无 LLM 调用
+  O->>GP: 活动结束（异步复盘 → Milvus）
+```
+
+## 13. 关键数据结构
+
+### 13.1 Redis Key 设计
+| Key | 含义 | 类型 |
+|---|---|---|
+| `stock:a:{aid}:s:{sid}` | SKU 剩余库存 | int |
+| `stock:a:{aid}:s:{sid}:seg:{n}` | 分段库存（分段锁） | int |
+| `price:a:{aid}:s:{sid}` | 当前秒杀价 | decimal |
+| `lock:a:{aid}:s:{sid}` | Redisson 锁 Key（细粒度） | lock |
+| `order:idemp:{hash(uid,pid,aid)}` | 订单幂等去重（SETNX） | string |
+| `guardrail:dsl:{aid}` | 当前生效护栏 DSL | JSON |
+| `seckill:quota:{aid}:{uid}` | 用户限购计数 | int |
+
+### 13.2 护栏 DSL 样例（JSON）
+```json
+{
+  "activity_id": "A1001",
+  "version": 3,
+  "rules": [
+    {
+      "id": "r1",
+      "trigger": { "metric": "sellout_rate", "op": ">", "threshold": "1.8×expected" },
+      "condition": { "remaining_ratio_lt": 0.1 },
+      "action": { "type": "REALLOCATE", "from_pool": "B", "to_pool": "A", "max_units_pct": 0.1 },
+      "bounds": { "max_units_pct": 0.1, "circuit_breaker": { "window": "60s", "max_triggers": 5 } },
+      "human_gate": { "when": "units_pct > 0.1", "approve_flow": true }
+    },
+    {
+      "id": "r2",
+      "trigger": { "metric": "remaining_ratio", "op": "<", "threshold": 0.05 },
+      "action": { "type": "REPRICE", "delta_pct": -0.03 },
+      "bounds": { "delta_abs_pct": 0.05, "floor": "cost_price" },
+      "human_gate": { "when": "delta_abs_pct > 0.05", "approve_flow": true }
+    }
+  ]
+}
+```
+
+### 13.3 Kafka 事件体定义
+- `order.created`（下单 Topic，至少一次 + DLQ）：`{orderId, userId, activityId, skuId, qty, status, ts}`
+- `sales.tick`（销量事件 Topic）：`{activityId, skuId, soldQtyDelta, remainingStock, ts}`
+- `guardrail.action`（控盘动作）：`{activityId, skuId, actionType, params, result, byRule, ts}`
+- `guardrail.action.failed`（控盘失败 → DLQ）：`{..., error, rollbackDone, ts}`
+
+## 14. 故障演练预案
+- **Redis 宕机**：本地 Caffeine 兜底读；写路径降级为「仅 DB 行锁最终兜底」并限流；恢复后 Canal 重建缓存 + 对账。
+- **Milvus 不可用**：规划期降级为「近期 MySQL 历史表 + 规则默认策略」，Agent 仍能出基础方案；复盘延至恢复后。
+- **LLM 服务熔断**：控制面（DSL 生成/复盘）降级为「复用上次成功 DSL + 规则引擎兜底」；数据面完全不依赖 LLM，不受影响。
+- **规则引擎异常**：控盘动作失败 → 反向 Lua 回滚 + 告警 + 转人工；用户抢购主流程 fail-open。
+- **Kafka 积压**：消费者扩容（分区并行）+ 优先级（下单 Topic 优先于销量事件 Topic）。
+
+---
+
+> 下一步：用户审阅本文档（v0.7）并反馈调整 → 我据此修订 → 产出 `plan.md`（实现方案）+ `tasks.md`（任务拆解）→ 进入实现（spec-kit 工作流）。
