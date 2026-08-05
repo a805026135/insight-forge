@@ -42,6 +42,8 @@
 
 ## Phase 1 — 最小秒杀主流程（故意不安全，M1）
 
+> 📘 **逐行详解**：`tutorials/phase1.md`（4 张表设计 + 主流程/超卖竞态 mermaid 图 + 伪代码 + 核心代码逐文件讲 + 实跑验证与排错）。本阶段跟着它做即可。
+
 **目标**：先跑通"用户点抢购 → 下单"的最简链路，不管并发。
 **你会做**：建表 `product / activity / activity_sku / orders`；写 `POST /api/seckill`：`SELECT stock → if stock>0 UPDATE stock-1 → INSERT order`。同步、无锁。
 

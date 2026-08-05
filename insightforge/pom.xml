@@ -25,7 +25,7 @@
 
         <!-- 统一依赖版本（详见 plan.md §2 / §10） -->
         <spring-boot.version>3.3.5</spring-boot.version>
-        <mybatis-plus.version>3.5.9</mybatis-plus.version>
+        <mybatis-plus.version>3.5.11</mybatis-plus.version>
         <redisson.version>3.34.1</redisson.version>
         <spring-ai.version>1.0.0</spring-ai.version>
         <drools.version>9.44.0.Final</drools.version>
@@ -48,6 +48,15 @@
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-boot-starter</artifactId>
                 <version>${mybatis-plus.version}</version>
+            </dependency>
+
+            <!-- mybatis-spring 3.0.4：修复与 Spring 6.1 的 factoryBeanObjectType 类型不兼容
+                 （mybatis-plus 3.5.x 默认带 3.0.3，会在 @MapperScan 注册 Mapper 时抛
+                 Invalid value type for attribute 'factoryBeanObjectType': java.lang.String） -->
+            <dependency>
+                <groupId>org.mybatis</groupId>
+                <artifactId>mybatis-spring</artifactId>
+                <version>3.0.4</version>
             </dependency>
 
             <!-- Redisson：分布式锁 + 限流（防超卖心脏） -->
@@ -85,6 +94,15 @@
         </dependencies>
     </dependencyManagement>
 
+    <!-- 直接依赖：传递给所有子模块（实体/DTO 普遍用 @Data） -->
+    <dependencies>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
     <build>
         <pluginManagement>
             <plugins>
@@ -92,6 +110,16 @@
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
                     <version>${spring-boot.version}</version>
+                </plugin>
+                <!-- 启用 -parameters：保留方法参数名，避免 @PathVariable/@RequestParam 等
+                     因反射拿不到参数名而报 "Name for argument ... not specified" -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.13.0</version>
+                    <configuration>
+                        <parameters>true</parameters>
+                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>

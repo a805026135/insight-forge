@@ -15,11 +15,12 @@
 - [x] 已确认：JDK 21、Maven（见 plan §10 / tutorial 附录 A）
 
 ## Phase 1 — 最小秒杀主流程（M1，故意不安全）
-- [ ] 建表 `product / activity / activity_sku / orders`
-- [ ] `POST /api/seckill`：查库存 → 扣库存 → 建订单（同步、无并发保护）
-- [ ] 前端/Postman 手动跑通一次下单
-- [ ] **验收**：单线程下单成功；记录"当前会超卖"作为 Phase 2/3 的待解决问题
-- [ ] ⚠️ 待确认：REST 接口风格
+- [x] 建表 `product / activity / activity_sku / orders`（schema.sql + data.sql，H2 MySQL 模式/MySQL 通用）
+- [x] `POST /api/seckill`：查库存 → 扣库存 → 建订单（同步、无并发保护；`decrementStock` 故意无 `WHERE stock>=qty`）
+- [x] 配套 `GET /api/seckill/stock/{skuId}` 便于验证；单线程手动跑通一次下单
+- [x] **验收（已实跑通过）**：`mvn clean package` BUILD SUCCESS；`local` profile 零依赖启动，单线程下单成功（库存 100→99、订单 +1）；内置 `SeckillOversellDemoTest` 用 300 并发复现超卖（stock=-200、订单 300），已记录为 Phase 2/3 待解决问题
+- [x] 踩坑修复：MyBatis-Plus 3.5.9→3.5.11 + 锁定 mybatis-spring 3.0.4（Spring 6.1 兼容）；父 POM 开 `-parameters`；`@PathVariable("skuId")` 显式命名
+- [x] ⚠️ 待确认：REST 接口风格（已采用 JSON 入参，POST /api/seckill）
 
 ## Phase 2 — DB 层防超卖（M2）
 - [ ] `activity_sku` 加 `version` 字段；MyBatis-Plus 乐观锁更新（`UPDATE ... SET stock=stock-1, version=version+1 WHERE id=? AND stock>0 AND version=?`）

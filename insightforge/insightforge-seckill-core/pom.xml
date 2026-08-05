@@ -18,6 +18,12 @@
             <artifactId>insightforge-common</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- Phase 1：秒杀服务需要访问持久层实体与 Mapper -->
+        <dependency>
+            <groupId>com.insightforge</groupId>
+            <artifactId>insightforge-persistence</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.redisson</groupId>
             <artifactId>redisson-spring-boot-starter</artifactId>

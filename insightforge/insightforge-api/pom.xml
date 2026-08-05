@@ -36,6 +36,12 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- 测试：@SpringBootTest / JUnit（Phase 1 用于并发超卖演示） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- 本地零依赖冒烟测试用（local profile）：H2 内存库代替 MySQL -->
         <dependency>
             <groupId>com.h2database</groupId>
