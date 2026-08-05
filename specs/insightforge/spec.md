@@ -429,4 +429,4 @@ sequenceDiagram
 
 ---
 
-> 下一步：用户审阅本文档（v0.7）并反馈调整 → 我据此修订 → 产出 `plan.md`（实现方案）+ `tasks.md`（任务拆解）→ 进入实现（spec-kit 工作流）。
+> 下一步：用户审阅本文档（v0.8）+ `plan.md`/`tasks.md`/`tutorial.md` → 确认 `tutorial.md` 附录 A 的决策（或保留默认）→ 从 Phase 0 按 `tasks.md` 逐任务推进，配合 `tutorial.md` 一步步实现（spec-kit 工作流）。
