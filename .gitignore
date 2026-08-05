@@ -16,3 +16,6 @@ web/dist/
 .DS_Store
 # Logs
 *.log
+
+# WorkBuddy internal data
+.workbuddy/
