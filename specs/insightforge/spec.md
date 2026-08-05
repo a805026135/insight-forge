@@ -2,7 +2,7 @@
 
 > 流程说明：本文档由 brainstorming 阶段产出，遵循 **GitHub spec-kit** 流程——先定 spec（本文件），经评审调整后再出 `plan.md` 与 `tasks.md`，最后进入实现。
 > 状态：评审稿 v0.1，待用户通读后调整。
-> 修订记录：[2026-08-05] 初始评审稿。
+> 修订记录：[2026-08-05] 初始评审稿；同日反馈修订——后端须与 Agent 域深度融合（按痛点驱动选型，新增 §3.3 全链路）、加入 `web_search` 工具。
 
 ---
 
@@ -24,7 +24,7 @@
 
 ---
 
-## 2. 技术栈总览（企业级 + 黑马点评范式）
+## 2. 技术栈总览（企业级，按 Agent/分析域痛点驱动）
 
 | 类别 | 选型 | 作用 |
 |---|---|---|
@@ -43,16 +43,22 @@
 | 部署 | Nginx + Docker Compose + GitHub Actions | 负载均衡 / 一键起 / CI |
 | 可观测 | Actuator + Prometheus + Grafana | 调用耗时/成功率/限流看板 |
 
-**黑马点评生产范式 ↔ 本项目落点**
+**后端能力 ↔ Agent/分析场景 的驱动关系（杜绝"为用而用"）**
 
-| 黑马点评知识点 | 在本项目中的体现 |
+> 设计原则：每个后端组件都必须由 Agent 系统的某个真实痛点驱动，而不是把黑马点评的清单贴上来凑数。下面按「痛点 → 后端解法」重新落地，前后端是同一套设计的两面。
+
+| 本系统的真实痛点（来自 Agent / 分析域） | 后端解法（企业级组件） |
 |---|---|
-| 分布式锁（Redisson） | 同一数据集/任务幂等，防重复执行 |
-| 消息队列异步 | 任务提交即返回 `taskId`，Worker 消费执行管线 |
-| 多级缓存（Caffeine+Redis） | 热点数据集/结果缓存 + Milvus 语义缓存 |
-| 缓存穿透/击穿/雪崩 | 布隆过滤器 + 逻辑过期 + 随机 TTL |
-| 限流（Redis+Lua） | 保护 DeepSeek 调用额度，防打爆 |
-| 压测（JMeter） | 验证多任务并发与限流生效 |
+| Agent 跑一次分析要几十秒~几分钟，不能阻塞 HTTP | **Kafka** 异步解耦：提交即返回 `taskId`，Worker 消费执行；**WebSocket** 推进度 |
+| 大模型慢、贵、有 RPM/TPM 配额 | **Redis+Lua 滑动窗口 / Sentinel 限流** 护 DeepSeek 额度；按用户计费（Redis 计数器） |
+| 同一/相似问题被反复问，重跑太浪费 | **Milvus 语义缓存** + **Redis 精确缓存**：相似问题复用历史报告片段 |
+| 热门公开数据集被多人并发查询，缓存失效瞬间打爆 DB/重解析 | **Caffeine+Redis 多级缓存** + 逻辑过期 + 随机 TTL（即"缓存击穿/雪崩"的本项目真身）；布隆过滤器防穿透 |
+| 同一数据集/任务被并发触发，重复执行 | **Redisson 分布式锁** 保证解析与执行幂等 |
+| 多个 Agent 并发跑子任务，工具执行是重负载且危险 | **线程池 + 信号量 + 容器沙箱** 做资源治理；失败按 DAG 回滚（saga） |
+| 多用户多任务并发，需隔离与可追溯 | **JWT** 鉴权 + `traceId` 全链路透传 + Prometheus/Grafana 看板 |
+| 上线前要证明"撑得住" | **JMeter** 压测多任务并发与限流生效 |
+
+> 黑马点评教程里的 分布式锁 / 消息队列 / 多级缓存 / 缓存三大问题 / 限流 / 压测，在这里分别对应：任务幂等 / 异步执行 / 热点数据集 / 缓存击穿 / 模型配额 / 容量验证——全是本系统自己的问题，不是借来的装饰。
 
 ---
 
@@ -67,6 +73,20 @@
 - `docker-compose` 编排 7 服务：`MySQL / Redis / Kafka / Milvus / API / Worker / 前端(Nginx)`。
 - Nginx：API 负载均衡 + 前端静态托管 + WebSocket 反代；Worker 多实例、Kafka 分区并行 → 水平扩展。
 - 可观测：Actuator + Prometheus + Grafana 看板（Agent 调用耗时 / 成功率 / 限流触发次数 / 队列堆积）。
+
+### 3.3 一次分析请求的全链路（看后端如何被 Agent 真正用到）
+以「分析 sales.csv，给出各区域上半年销售额 Top3 并出图」为例，后端与 Agent 是同一条链路的两端：
+
+1. **API 层**：JWT 校验 → Redis 滑动窗口**限流**（超配额直接 429）→ 写任务表(PENDING) → 发 Kafka(QUEUED) → 返回 `taskId`（不阻塞）。
+2. **Worker** 消费：Redisson 锁检查 dataset+query 是否已跑（**幂等**）；否则解析 CSV → DuckDB 内存表 → 写**数据画像**到 Redis（逻辑过期）。
+3. **Orchestrator** 调度 Planner 产出 DAG；无依赖节点 `CompletableFuture` 并行。
+4. **Data Agent** 调 `sql_executor`：先查 **Milvus/Redis 语义缓存**（相似历史分析直接复用）→ 未命中则进**沙箱**执行，结果经校验器。
+5. **Viz / Writer Agent**：出 ECharts + 报告；Writer 结论必须引用 Data 产出的具体数字。
+6. **Critic Agent** 自检；不通过带 issues 回到对应 Agent **反思重试**（≤3 轮）。
+7. 全程：每步状态变更发 Kafka + 更新 Redis + **WS 推前端**；`traceId` 贯穿，Grafana 可观测。
+8. 完成：报告落 MySQL；用户点赞/点踩 → 写反馈表，进**评估飞轮**。
+
+> 这条链路里没有"纯后端"或"纯 Agent"的部件：Kafka/Redis/Redisson/Milvus/WS 都是 Agent 跑起来的必要支撑，Agent 才是这些组件被调用的原因。
 
 ---
 
@@ -90,7 +110,8 @@
 ### 5.1 工具系统（Tool Registry）
 - 每个工具用 JSON Schema 声明：`{name, description, parameters(JSON Schema), executor}`；启动时注册到 `ToolRegistry`。
 - 模型输出 `tool_call`（DeepSeek function calling）→ 运行时**先校验参数 schema** → 进沙箱执行 → `observation` 回灌上下文。
-- 内置工具：`sql_executor`、`python_executor`、`chart_generator`、`file_parser`、`semantic_cache_lookup`、`web_search`(可选)。
+- 内置工具：`sql_executor`、`python_executor`、`chart_generator`、`file_parser`、`semantic_cache_lookup`、`web_search`。
+- **`web_search` 为何不是装饰**：数据分析常需外部基准（行业均值、汇率、实时统计）做对比/下钻；它同时驱动两个真实后端需求——① 外部 API 有配额，必须接入同一套 **Redis+Lua 限流**；② 搜索结果进 **Redis 缓存**（TTL），避免重复调用。换言之，`web_search` 是限流与缓存的天然压力源之一，而不是可选项。
 
 ### 5.2 记忆机制（三层）
 - **短期**：当前任务消息窗口（system + 各 Agent 对话 + 工具结果）；超长触发**摘要压缩**（小模型/规则 `compress`，保留结论与关键数字）。
@@ -201,7 +222,7 @@ specs/insightforge/           # spec.md / plan.md / tasks.md
 ## 11. 开放问题（待用户调整）
 1. 向量库：**Milvus** vs **pgvector**（pgvector 更简单但企业级感弱）。
 2. 消息队列：**Kafka** vs **RabbitMQ**（RabbitMQ 更轻，Kafka 更「企业级」）。
-3. 是否要 `web_search` 工具（联网取实时数据）。
+3. ~~是否要 `web_search` 工具~~ → **已决定：要**（它驱动限流与缓存的真实需求，见 §5.1）。
 4. 前端 **React**（默认） vs **Vue**。
 5. 报告导出：是否要 **PDF / Word** 导出。
 6. 多用户：先做 JWT 单用户，还是上简单多用户。
