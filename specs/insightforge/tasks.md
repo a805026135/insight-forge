@@ -7,12 +7,12 @@
 ---
 
 ## Phase 0 — 环境与骨架（M1）
-- [ ] 初始化 Maven 多模块 parent `insightforge`，建 `api / seckill-core / common / persistence` 等空模块
-- [ ] Spring Boot 3.3 启动类 + `application.yml`，`/actuator/health` 可访问
-- [ ] `docker-compose.yml` 起 MySQL 8 / Redis 7 / Kafka（含 Kafka 延时/DLQ 主题）
-- [ ] 统一依赖管理（MyBatis-Plus、Redisson、Spring-Kafka、Spring-AI）
-- [ ] **验收**：`mvn clean package` 通过；`docker compose up` 后应用连上 MySQL/Redis/Kafka
-- [ ] ⚠️ 待确认：JDK 21 vs 17、Maven vs Gradle
+- [x] 初始化 Maven 多模块 parent `insightforge`，建 `api / seckill-core / common / persistence` 模块（含最小骨架代码）
+- [x] Spring Boot 3.3 启动类 + `application.yml`，`/actuator/health` 可访问（actuator 暴露 health/info/metrics）
+- [x] `docker-compose.yml` 起 MySQL 8 / Redis 7 / Kafka（含 Kafka 延时/DLQ 主题）
+- [x] 统一依赖管理（MyBatis-Plus、Redisson、Spring-Kafka、Spring-AI；Drools 入 BOM 待 Phase 9）
+- [ ] **验收**：`mvn clean package` 通过；`docker compose up` 后应用连上 MySQL/Redis/Kafka（⚠️ 本机需本地执行，沙箱无 Java/Maven）
+- [x] 已确认：JDK 21、Maven（见 plan §10 / tutorial 附录 A）
 
 ## Phase 1 — 最小秒杀主流程（M1，故意不安全）
 - [ ] 建表 `product / activity / activity_sku / orders`
@@ -67,7 +67,7 @@
 - [ ] **验收**：输入 GMV/ROI 目标 → 产出可上线 DSL + 选品定价方案
 
 ## Phase 9 — 护栏规则引擎（M4，在线确定性）
-- [ ] `rule-engine` 模块：DSL 静态编译器（Antlr/纯 Java，Fail-Close 阻断上线）
+- [ ] `rule-engine` 模块：DSL 静态编译器（JSON Schema 校验 + JSON→Drools 翻译，DroolsRuleCompiler，Fail-Close 阻断上线，见 spec §5.5）
 - [ ] 消费 `sales.tick`；条件匹配 → 输出标准化控盘指令
 - [ ] 调拨/调价走同一 Redisson 锁（0ms 超时，失败重入队 5s）；**调拨只建新段 `seg_{N+1}`**
 - [ ] 两阶段预留：`pending_stock`；补偿仅删 pending 标记

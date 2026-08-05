@@ -199,7 +199,7 @@
   - `human_gate`：人工判定边界（超 `bounds` 的重大动作转人工审批）。
 - **版本化存储**：DSL 以版本号存入 **MySQL**（如 `guardrail_policy` 表，`activity_id + version` 唯一），支持单活动多版本策略、**灰度切换、一键回滚**。
 - **热更新**：当前生效 DSL 缓存至 **Redis**；规则引擎监听配置变更事件（或定时拉取）实现**规则热更新，无需重启服务**。DSL 样例见 §13 附录。
-- **DSL 静态编译器（Fail-Close，防 LLM 幻觉/冷启动裸奔）**：`insightforge-rule-engine` **启动前（及每个 DSL 新版本发布时）**必须先过一道**静态编译器**——用 **Antlr 或纯 Java** 做语法校验 + 类型检查：引用的 `metric` 是否在预定义枚举内、运算符/阈值合法、`AND/OR` 嵌套合法、`action` 类型与 `bounds` 匹配。**编译不通过 → Fail-Close 直接阻断上线（绝不把解析异常留到运行时）**；同时 Guardrail Policy Agent 产出 DSL 后先自编译一次，失败则携带错误回 Critic 修订，最多 `maxRetry=3`。
+- **DSL 静态编译器（Fail-Close，防 LLM 幻觉/冷启动裸奔）**：`insightforge-rule-engine` **启动前（及每个 DSL 新版本发布时）**必须先过一道**静态编译器**。因 DSL 为结构化 **JSON**，第一步用**纯 Java（Jackson 反序列化 + Schema 校验）**完成语法/类型检查：引用的 `metric` 是否在预定义枚举内、运算符/阈值合法、`AND/OR` 嵌套合法、`action` 类型与 `bounds` 匹配；**校验通过后，由 `DroolsRuleCompiler` 将每条策略翻译为 Drools `when/then` 规则**（Drools 7.x `Kie` API）。**任一校验或翻译失败 → Fail-Close 直接 `System.exit(1)` 阻断上线（绝不把解析异常留到运行时）**；同时 Guardrail Policy Agent 产出 DSL 后先自编译一次，失败则携带错误回 Critic 修订，最多 `maxRetry=3`。> 选型说明：在线执行采用 **Drools**（v0.8 初稿为自研轻量引擎）；JSON DSL 形态、控制面/数据面分离与 Fail-Close 语义完全不变，仅"静态编译"由"纯 Java 校验"扩展为"JSON 校验 + JSON→Drools 翻译"。翻译层 `DroolsRuleCompiler` 隔离，未来可换回自研 matcher 而不动 DSL 与上游。
 
 ### 5.6 工具权限分级管控（三层校验，防幻觉/误复用）
 `reallocator` / `repricer` 直接操作库存与价格，仅靠 Critic 前置校验不足，建立三层防护：
@@ -311,7 +311,7 @@ specs/insightforge/             # spec.md / plan.md / tasks.md
 3. 前端：**React**（**默认推荐**，生态/类型成熟度）。Vue 亦可。
 4. 报告导出：是否要 **PDF / Word**（运营方案文档导出，M5/M6 后期可选）。
 5. 多用户：先做 **JWT 单用户**（**推荐**，最快验证主线），后期再上简单多用户。
-6. 护栏规则引擎：自研轻量 Java 规则引擎（**推荐**，可控、贴合项目）vs **Drools**（成熟但偏重）。
+6. 护栏规则引擎：**Drools**（成熟 RETE/PHREAK 推理引擎，已选）vs 自研轻量 Java 规则引擎（可控、轻量）。选型结论：采用 Drools；JSON DSL 与 Fail-Close 语义不变，仅以 `DroolsRuleCompiler`（JSON→Drools 翻译 + 校验）替换原自研静态编译，翻译层隔离可回退（详见 §5.5）。
 
 ---
 

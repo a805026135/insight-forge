@@ -19,17 +19,18 @@
 
 | 类别 | 选型 | 用途 |
 |---|---|---|
-| 语言/框架 | Java 21 + Spring Boot 3.3 + Maven | 后端主体（⚠️ 待确认：JDK 21 vs 17；Maven vs Gradle） |
+| 语言/框架 | Java 21 + Spring Boot 3.3 + Maven | 后端主体（已确认：JDK 21、Maven） |
 | 持久层 | MyBatis-Plus | ORM |
 | 关系库 | MySQL 8 | 商品/活动/订单/用户/策略 |
 | 缓存/锁/限流 | Redis 7 + Redisson | 库存缓存、分布式锁（防超卖）、限流、订单去重、价格缓存 |
 | 消息队列 | Kafka | 异步下单削峰 + 实时销量事件流（供规则引擎） |
 | 多级缓存 | Caffeine + Redis | 商品/活动配置热点 |
 | 向量库 | Milvus | Agent 长期记忆（历史策略向量化，相似复用） |
+| 规则引擎 | Drools 7.x | 护栏 DSL 在线执行（JSON→Drools 翻译 + Fail-Close，见 spec §5.5） |
 | Agent 接入 | Spring AI + DeepSeek | 模型调用 / Embedding |
 | 限流 | Nginx+Lua / Redis+Lua / Sentinel | 接入层 + 模型 + 应用层限流 |
 | 压测 | JMeter | 百万抢购验证无超卖 |
-| 前端 | React 18 + TS + Vite + Ant Design + ECharts | 商户后台 + 实时大屏（⚠️ 待确认：React vs Vue） |
+| 前端 | React 18 + TS + Vite + Ant Design + ECharts | 商户后台 + 实时大屏（已确认：React） |
 | 部署/CI | Docker Compose + GitHub Actions | 一键起 + 评估回归 |
 
 ---
@@ -65,7 +66,7 @@ docker/                         # docker-compose / Dockerfile
 - `orders`(order_id, user_id, activity_id, sku_id, qty, status, created_at)：订单（order_id = hash(userId,skuId,activityId) 保证幂等）。
 - `guardrail_policy`(id, activity_id, version, dsl_json, status, created_at)：护栏 DSL **版本化存储**（支持灰度/回滚）。
 - `audit_log`(id, activity_id, action_type, params, result, by_rule, operator, ts)：控盘动作审计。
-- `user`(id, name)：最小用户表（⚠️ 待确认：先做单用户 JWT）。
+- `user`(id, name)：最小用户表（已确认：先做单用户 JWT，鉴权骨架见 tutorial 对应 Phase）。
 
 ### 4.2 Redis Key（见 spec §13.1）
 `stock:a:{aid}:s:{sid}` / `stock:a:{aid}:s:{sid}:seg:{n}`（分段，调拨只建新段）/ `pending_stock:a:{aid}:s:{sid}`（两阶段预留）/ `price:a:{aid}:s:{sid}` / `lock:a:{aid}:s:{sid}`（细粒度）/ `order:idemp:{hash}`（SETNX）/ `guardrail:dsl:{aid}`（当前生效 DSL）/ `seckill:quota:{aid}:{uid}`（限购）。
@@ -106,7 +107,7 @@ JSON：`{activity_id, version, rules:[{id, trigger{metric,op,threshold}, conditi
 | 控制面/数据面分离 | LLM 离线生成 DSL，规则引擎在线执行 | LLM 延迟/非确定/幻觉不进热路径，AI 智能仍以确定性落地 |
 | 锁超时分级 Fail-Fast | 用户 10ms / 规则引擎 0ms+延迟重试 | Agent 策略流量绝不阻塞用户抢购 |
 | 分段只建新段 | 调拨 `SET segment_{N+1}` O(1) | 调拨不阻塞正在热卖的旧段 |
-| DSL 静态编译器 | Antlr/纯 Java 校验，Fail-Close | 防 LLM 幻觉 DSL 导致运行时裸奔 |
+| DSL 静态编译器 | JSON Schema 校验 + JSON→Drools 翻译（DroolsRuleCompiler），Fail-Close | 防 LLM 幻觉 DSL 导致运行时裸奔（Drools 已选，翻译层隔离可回退） |
 | 两阶段预留 | 先加 `pending_stock`，补偿仅删标记 | 杜绝补偿时恢复成负数超卖 |
 | 预测性调拨 | 滑动窗口线性回归算 TTL<5min 预调拨 | 被动救火→主动调度（仍无 LLM） |
 
@@ -140,14 +141,17 @@ Redis 宕机（Caffeine 兜底+DB 行锁兜底）、Milvus 不可用（降级历
 
 ---
 
-## 10. 待确认决策（⚠️）
+## 10. 已确认决策汇总（来自 tutorial 附录 A，2026-08-05 确认）
 
-1. JDK 21 vs 17；Maven vs Gradle。
-2. 前端 React vs Vue。
-3. 单用户 JWT vs 简单多用户。
-4. 护栏规则引擎：自研轻量 vs Drools。
-5. 预测性调拨 / A/B 实验是否纳入 M1–M6（建议纳入，M6 体现；预测性调拨放 M4）。
-6. 报告导出 PDF/Word 是否要（建议延后 M7+）。
-7. 范围红线：优惠券/积分/分销等一律延后 M7+（spec §1.4）。
+| # | 决策 | 结论 | 备注 |
+|---|---|---|---|
+| 1 | JDK 版本 | **Java 21** | 虚拟线程支撑高并发 I/O；17 为保守备选 |
+| 2 | 构建工具 | **Maven** | 父 POM 多模块标准范式，资料最多 |
+| 3 | 前端框架 | **React 18 + TS** | Ant Design 原生、ECharts 大屏最顺 |
+| 4 | 用户模型 | **单用户 JWT** | 鉴权骨架一次到位，多用户 M7+ 扩 |
+| 5 | 护栏规则引擎 | **Drools 7.x** | 替代初稿自研；JSON DSL + Fail-Close 不变，翻译层 `DroolsRuleCompiler` 隔离可回退（见 spec §5.5） |
+| 6 | 预测性调拨 / A/B | **纳入（M4 / M6）** | 确定性算法不进 LLM 热路径；A/B 给护栏有效性客观背书 |
+| 7 | 报告导出 PDF/Word | **延后 M7+** | 先在网页大屏看评估结果 |
+| 8 | 范围红线 | **优惠券/积分/分销延后 M7+** | 守住库存互斥核心，规避资金强一致风险 |
 
-> 下一步：确认上述决策 → 按 `tasks.md` 逐 Phase 推进，配合 `tutorial.md` 一步步实现。
+> 下一步：按 `tasks.md` 逐 Phase 推进，配合 `tutorial.md` 一步步实现。Phase 0 起。
