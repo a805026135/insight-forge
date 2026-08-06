@@ -1,0 +1,12 @@
+[
+  { "name": "美妆双11",     "activityId": 1,  "goal": "为活动1制定双11美妆场控盘预案",      "expect": "SUCCESS" },
+  { "name": "家电618",      "activityId": 2,  "goal": "为活动2制定618家电场控盘预案",       "expect": "SUCCESS" },
+  { "name": "食品年货节",   "activityId": 3,  "goal": "为活动3制定年货节食品场控盘预案",     "expect": "SUCCESS" },
+  { "name": "数码新品首发", "activityId": 4,  "goal": "为活动4制定数码新品首发控盘预案",     "expect": "SUCCESS" },
+  { "name": "母婴超品日",   "activityId": 5,  "goal": "为活动5制定母婴超品日控盘预案",       "expect": "SUCCESS" },
+  { "name": "服饰换季",     "activityId": 6,  "goal": "为活动6制定换季服饰控盘预案",         "expect": "SUCCESS" },
+  { "name": "生鲜平日",     "activityId": 7,  "goal": "为活动7制定生鲜平日控盘预案",         "expect": "SUCCESS" },
+  { "name": "图书开学季",   "activityId": 8,  "goal": "为活动8制定开学季图书控盘预案",       "expect": "SUCCESS" },
+  { "name": "运动大促",     "activityId": 9,  "goal": "为活动9制定运动品类大促控盘预案",     "expect": "SUCCESS" },
+  { "name": "酒水节",       "activityId": 10, "goal": "为活动10制定酒水品类节控盘预案",      "expect": "SUCCESS" }
+]

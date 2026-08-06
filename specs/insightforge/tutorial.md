@@ -168,7 +168,7 @@
 
 ---
 
-## Phase 8 — 多智能体离线规划（M4）
+## Phase 8 — 多智能体离线规划（M4）✅ 已落地
 
 **目标**：把运营目标变成可上线的选品/定价/库存方案 + 护栏 DSL。
 **你会做**：Planner 拆 DAG → 选品/定价/预热/风控 Agent 并行产出 → Guardrail Policy Agent 把控盘预案编译成 **DSL JSON** → DSL 自编译校验（失败回 Critic ≤3 次）→ 版本化存 `guardrail_policy`（MySQL）+ 缓存 `guardrail:dsl:{aid}`（Redis 热更新）；**评估内建**：Critic 升级为独立验证器（确定性程序→规则→模型/人工三道校验），Agent 主动 ASK/REFUSE/ESCALATE 计入正确失败率，并采集 L2 轨迹指标、建立最小 golden 评估集。
@@ -179,6 +179,8 @@
 
 **解决什么**：运营不用懂技术也能产出策略；AI 产出可被编译/灰度/回滚。
 **验证**：输入「双11 美妆场 GMV 500万」→ 产出选品清单 + 定价 + 一份可上线 DSL。
+
+✅ **本 Phase 已落地**：`planning` 包落地 Planner + 选品/定价/预热/风控 Agent（`LocalRoleAgent` 确定性桩，接口隔离可换 DeepSeek）+ `GuardrailPolicyAgent` 汇编 DSL + `DslCompiler`（两道确定性校验 Fail-Close）+ `IndependentCritic`（程序→规则→模型/人工三道、正确失败计入正确失败率）+ `GuardrailPolicyRepository`（MySQL 版本化 v1/v2 + 缓存 `guardrail:dsl:{aid}`，本地内存桩）+ `GoldenEvalHarness`（10 条 golden 正向集防回归）；L2 轨迹指标（`criticInterceptions`/`invalidSteps`/`retries` 等）已埋点。Phase 8 新增 13 测试，agent-core 累计 22、全项目累计 47 测试全绿。诚实边界：角色 Agent 本地桩（生产换 DeepSeek）、`PolicyCache` 内存桩（生产换 Redis）、Critic 第三道为本地桩、Milvus 仍桩、DSL→Drools 翻译留 Phase 9。详见 `tutorials/phase8.md`。
 
 ---
 

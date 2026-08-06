@@ -29,3 +29,8 @@ insightforge:
     # —— 版本标记（落 agent_trace，便于回归归因）——
     model-version: local-det-1.0
     prompt-version: insightforge-prompt-1.0
+    # —— 多智能体离线规划（Phase 8）——
+    planning:
+      max-retry: 3                            # DSL 自编译失败→Planner 反思重试上限（设计文档 §5.4 maxRetry=3）
+      force-invalid-policy: false             # 测试开关：true 时编排器产出「售价<成本」不合规 DSL，触发编译 Fail-Close
+      require-human-review: false             # 测试开关：true 时独立验证器第三道（模型/人工）拦截，模拟需人工复核

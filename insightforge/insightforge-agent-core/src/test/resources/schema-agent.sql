@@ -75,3 +75,13 @@ CREATE TABLE IF NOT EXISTS agent_span (
     confidence     DECIMAL(3,2),
     artifact_ref   VARCHAR(128)
 );
+
+-- Phase 8：护栏策略版本化（测试副本）
+CREATE TABLE IF NOT EXISTS guardrail_policy (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    activity_id  BIGINT,
+    version      VARCHAR(32),
+    policy_json  VARCHAR(8000),
+    created_at   DATETIME,
+    UNIQUE (activity_id, version)
+);

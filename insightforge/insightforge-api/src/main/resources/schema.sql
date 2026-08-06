@@ -84,3 +84,17 @@ CREATE TABLE IF NOT EXISTS agent_span (
     confidence     DECIMAL(3,2),
     artifact_ref   VARCHAR(128)
 );
+
+-- ============================================================
+-- Agent 控制面：护栏策略版本化（Phase 8 产出物的真相源）
+-- 每次发布一条新版本（activity_id + version 唯一）；在线规则引擎（Phase 9）读最新版编译执行。
+-- policy_json 存完整 DSL（VARCHAR(8000) 兼容 H2 与 MySQL）。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS guardrail_policy (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    activity_id  BIGINT,
+    version      VARCHAR(32),
+    policy_json  VARCHAR(8000),
+    created_at   DATETIME,
+    UNIQUE (activity_id, version)
+);

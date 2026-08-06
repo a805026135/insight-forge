@@ -68,13 +68,14 @@
 - [x] **评估内建**：L1 组件指标埋点（工具 Schema 合规率/记忆召回/模型成功率）+ Critic 结构化 verdict 框架（pass/fail + 原因）
 - [x] **验收**：9 个 agent-core 测试全绿（工具调用/Critic 拒绝→REFUSE/预算超限→ESCALATE/落库）；全项目累计 34 测试全绿。单 Agent 调工具 + 结构化产出 + Critic 拦截均验证通过
 
-## Phase 8 — 多智能体离线规划（M4）
-- [ ] Planner + 选品/定价/预热/风控 Agent；Guardrail Policy Agent 生成 DSL
-- [ ] DSL 产出后自编译校验（失败回 Critic，≤3 次）
-- [ ] DSL 版本化存入 `guardrail_policy`（MySQL）+ 缓存 `guardrail:dsl:{aid}`（Redis 热更新）
-- [ ] **评估内建**：Critic 升级为独立验证器（确定性程序→规则→模型/人工三道校验）+ 正确失败行为（ASK/REFUSE/ESCALATE 计入正确失败率）
-- [ ] **评估内建**：L2 轨迹指标采集（Critic 拦截率/重复调用/无效步骤/越权/恢复成功率）+ 最小 golden 评估集 seed
-- [ ] **验收**：输入 GMV/ROI 目标 → 产出可上线 DSL + 选品定价方案
+## Phase 8 — 多智能体离线规划（M4）✅ 已落地
+- [x] Planner + 选品/定价/预热/风控 Agent（`LocalRoleAgent` 确定性桩，接口隔离可换 DeepSeek）；`GuardrailPolicyAgent` 汇编 DSL
+- [x] DSL 自编译校验（`DslCompiler` 两道确定性校验：结构 + 业务护栏 REPRICE≥成本 / REALLOCATE≥0，Fail-Close）；不通过回 Critic 反思重试 ≤3 次
+- [x] DSL 版本化存入 `guardrail_policy`（MySQL + MyBatis-Plus，v1/v2 自增）+ 缓存 `guardrail:dsl:{aid}`（`LocalPolicyCache` 内存桩，生产换 `RedisTemplate`，接口已隔离）
+- [x] **评估内建**：Critic 升级为独立验证器 `IndependentCritic`（确定性程序→规则→模型/人工三道校验）；正确失败行为（编译不过/需人工复核 → CORRECT_FAILURE·REFUSE 计入正确失败率，绝不编造成功）
+- [x] **评估内建**：L2 轨迹指标采集（`criticInterceptions`/`invalidSteps`/`retries` 等 AtomicLong + `snapshot()`）；最小 golden 评估集 seed（10 条正向 case + `GoldenEvalHarness` 跑通防回归）
+- [x] **验收（已实跑通过）**：`mvn clean package` BUILD SUCCESS；Phase 8 新增 13 测试（DslCompilerTest 8 / GuardrailPolicyRepositoryTest 2 / MultiAgentOrchestratorTest 1 / MultiAgentOrchestratorRejectTest 1 / GoldenEvalHarnessTest 1）；agent-core 累计 22、全项目累计 47 测试全绿；输入目标 → 产出可上线 DSL（含 REPRICE+REALLOCATE+ALERT）+ 选品定价方案
+- 诚实边界：① 角色 Agent 本地确定性桩（非真 LLM），生产换 DeepSeek 实现；② `PolicyCache` 内存桩（生产换 Redis）；③ `IndependentCritic` 第三道模型/人工为本地桩（`require-human-review` 默认 false）；④ Milvus 长期记忆仍桩（Phase 7）；⑤ DSL→Drools 翻译留 Phase 9
 
 ## Phase 9 — 护栏规则引擎（M4，在线确定性）
 - [ ] `rule-engine` 模块：DSL 静态编译器（JSON Schema 校验 + JSON→Drools 翻译，DroolsRuleCompiler，Fail-Close 阻断上线，见 spec §5.5）

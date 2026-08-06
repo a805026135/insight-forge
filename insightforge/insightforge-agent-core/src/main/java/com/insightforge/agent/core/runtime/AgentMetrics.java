@@ -13,6 +13,9 @@ import java.util.concurrent.atomic.AtomicLong;
  *   - schemaViolations：参数 Schema 违规（目标 0）
  *   - criticRejections / retries：反思重试分布
  *   - successes / correctFailures / failures：终态分布（正确失败率 = correctFailures / 总结束）
+ *
+ * Phase 8 新增 L2 轨迹指标（设计文档 §3 L2）：criticInterceptions（Critic 拦截率）、
+ * invalidSteps（无效步骤率）、authorizationViolations（越权，目标 0）、recoverySuccess（恢复成功率）。
  */
 @Component
 public class AgentMetrics {
@@ -25,6 +28,12 @@ public class AgentMetrics {
     private final AtomicLong successes = new AtomicLong();
     private final AtomicLong correctFailures = new AtomicLong();
     private final AtomicLong failures = new AtomicLong();
+
+    // —— Phase 8 L2 轨迹指标 ——
+    private final AtomicLong criticInterceptions = new AtomicLong();
+    private final AtomicLong invalidSteps = new AtomicLong();
+    private final AtomicLong authorizationViolations = new AtomicLong();
+    private final AtomicLong recoverySuccess = new AtomicLong();
 
     public AtomicLong modelCalls() {
         return modelCalls;
@@ -58,6 +67,22 @@ public class AgentMetrics {
         return failures;
     }
 
+    public AtomicLong criticInterceptions() {
+        return criticInterceptions;
+    }
+
+    public AtomicLong invalidSteps() {
+        return invalidSteps;
+    }
+
+    public AtomicLong authorizationViolations() {
+        return authorizationViolations;
+    }
+
+    public AtomicLong recoverySuccess() {
+        return recoverySuccess;
+    }
+
     /** 终态计数器（便于终态分布统计）。 */
     public AtomicLong terminal(AgentRunStatus status, FailureKind kind) {
         if (status == AgentRunStatus.SUCCESS) {
@@ -84,6 +109,11 @@ public class AgentMetrics {
         long total = successes.get() + correctFailures.get() + failures.get();
         s.put("totalRuns", total);
         s.put("correctFailureRate", total == 0 ? 0 : correctFailures.get() * 100 / total);
+        // —— Phase 8 L2 轨迹指标 ——
+        s.put("criticInterceptions", criticInterceptions.get());
+        s.put("invalidSteps", invalidSteps.get());
+        s.put("authorizationViolations", authorizationViolations.get());
+        s.put("recoverySuccess", recoverySuccess.get());
         return s;
     }
 }
