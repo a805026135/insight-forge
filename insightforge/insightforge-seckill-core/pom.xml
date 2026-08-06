@@ -35,6 +35,13 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
+        <!-- Phase 5：多级缓存 L1（本地）。直接用 Caffeine API（不依赖 spring-cache 自动配置），
+             它的 Cache.get(key, loader) 原生提供「同 key 只有一个线程回源」的原子加载，
+             天然防击穿（dogpile）；local profile 下没有 Redis，L1 单独顶着读穿 + 防穿透/雪崩。 -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.kafka</groupId>
             <artifactId>spring-kafka</artifactId>

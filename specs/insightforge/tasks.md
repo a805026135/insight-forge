@@ -47,10 +47,11 @@
 - [x] **验收（已实跑）**：`mvn clean package` BUILD SUCCESS（local 零依赖，6 测试全绿：NoOversell + Idempotency + RedisLua×4）；异步快路径 P99<10ms（接口仅 Redis 扣减+发消息）；重复请求不产生重复订单
 
 ## Phase 5 — 多级缓存 + 限流（M2）
-- [ ] Caffeine + Redis 多级缓存商品/活动配置；本地缓存预热
-- [ ] 限流：Nginx+Lua 令牌桶（接入层）+ Redis+Lua 滑动窗口 + Sentinel（应用层）
-- [ ] 缓存防护：击穿（互斥锁重建+逻辑过期）、雪崩（分片+TTL 打散+Caffeine 兜底）、穿透（布隆过滤器）
-- [ ] **验收**：热点 key 失效不击穿 DB；限流触发时超额请求被拒
+- [x] 多级缓存：Caffeine(L1) + Redis(L2) 读穿（MultiLevelCache + SkuCacheService）；秒杀路径读 SKU 改走缓存
+- [x] 限流（应用层，Phase 5 核心）：Controller 入口接 Redis+Lua 滑动窗口（RateLimitService），local 下内存兜底；超限返 429
+- [x] 缓存三防：击穿（Caffeine get(key,loader) 单飞）/ 雪崩（TTL 随机抖动）/ 穿透（NULL 哨兵占位）——均落 MultiLevelCache
+- [x] **验收**：SeckillCacheTest（读穿/防穿透/失效 3 用例）+ SeckillRateLimitTest（内存窗口 + Redis Lua 2 用例）全绿；`mvn clean package` 12 测试全过
+- [ ] 接入层限流（Nginx+Lua 令牌桶）/ Sentinel 应用层 —— 属部署与运维纵深防御，M2 不做（诚实留待部署/增强章，不虚报）
 
 ## Phase 6 — 状态机 + 对账（M2）
 - [ ] 活动状态机 `DRAFT→ARMED→LIVE→SETTLING→CLOSED`（ARMED 前 MySQL-Redis 对账）

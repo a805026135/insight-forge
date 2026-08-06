@@ -47,4 +47,17 @@ public class RedisConfig {
                                                RedisScript<Long> deductScript) {
         return new RedisStockService(stringRedisTemplate, deductScript);
     }
+
+    /**
+     * 滑动窗口限流脚本 Bean（Phase 5）：装配 classpath 下的 rate_limit_sliding.lua。
+     * RateLimitService 用 ObjectProvider 拿它——local profile 下 RedisConfig 不生效、
+     * 这个 Bean 不存在，RateLimitService 自动退化成 JVM 内存版滑动窗口。
+     */
+    @Bean
+    public RedisScript<Long> rateLimitSlidingScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setLocation(new ClassPathResource("lua/rate_limit_sliding.lua"));
+        script.setResultType(Long.class);
+        return script;
+    }
 }

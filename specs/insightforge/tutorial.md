@@ -124,15 +124,16 @@
 ## Phase 5 — 多级缓存 + 限流（M2）
 
 **目标**：保护热点读、挡住恶意/超额流量。
-**你会做**：Caffeine（本地）+ Redis（分布式）两级缓存商品/活动配置；Nginx+Lua 令牌桶（接入层）+ Redis+Lua 滑动窗口（模型层）+ Sentinel（应用层）限流；缓存击穿（互斥锁重建+逻辑过期）、雪崩（分片+TTL 打散+Caffeine 兜底）、穿透（布隆过滤器）。
+**你会做**：Caffeine（本地）+ Redis（分布式）两级缓存商品/活动配置（详见 tutorials/phase5.md）；应用层接 Redis+Lua 滑动窗口限流（local 下内存兜底），超限返 429；缓存击穿（Caffeine 单飞）/ 雪崩（TTL 抖动）/ 穿透（NULL 哨兵）三防。
 
 **技术选型与目的**
 - **Caffeine + Redis 多级**：对比单级 Redis——本地缓存 μs 级、挡掉绝大多数读，Redis 扛共享；对比单级本地——本地多实例不一致、重启丢。
-- **多层限流**：接入层粗粒度（IP/总 QPS）+ 应用层细粒度（商品/用户/接口维度），纵深防御。
-- **布隆过滤器**：不存在的 `productId` 直接拦截，防穿透打 DB。
+- **滑动窗口限流（应用层）**：按 (用户,活动) 维度在 Controller 入口拦截羊毛党；Redis Lua 集群共享计数，local 退化内存版。
+- **三防**：击穿用 Caffeine `get(key,loader)` 单飞（无需额外互斥锁）；雪崩用 TTL 随机抖动；穿透用 NULL 哨兵占位（不引入布隆过滤器这座更重的设施，诚实说明取舍）。
 
-**解决什么**：热点 key 失效不击穿、Redis 挂了不雪崩、恶意遍历被穿透拦截、超额流量被限流。
-**验证**：手动让热点 key 过期 → 仅一个线程回源（互斥锁）；模拟 Redis 宕 → 本地 Caffeine 兜底读。
+**解决什么**：热点 key 失效不击穿、Redis 挂了不雪崩（local 无 Redis 时 L1 单独顶）、恶意遍历被穿透拦截、超额流量被限流。
+**验证**：SeckillCacheTest（读穿/防穿透/失效）+ SeckillRateLimitTest（内存窗口 + Redis Lua）全绿；`mvn clean package` 12 测试通过。
+> 注：Nginx+Lua 令牌桶（接入层）与 Sentinel 属部署/运维纵深防御，M2 不做，留待部署增强章（不虚报）。
 
 ---
 

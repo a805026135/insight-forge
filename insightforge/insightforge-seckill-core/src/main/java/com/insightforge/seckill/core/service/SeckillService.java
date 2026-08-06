@@ -8,6 +8,7 @@ import com.insightforge.persistence.mapper.OrdersMapper;
 import com.insightforge.seckill.core.dto.OrderCreatedEvent;
 import com.insightforge.seckill.core.dto.SeckillRequest;
 import com.insightforge.seckill.core.dto.StockInfo;
+import com.insightforge.seckill.core.cache.SkuCacheService;
 import com.insightforge.seckill.core.kafka.OrderEventProducer;
 import com.insightforge.seckill.core.redis.DeductResult;
 import com.insightforge.seckill.core.redis.RedisIdempotentService;
@@ -42,6 +43,8 @@ public class SeckillService {
 
     private final ActivitySkuMapper activitySkuMapper;
     private final OrdersMapper ordersMapper;
+    /** SKU 多级缓存（Phase 5）：高频读走 L1 Caffeine + L2 Redis，避免每次打 DB。 */
+    private final SkuCacheService skuCacheService;
     /** Redis 库存服务：用 ObjectProvider 拿，local profile 下为 null（不存在该 Bean）。 */
     private final ObjectProvider<RedisStockService> redisStockService;
     /** 幂等闸门（Redis SETNX）：仅非 local 有 Redis 时存在，local 下为 null。 */
@@ -51,11 +54,13 @@ public class SeckillService {
 
     public SeckillService(ActivitySkuMapper activitySkuMapper,
                           OrdersMapper ordersMapper,
+                          SkuCacheService skuCacheService,
                           ObjectProvider<RedisStockService> redisStockService,
                           ObjectProvider<RedisIdempotentService> idempotentService,
                           ObjectProvider<OrderEventProducer> orderEventProducer) {
         this.activitySkuMapper = activitySkuMapper;
         this.ordersMapper = ordersMapper;
+        this.skuCacheService = skuCacheService;
         this.redisStockService = redisStockService;
         this.idempotentService = idempotentService;
         this.orderEventProducer = orderEventProducer;
@@ -74,7 +79,7 @@ public class SeckillService {
      */
     @Transactional
     public ApiResult<String> seckill(SeckillRequest req) {
-        ActivitySku sku = activitySkuMapper.selectById(req.getSkuId());
+        ActivitySku sku = skuCacheService.getSku(req.getSkuId());
         if (sku == null) {
             return ApiResult.fail(404, "商品不存在");
         }
@@ -151,6 +156,8 @@ public class SeckillService {
             ordersMapper.deleteById(order.getId());
             return ApiResult.fail(409, "已售罄");
         }
+        // 库存真的变了：失效缓存，下次读取会回源到最新值（保证缓存与 DB 最终一致）
+        skuCacheService.evict(sku.getId());
         return ApiResult.ok(orderId);
     }
 
@@ -172,7 +179,9 @@ public class SeckillService {
         if (rs == null) {
             return ApiResult.fail(409, "未启用 Redis 主路径（请用 --spring.profiles.active=redis 启动）");
         }
-        ActivitySku sku = activitySkuMapper.selectById(skuId);
+        // 先失效缓存，再读最新 SKU（防预热推了旧库存）；getSku 内部会回源 DB 拿最新值
+        skuCacheService.evict(skuId);
+        ActivitySku sku = skuCacheService.getSku(skuId);
         if (sku == null) {
             return ApiResult.fail(404, "商品不存在");
         }
@@ -182,7 +191,7 @@ public class SeckillService {
 
     /** 查询某 SKU 的库存情况，便于手动验证与压测后核对。 */
     public ApiResult<StockInfo> stockInfo(Long skuId) {
-        ActivitySku sku = activitySkuMapper.selectById(skuId);
+        ActivitySku sku = skuCacheService.getSku(skuId);
         if (sku == null) {
             return ApiResult.fail(404, "商品不存在");
         }

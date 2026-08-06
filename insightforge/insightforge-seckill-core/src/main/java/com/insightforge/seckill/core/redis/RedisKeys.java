@@ -38,4 +38,9 @@ public final class RedisKeys {
     public static String guardrailDsl(long activityId) {
         return "guardrail:dsl:" + activityId;
     }
+
+    /** 滑动窗口限流：rate:limit:{bizKey}（bizKey 通常是 "u:{userId}:a:{activityId}"） */
+    public static String rateLimit(String bizKey) {
+        return "rate:limit:" + bizKey;
+    }
 }
