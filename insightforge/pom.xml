@@ -123,6 +123,16 @@
                         <parameters>true</parameters>
                     </configuration>
                 </plugin>
+                <!-- JDK 21 下 Surefire fork 虚拟机因「临时目录与工程跨盘符（不同 root）」会拒绝
+                     Manifest-JAR 中的绝对路径而崩溃；关闭该 URLClassPath 校验即可（对 Linux CI 无副作用）。 -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.2.5</version>
+                    <configuration>
+                        <argLine>-Djdk.net.URLClassPath.disableClassPathURLCheck=true</argLine>
+                    </configuration>
+                </plugin>
             </plugins>
         </pluginManagement>
     </build>

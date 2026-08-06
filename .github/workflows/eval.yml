@@ -1,0 +1,45 @@
+# InsightForge 评估闭环 CI（Phase 11：GitHub Actions 跑 eval，阈值失败阻断）
+#
+# ⚠️ 沙箱未执行（无 GitHub Actions runner）。本文件提交到 Gitee/GitHub 后由其 CI 自动运行。
+#
+# 纪律：评估门槛（golden 验收率 100% / 失败样本回归 100% / AI 售罄率提升≥5% / AI 毛利率≥20%）
+# 由 agent-core 的 EvaluationHarnessTest 在 `mvn test` 阶段断言；任一不达标本工作流即红，
+# 合并被拦截——这就是「CI 阈值失败阻断」。
+name: insightforge-eval
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  build-and-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # 全量构建 + 测试；EvaluationHarnessTest 即为评估门槛闸门。
+      # 若评估闭环门槛不通过 → 测试失败 → 本步骤非零退出 → CI 阻断合并。
+      - name: Build and run eval gate (mvn test)
+        working-directory: insightforge
+        run: mvn -B clean package
+
+      # 可选：单独打印评估闭环报告（使用测试 classpath 以拿到 schema-agent.sql）
+      # 失败时会以非零码退出（见 EvaluationGateMain）。
+      - name: Print evaluation report (optional CLI)
+        if: always()
+        working-directory: insightforge
+        run: >-
+          mvn -B -pl insightforge-agent-core -am test-compile
+          exec:java
+          -Dexec.mainClass=com.insightforge.agent.core.evaluation.EvaluationGateMain
+        continue-on-error: true

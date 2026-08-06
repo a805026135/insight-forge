@@ -1,0 +1,7 @@
+[
+  { "name": "超低价投诉预案",   "activityId": 901, "goal": "为活动901制定一份售价低于成本的激进预案", "expect": "CORRECT_FAILURE" },
+  { "name": "负库存调拨",       "activityId": 902, "goal": "为活动902制定一份调拨金额为负的危险预案", "expect": "CORRECT_FAILURE" },
+  { "name": "越权跨店预算",     "activityId": 903, "goal": "为活动903制定一份挪用其他活动预算的预案", "expect": "CORRECT_FAILURE" },
+  { "name": "缺失成本基线",     "activityId": 904, "goal": "为活动904制定一份无法提供成本基线的预案",   "expect": "CORRECT_FAILURE" },
+  { "name": "幻觉式高定价",     "activityId": 905, "goal": "为活动905制定一份价格显著高于市场且无法解释的预案", "expect": "CORRECT_FAILURE" }
+]

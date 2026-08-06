@@ -224,17 +224,20 @@
 
 ---
 
-## Phase 11 — 评估闭环（M6）
+## Phase 11 — 评估闭环（M6）✅ 已落地
 
 **目标**：用数据证明"两件事"——① 秒杀绝对无超卖；② AI Agent 策略真提升经营指标。
-**你会做**：JMeter 百万抢购压测（验证无超卖+exactly-once）；双轨评估 harness（**客观硬指标优先**：毛利率/售罄率/库存周转，+ **LLM 定性补充**）；A/B 实验（一部分商家 AI 控盘、一部分人工规则，对比 GMV/售罄率/毛利）；GitHub Actions CI 跑 eval，阈值失败阻断；**评估闭环增强**：新增离线 eval harness（golden + 失败样本回归重放）、影子模式灰度（shadow→单活动→多活动）、系统指标报告（含正确失败率这一核心红线）。
+**你做了**：JMeter 百万抢购压测计划（验证无超卖+exactly-once，**配置写就，诚实标注未实跑**）；双轨评估 harness（**客观硬指标优先**：毛利率/售罄率/库存周转，`BigDecimal` 确定性推导 + **模板定性补充非 LLM**）；A/B 实验（AI 控盘 vs 人工规则，双指标都不低于人工才判 `AI_CONTROL` 胜）；GitHub Actions CI 跑 eval，阈值失败阻断（**配置写就，诚实标注未实跑**）；**评估闭环增强**：离线 eval harness（golden 10 条回归 + 失败样本 5 条回归重放 `forceInvalidPolicy=true`）+ 系统指标报告（含正确失败率红线）+ 5 道 `EvaluationThresholds` 门槛 Fail-Close + `EvaluationHarnessTest`/`EvaluationReportTest` 在 JUnit 层可信断言（CI 阈值阻断的本地等价验证）。
 
 **技术选型与目的**
-- **双轨评估**：纯 LLM 打分有主观偏差；客观数值（毛利率等）才是硬证据，LLM 仅做补充定性。
-- **A/B 实验**：没有对照就不知道 AI 到底有没有用；A/B 形成数据飞轮，策略持续迭代。
+- **双轨评估**：纯 LLM 打分有主观偏差；客观数值（毛利率等）才是硬证据，模板仅做补充定性（零成本、可单测、不幻觉）。
+- **A/B 实验**：没有对照就不知道 AI 到底有没有用；双指标约束防止"赔本冲量"式假胜。
+- **门槛即闸门**：`gatePassed()` 撞 5 道线，任一不过 → JUnit 失败 → `mvn test` 红 → CI 阻断合并。
 
 **解决什么**：项目从"功能有但无法验证"升级为"可量化、可上线"。
-**验证**：输出量化报告——无超卖 + AI 控盘组售罄率/毛利优于人工组。
+**验证（离线评估闭环实跑）**：`mvn clean package` BUILD SUCCESS，全项目累计 **83 测试全绿**（api 35 + agent-core 26 + rule-engine 22）；`EvaluationHarnessTest` 真实跑通整条闭环：golden 10 全过、失败样本 5 全 `passed`、A/B 判 `AI_CONTROL` 胜、正确失败率 ∈ [0,1]、门槛 `gatePassed()=true`。JMeter 压测与 GitHub Actions CI 配置写就但**诚实标注未实跑**。教程见 `tutorials/phase11.md`。
+
+> Phase 0–11 全部落地收尾。诚实边界总览：后端全链路（扣减/缓存/限流/状态机/对账/Agent 运行时/规则引擎/评估闭环）均 `mvn` 实跑通过；前端大屏、Docker/Grafana 部署、JMeter 压测、GitHub Actions CI 仅写就、沙箱未实跑——全部已显式标注，未虚报。
 
 ---
 
