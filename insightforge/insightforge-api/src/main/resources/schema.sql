@@ -46,3 +46,41 @@ CREATE TABLE IF NOT EXISTS orders (
     status       VARCHAR(32),
     created_at   DATETIME
 );
+
+-- ============================================================
+-- Agent 控制面监测（Phase 7）：Trace + Span 持久化
+-- 源真相存 MySQL（离线可跑、零外部依赖）；status/kind 用 VARCHAR 兼容 H2 与 MySQL。
+-- 详见 agent-observability-evaluation.md §2。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS agent_trace (
+    trace_id         VARCHAR(64)  PRIMARY KEY,   -- = Orchestrator run id；在线规则引擎运行也透传此 id 归因
+    activity_id      BIGINT,
+    started_at       DATETIME,
+    finished_at      DATETIME,
+    status           VARCHAR(16),                -- SUCCESS / CORRECT_FAILURE / FAILED
+    failure_kind     VARCHAR(16),                -- ASK / REFUSE / ESCALATE / null
+    model_version    VARCHAR(64),
+    prompt_version   VARCHAR(64),
+    budget_tokens    INT,
+    budget_cost_usd  DECIMAL(10,4),
+    total_latency_ms BIGINT,
+    correct_failure  BOOLEAN
+);
+
+CREATE TABLE IF NOT EXISTS agent_span (
+    span_id        VARCHAR(64) PRIMARY KEY,
+    trace_id       VARCHAR(64) NOT NULL,         -- FK -> agent_trace
+    parent_span_id VARCHAR(64),
+    role           VARCHAR(32),                  -- Planner / Data / Viz / Writer / Critic / Orchestrator / Tool
+    step_name      VARCHAR(64),
+    tool_name      VARCHAR(64),
+    tool_input     VARCHAR(4000),                -- 入参 JSON（截断存储）
+    tool_output    VARCHAR(4000),                -- 出参 JSON（截断存储）
+    token_in       INT,
+    token_out      INT,
+    latency_ms     BIGINT,
+    retry_count    INT,                          -- 反思重试次数（≤3）
+    status         VARCHAR(16),                  -- OK / RETRY / FAIL
+    confidence     DECIMAL(3,2),
+    artifact_ref   VARCHAR(128)
+);

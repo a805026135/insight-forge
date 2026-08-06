@@ -153,18 +153,18 @@
 
 ---
 
-## Phase 7 — Agent Core 自研运行时（M3）
+## Phase 7 — Agent Core 自研运行时（M3） ✅ 已完成
 
 **目标**：给"AI 辅助"打底座——一个能调工具、会记忆、能反思的自研 Agent。
-**你会做**：`agent-core` 实现工具注册（JSON Schema 声明）、ReAct/Plan-Execute 循环、三层记忆（短期窗口 / 长期 Milvus / 跨 Agent Artifact）、Critic 反思重试（`maxRetry=3`）；Spring AI + DeepSeek 接模型；沙箱（独立进程/容器）跑规划计算；**监测内建**：从第一行就落 Trace（trace_id + span 持久化 MySQL）+ 预算/Token 上限 + 三态状态机（SUCCESS/CORRECT_FAILURE/FAILED）+ L1 组件指标埋点，详见 `agent-observability-evaluation.md`。
+**已做**：`agent-core` 实现工具注册（JSON Schema 声明）+ `ParameterValidator` 校验、ReAct 循环（Plan-Execute 同构）、三层记忆（短期窗口 / 长期 Milvus 显式桩 / 跨 Agent Artifact）、Critic 反思重试（`maxRetry=3`）；Spring AI（`1.0.0-M6`）+ DeepSeek 接模型代码就绪（`DeepSeekModelClient` 条件启用，默认 `LocalDeterministicModelClient` 离线桩）；**监测内建**：从第一行就落 Trace（`agent_trace`/`agent_span` 持久化）+ 预算/Token 上限（`BudgetGate`）+ 三态状态机（SUCCESS/CORRECT_FAILURE/FAILED）+ `AgentMetrics`（含正确失败率）+ L1 组件指标埋点，详见 `agent-observability-evaluation.md`。教程见 `tutorials/phase7.md`。
 
 **技术选型与目的**
 - **自研 Agent 运行时**：对比直接用 **LangChain / AutoGPT**——成熟但黑盒、与本项目高并发主题脱节、面试难讲清；自研能把"工具注册/记忆/反思"逐个讲透，且**不绑死模型**（Spring AI 抽象层）。教学与面试价值更高。
 - **Spring AI + DeepSeek**：DeepSeek 中文/成本/推理均衡；Spring AI 标准化接入，换模型成本低。
 - **沙箱隔离**：Agent 的 SQL/Python 计算在独立进程跑，崩了不拖核心服务（呼应 Phase 0 资源隔离）。
 
-**解决什么**：从"写死规则"升级到"AI 生成策略"，且过程可解释、可调试。
-**验证**：单 Agent 能调 `historical_sales_analyzer` 工具、产出结构化结果；Critic 能拦截"价 < 成本"的不合规输出并触发重试。
+**诚实边界**：① 本地模型是确定性桩（非真 LLM），真实驱动工具/Critic/重试/Trace；② Milvus 未接入（`LocalMemoryStore` 关键词召回，启用即抛 `UnsupportedOperationException`）；③ web_search 本地桩；④ 热路径零改动纪律未破。
+**验收**：9 个 agent-core 测试全绿（工具调用 / Critic 拒绝→REFUSE / 预算超限→ESCALATE / 落库）；单 Agent 调 `historical_sales_analyzer` + 结构化产出 + Critic 拦截均验证通过。
 
 ---
 

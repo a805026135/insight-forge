@@ -16,6 +16,7 @@
         <module>insightforge-persistence</module>
         <module>insightforge-seckill-core</module>
         <module>insightforge-api</module>
+        <module>insightforge-agent-core</module>
     </modules>
 
     <properties>
@@ -27,7 +28,7 @@
         <spring-boot.version>3.3.5</spring-boot.version>
         <mybatis-plus.version>3.5.11</mybatis-plus.version>
         <redisson.version>3.34.1</redisson.version>
-        <spring-ai.version>1.0.0</spring-ai.version>
+        <spring-ai.version>1.0.0-M6</spring-ai.version>
         <drools.version>9.44.0.Final</drools.version>
         <lombok.version>1.18.36</lombok.version>
     </properties>

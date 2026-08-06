@@ -1,0 +1,31 @@
+# ============================================================
+# InsightForge Agent Core 默认配置（Phase 7）
+# 这份配置在「api 模块引入 agent-core 时」也会被加载；测试用 application-test.yml 覆盖数据源部分。
+# 核心思想：默认离线可跑（DeepSeek 关闭、用本地确定性模型桩；Milvus 关闭、用本地内存记忆）。
+# 真实 DeepSeek / Milvus 通过环境变量或 profile 开启——符合「控制面可降级」纪律。
+# ============================================================
+insightforge:
+  agent:
+    # —— 模型接入（Spring AI 接 DeepSeek，OpenAI 兼容协议）——
+    deepseek:
+      enabled: false                         # 默认关闭：本地零依赖可跑；生产置 true 并配 DEEPSEEK_API_KEY
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: https://api.deepseek.com    # DeepSeek 的 OpenAI 兼容端点
+      model: deepseek-chat
+    # —— 本地确定性模型（离线桩，仅用于本地/测试跑通整条管线）——
+    local:
+      force-invalid-plan: false              # 测试开关：true 时模型故意产出「售价<成本」的不合规方案，触发 Critic 拒绝
+    # —— 记忆存储 ——
+    memory:
+      milvus-enabled: false                  # 默认关闭：用本地内存记忆；生产置 true（需 Milvus 向量库）
+    # —— 预算闸门（Harness 护栏第一道，设计文档 §1 停止条件）——
+    budget:
+      max-tokens: 20000                      # 单 run 累计 token 上限
+      max-cost-usd: 0.10                     # 单 run 成本上限（美元）
+      max-latency-ms: 30000                  # 单 run 墙钟上限（L4 离线规划延迟 P95 < 30s）
+      max-steps: 12                          # ReAct 主循环最大步数
+      max-retry: 3                           # Critic 反思重试上限（设计文档 §5.4 maxRetry=3）
+      token-price-usd-per-1k: 0.0005         # 成本折算单价（DeepSeek-chat 量级，仅估算）
+    # —— 版本标记（落 agent_trace，便于回归归因）——
+    model-version: local-det-1.0
+    prompt-version: insightforge-prompt-1.0

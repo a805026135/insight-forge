@@ -1,0 +1,31 @@
+# ============================================================
+# Agent Core 测试配置（Phase 7）：本地 H2 零依赖
+# 继承 application.yml 的 agent 配置，仅覆盖数据源 + SQL 初始化。
+# ============================================================
+spring:
+  # agent-core 是纯库模块，不需要 Web 服务器。但不幸 spring-ai 传递引入 spring-webflux，
+  # 会让 Spring Boot 误判为响应式 Web 应用并装配 WebSocketHandlerAdapter/HttpHandler 等
+  # 缺类即失败的 Bean。显式声明“非 Web 应用”从根上关闭整套 Web 上下文自动装配。
+  main:
+    web-application-type: none
+  datasource:
+    # 每个测试上下文用独立内存库（random 后缀），避免多上下文共享同一 H2 导致种子重复插入冲突
+    url: jdbc:h2:mem:agenttest_${random.int(100000,999999)};MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema-agent.sql
+      data-locations: classpath:data-agent.sql
+
+# 测试默认：本地模型 + 本地记忆（与 application.yml 一致，显式写出便于阅读）
+insightforge:
+  agent:
+    deepseek:
+      enabled: false
+    memory:
+      milvus-enabled: false
+    local:
+      force-invalid-plan: false

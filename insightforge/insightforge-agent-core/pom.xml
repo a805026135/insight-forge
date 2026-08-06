@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.insightforge</groupId>
+        <artifactId>insightforge</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>insightforge-agent-core</artifactId>
+    <name>InsightForge Agent Core</name>
+    <description>自研 Agent 运行时（Phase 7）：工具注册 / 三层记忆 / 反思重试 / 监测内建（控制面）</description>
+
+    <!--
+      Spring AI 版本覆盖：父 POM 导入的是 1.0.0-M6（与本项目 Spring Boot 3.3.5 / Spring 6.1 兼容）。
+      GA(1.0.0) 需要 Spring 6.2(Boot 3.4+)，在本项目会编译/链接失败，故此处沿用 M6。
+      仅用 Spring AI 接模型（OpenAiApi 兼容 DeepSeek），其余运行时全部自研——符合 spec「Agent 核心自研，仅用 Spring AI 接模型」。
+    -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>1.0.0-M6</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- 内部模块 -->
+        <dependency>
+            <groupId>com.insightforge</groupId>
+            <artifactId>insightforge-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.insightforge</groupId>
+            <artifactId>insightforge-persistence</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Spring Boot 基础（@Component / 配置 / 生命周期） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- ORM：复用持久层 Mapper（agent_trace / agent_span / orders / activity_sku） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.mybatis</groupId>
+            <artifactId>mybatis-spring</artifactId>
+        </dependency>
+
+        <!-- 工具参数 JSON Schema 校验（L1 组件指标：参数 Schema 合规率 100%） -->
+        <dependency>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
+            <version>1.5.6</version>
+        </dependency>
+
+        <!-- Spring AI（接 DeepSeek，OpenAI 兼容协议）；仅在 deepseek.enabled=true 时装配 Bean -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-openai</artifactId>
+        </dependency>
+
+        <!-- 运行时驱动（生产接 MySQL；测试用 H2） -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- 测试：H2 本地零依赖 + Spring Boot Test -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

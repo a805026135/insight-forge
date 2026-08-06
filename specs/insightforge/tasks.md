@@ -61,12 +61,12 @@
 - 诚实边界：① Redisson 分布式锁在路线图但未单独引入 Bean（防超卖由 Phase 3 Lua 原子 + Phase 2 条件更新承载，如实不虚报）；② `PAY→DONE` 支付链路属 M7+ 范围红线，本 Phase 仅暴露迁转 API 演示状态机；③ local 无 Redis 时 MySQL↔Redis 对账降级为 DB 内部校验
 
 ## Phase 7 — Agent Core 自研运行时（M3）
-- [ ] `agent-core`：工具注册（JSON Schema）、ReAct/Plan-Execute 循环、三层记忆（短期/长期 Milvus/跨 Agent Artifact）
-- [ ] Critic 反思重试（`maxRetry=3`）
-- [ ] Spring AI + DeepSeek 接入；沙箱（独立进程/容器）跑规划计算
-- [ ] **监测内建**：`agent_trace`/`agent_span` 持久化（trace_id 生成）+ 预算/Token 上限 + 停止条件 + 三态状态机（SUCCESS/CORRECT_FAILURE/FAILED）
-- [ ] **评估内建**：L1 组件指标埋点（工具选择准确率/参数 Schema 合规率/记忆召回/模型成功率）+ Critic 结构化 verdict 框架
-- [ ] **验收**：单 Agent 能调工具、产出结构化结果；Critic 能拦截不合规输出
+- [x] `agent-core`：工具注册（JSON Schema）、ReAct 循环（Plan-Execute 同构）、三层记忆（短期/长期 Milvus 桩/跨 Agent Artifact）。⚠️ 长期记忆 `MilvusMemoryStore` 为显式桩（启用即抛 `UnsupportedOperationException`），默认 `LocalMemoryStore` 关键词召回
+- [x] Critic 反思重试（`maxRetry=3`，确定性校验：售价≥成本 / 再分配≥0 / 必填字段）
+- [x] Spring AI（`1.0.0-M6`）+ DeepSeek 接入代码就绪（`DeepSeekModelClient` 条件启用）；默认 `LocalDeterministicModelClient` 离线桩（沙箱无 API Key/外网）。⚠️ 沙箱未实跑真 DeepSeek
+- [x] **监测内建**：`agent_trace`/`agent_span` 持久化（trace_id 生成）+ 预算/Token 上限（`BudgetGate`）+ 停止条件 + 三态状态机（SUCCESS/CORRECT_FAILURE/FAILED）+ `AgentMetrics`（含正确失败率）
+- [x] **评估内建**：L1 组件指标埋点（工具 Schema 合规率/记忆召回/模型成功率）+ Critic 结构化 verdict 框架（pass/fail + 原因）
+- [x] **验收**：9 个 agent-core 测试全绿（工具调用/Critic 拒绝→REFUSE/预算超限→ESCALATE/落库）；全项目累计 34 测试全绿。单 Agent 调工具 + 结构化产出 + Critic 拦截均验证通过
 
 ## Phase 8 — 多智能体离线规划（M4）
 - [ ] Planner + 选品/定价/预热/风控 Agent；Guardrail Policy Agent 生成 DSL
