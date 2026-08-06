@@ -1,133 +1,56 @@
-# Phase 0 教学文档：从零搭好环境与骨架（新手照做版）
+# Phase 0 — 从零搭环境 + Maven 多模块骨架（手把手版）
 
-> 这是 `tutorial.md` 里 **Phase 0** 的**保姆级详解**。即使你以前没装过 Java、没碰过命令行，只要**严格按本文顺序一步步做**，就能把整个工程跑起来、看到第一个接口返回 `pong`。
-> 配套文档：`plan.md`（方案）、`spec.md`（v0.8 设计）、`tasks.md`（勾选清单）、`glossary.md`（大白话词典，看不懂词先查这里）、`tutorial.md`（总纲）。
-
----
-
-## 0.0 先看终点：你做完这一关会得到什么
-
-一句话：**装好 3 个工具（JDK / Maven / Git）+ 1 个编辑器（IDEA），把仓库代码拉下来，编译并启动项目，最后用浏览器/命令行敲一下，看到 `pong` 和健康页 `UP`。** 数据库/缓存/消息队列这一关，本机装不了 Docker 也能过——用项目内置的 `local` 零依赖 profile（见 0.8 路径 B）即可；Docker 方案原样保留，等你迁移到能装 Docker 的机器时再用（0.8 路径 A）。
-
-完成标志（必须全部满足才算通关）：
-
-```
-✅ java -version   显示 21.x
-✅ mvn -version    显示 3.9.x 且底下写 Java 21
-✅ git --version   有版本号
-✅ docker run hello-world  出欢迎文字
-✅ docker compose ps   mysql/redis/kafka 三个都是 healthy
-✅ mvn clean package   BUILD SUCCESS
-✅ 浏览器开 http://localhost:8080/api/ping  看到 {"code":0,"data":"pong"}
-✅ 浏览器开 http://localhost:8080/actuator/health  看到 db/redis/kafka 都是 UP
-```
-
-> **大白话**：Phase 0 不写任何业务代码（代码我已经帮你写进仓库了）。你这一关只干一件事——**把"房子地基 + 水电网（数据库/缓存/消息队列）"接好，确认灯能亮**。真正的秒杀逻辑从 Phase 1 才往下加。
+> 这是**食谱式（recipe）教程**：每一步都给你「敲什么命令 → 建什么文件 → 贴完整代码（带注释）→ 做完会看到什么」。
+> 你照着从第一步敲到最后一步，就能把整个后端骨架跑起来、看到第一个接口返回 `pong`、健康页 `UP`。
+> 数据库/缓存/消息队列这一关，**本机装不了 Docker 也能过**——用项目内置的 `local` 零依赖 profile（用 H2 内存库代替 MySQL，不连 Redis/Kafka）即可；Docker 方案原样保留，等你迁移到能装 Docker 的机器时再用。
 
 ---
 
-## 0.1 你要装的 5 个东西（先认个脸）
+## 先搞懂：我们要搭什么、为什么这样搭
 
-| 工具 | 干啥用的（人话） | 必须？ |
-|---|---|---|
-| **JDK 21** | Java 程序的"发动机+编译器"，没有它所有 Java 代码都跑不起来 | 必须 |
-| **Maven 3.9.x** | "打包管理员"：按 `pom.xml` 去仓库下载依赖、编译、打包成 jar | 必须 |
-| **Git** | "代码传送带"：把你从 Gitee 上把项目拉到本地 | 必须 |
-| **Docker Desktop** | "集装箱"：一条命令拉起 MySQL/Redis/Kafka，省得你挨个装 | 必须 |
-| **IntelliJ IDEA Community** | 写 Java 的"写字台"（编辑器），以后改代码全靠它 | 强烈建议（免费） |
+整个项目是一个 **Java 后端**，未来要做「智能秒杀 + AI Agent 辅助」。但在写任何秒杀逻辑之前，得先把三样东西准备好：
 
-> 安装约定：所有工具统一装到 `D:\devtools` 下，路径**不要有中文、不要有空格**（这是新手最常见的坑，能避开就避开）。
+1. **工具链**（JDK / Maven / Git / IDEA）：没有它们，Java 代码没法编译运行。
+2. **工程骨架**（Maven 多模块）：把代码按职责拆成 `common / persistence / seckill-core / api` 四个模块。
+3. **运行验证**：让骨架能编译、能启动、第一个接口能返回 `pong`，证明"地基 + 水电网"接通了。
 
----
+> 💡 **为什么用"多模块"？**
+> 一个项目如果全塞在一个文件夹，后期会乱成一锅粥。拆模块是**职责分离**：数据库相关放 `persistence`，纯业务逻辑放 `seckill-core`，对外接口放 `api`，公共工具放 `common`。模块间通过 `pom.xml` 的 `<dependency>` 互相引用，互不污染。你后面会看到 `api` 要调用 `seckill-core` 的 Service，就必须在 `api` 的 `pom.xml` 里声明依赖——这正是模块化的代价与好处。
 
-## 0.2 第 1 步：装 JDK 21（Java 开发工具包）
+### 术语大白话（看不懂先读这里，后面不再解释）
 
-### 0.2.1 去哪下载（国内直连，不用翻墙）
-
-打开这个网址（清华大学开源镜像，国内很快）：
-
-```
-https://mirrors.tuna.tsinghua.edu.cn/Adoptium/21/jdk/x64/windows/
-```
-
-页面里会列出一堆文件。**找文件名以 `OpenJDK21U-jdk_x64_windows_hotspot_` 开头、后缀是 `.msi` 的那一个**（`.msi` 是安装版，最省事；选日期最新/版本号最大的那个，比如 `OpenJDK21U-jdk_x64_windows_hotspot_21.0.6_7.msi`）。点它下载。
-
-> 备用（若上面打不开）：华为云 `https://mirrors.huaweicloud.com/openjdk/` ；或官网 `https://adoptium.net/temurin/releases/?version=21`（官网国内可能慢）。
-
-### 0.2.2 安装
-
-1. 双击下载好的 `.msi`。
-2. 一路点 **Next**（下一步）。
-3. **安装路径这一步改一下**：默认是 `C:\Program Files\...`，建议改成 `D:\devtools\jdk21`（**纯英文、无空格**）。记住这个路径，下一步配环境变量要用。
-4. 点 **Install** 等它装完，最后 **Finish**。
-
-### 0.2.3 配环境变量（重点，新手必看）
-
-环境变量就是告诉 Windows"JDK 装在哪"，否则命令行找不到它。
-
-**图形界面操作（推荐）：**
-1. 桌面右键 **"此电脑"** → **显示更多选项** → **属性**（或直接按 `Win + Pause`）。
-2. 点左侧 **"高级系统设置"**。
-3. 弹窗右下角点 **"环境变量(N)..."**。
-4. 下半部分 **"系统变量"** 区域，点 **"新建(W)..."**：
-   - 变量名：`JAVA_HOME`
-   - 变量值：`D:\devtools\jdk21`（填你 0.2.2 实际装的路径）
-   - 确定。
-5. 在"系统变量"里找到已经存在的 **Path**，双击它 → 点 **"新建"** → 输入 `%JAVA_HOME%\bin` → 一路确定。
-6. **关键**：关掉所有已打开的命令行窗口，重新开一个，让新变量生效。
-
-> 命令行备选（如果你习惯敲命令）：以管理员身份开 PowerShell，执行
-> `setx JAVA_HOME "D:\devtools\jdk21" /M` 然后 `setx PATH "%PATH%;%JAVA_HOME%\bin" /M`
-> 同样要重开终端。
-
-### 0.2.4 ✅ 验证
-
-重新打开一个 **命令提示符（CMD）** 或 **PowerShell**，敲：
-
-```bash
-java -version
-```
-
-看到类似下面就算成功（版本号 21 开头即可）：
-
-```
-openjdk version "21.0.6" 2025-01-21
-OpenJDK Runtime Environment Temurin-21.0.6+7 (build 21.0.6+7)
-OpenJDK 64-Bit Server VM Temurin-21.0.6+7 (build 21.0.6+7, mixed mode)
-```
-
-❌ 如果提示 **"java 不是内部或外部命令"**：说明 Path 没配好，或没重开终端。回去检查 0.2.3。
+- **JDK**：Java 的"发动机 + 编译器"，没有它所有 Java 代码都跑不起来。
+- **Maven**："打包管理员"。按 `pom.xml` 去仓库下载依赖、编译、打包成 `jar`。
+- **Git**："代码传送带"，把项目从 Gitee 拉到本地 / 把改动推上去。
+- **模块（module）**：一个独立的代码包，有自己的 `pom.xml` 和源码目录；多个模块组成一个大工程。
+- **依赖（dependency）**：A 模块要用 B 模块的代码，就在 A 的 `pom.xml` 里声明"我依赖 B"。
+- **Profile（Spring 的）**：同一份代码在不同环境用不同配置。本项目 `local` = 用 H2 内存库、不连 Redis/Kafka（零依赖）；默认 = 连真实的 MySQL/Redis/Kafka。
+- **Actuator / 健康检查**：Spring 提供的"体检端点"，访问 `/actuator/health` 看 `UP/DOWN`。
+- **H2**：一个纯 Java 的内存数据库，不用安装，启动即建库，关掉即消失——非常适合本地零依赖跑通。
 
 ---
 
-## 0.3 第 2 步：装 Maven 3.9.x（构建工具）
+## 第 0 步：准备工具（装一次，永久受益）
 
-### 0.3.1 去哪下载（国内直连）
+> 📖 **为什么先装工具？** 这些是地基。装好并配好环境变量后，后面所有命令（`java / mvn / git`）才能在任意目录直接敲。
+> 安装约定：所有工具统一装到 `D:\devtools` 下，路径**不要有中文、不要有空格**（新手最常见坑）。
 
-打开清华大学 Apache 镜像目录：
+### 0.1 装 JDK 21
 
-```
-https://mirrors.tuna.tsinghua.edu.cn/apache/maven/maven-3/
-```
+1. 打开清华大学开源镜像（国内直连）：`https://mirrors.tuna.tsinghua.edu.cn/Adoptium/21/jdk/x64/windows/`
+2. 下载文件名以 `OpenJDK21U-jdk_x64_windows_hotspot_` 开头、后缀 `.msi` 的那个（最新版本即可）。
+3. 双击安装，**安装路径改成 `D:\devtools\jdk21`**（纯英文、无空格），一路 Next 到 Finish。
+4. 配环境变量：桌面右键"此电脑" → 属性 → 高级系统设置 → 环境变量 → 系统变量里**新建** `JAVA_HOME = D:\devtools\jdk21`；再在 `Path` 里**新建** `%JAVA_HOME%\bin`。
+5. **关掉所有命令行窗口重开**，敲 `java -version`，看到 `21.x` 即成功。
 
-点进去找一个 `3.9.x` 文件夹（比如 `3.9.9/` 或更新的 `3.9.16/`），再进里面的 `binaries/`，下载 **`apache-maven-3.9.x-bin.zip`**（`x` 取最新那个）。
+> 🧠 **理解一下**：环境变量就是告诉 Windows"JDK 装在哪"。`%JAVA_HOME%\bin` 加进 `Path` 后，你在任何目录敲 `java`，系统都知道去 `D:\devtools\jdk21\bin` 找它。没配或没重开终端，就会报"java 不是内部命令"。
 
-> Maven 不用安装，是个压缩包，解压即用。
+### 0.2 装 Maven 3.9.x
 
-### 0.3.2 解压 + 配环境变量
-
-1. 把 `apache-maven-3.9.x-bin.zip` 解压到 `D:\devtools\`，会得到 `D:\devtools\apache-maven-3.9.x`。
-2. 和 JDK 一样配环境变量：
-   - 新建系统变量 `MAVEN_HOME` = `D:\devtools\apache-maven-3.9.x`
-   - 在 `Path` 里新建 `%MAVEN_HOME%\bin`
-3. 重开终端。
-
-### 0.3.3 ⚠️ 必做：配置阿里云镜像（否则依赖下不动）
-
-Maven 编译时要从网上下几百 MB 的依赖包。默认走国外服务器，国内会非常慢甚至失败。**必须**先配国内镜像：
-
-1. 打开文件夹 `C:\Users\你的用户名\.m2\`（没有就新建）。
-2. 在里面新建文件 `settings.xml`，内容如下（直接整段复制）：
+1. 打开 `https://mirrors.tuna.tsinghua.edu.cn/apache/maven/maven-3/`，进 `3.9.x` 最新目录的 `binaries/`，下载 `apache-maven-3.9.x-bin.zip`。
+2. 解压到 `D:\devtools\`，得到 `D:\devtools\apache-maven-3.9.x`。
+3. 配环境变量：新建 `MAVEN_HOME = D:\devtools\apache-maven-3.9.x`，`Path` 里加 `%MAVEN_HOME%\bin`。重开终端。
+4. **必做**：配置阿里云镜像，否则依赖下不动。打开 `C:\Users\你的用户名\.m2\`，新建 `settings.xml`：
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -143,268 +66,885 @@ Maven 编译时要从网上下几百 MB 的依赖包。默认走国外服务器�
 </settings>
 ```
 
-> 这一步做过一次，以后所有 Maven 项目都受益。
+5. 重开终端敲 `mvn -version`，看到 `3.9.x` 且 `Java version: 21` 即成功。
 
-### 0.3.4 ✅ 验证
+> 🧠 **理解一下**：Maven 编译时要从网上下几百 MB 依赖包。默认走国外服务器国内极慢，阿里云镜像是"国内加速中转站"。这一步只做一次，以后所有 Maven 项目都受益。
 
-重开终端敲：
+### 0.3 装 Git
 
-```bash
-mvn -version
-```
+1. `https://registry.npmmirror.com/-/binary/git-for-windows/` 进最新版本目录，下载 `Git-2.XX.X-64-bit.exe`。
+2. 双击一路 Next（默认选项对新手最友好）。
+3. 验证：重开终端敲 `git --version`，有版本号即成功。
 
-看到类似下面（注意最后一行 Runtime 是 21）即成功：
+### 0.4 装 IntelliJ IDEA（写代码的"写字台"，强烈建议）
 
-```
-Apache Maven 3.9.9 (...)
-Maven home: D:\devtools\apache-maven-3.9.9
-Java version: 21.0.6, vendor: Eclipse Adoptium, runtime: D:\devtools\jdk21
-```
+1. `https://www.jetbrains.com/idea/download/` 选 **Community（社区版，免费）** 下载。
+2. 安装后首次启动，点 **Open**，选中工程根目录 `D:\Java\insightforge`（里面有 `pom.xml`）。IDEA 会自动识别 Maven 工程并下载依赖（首次稍慢）。
+3. 配置 SDK：`File → Project Structure → Project`，SDK 设为 JDK 21（没有就 `Add SDK → JDK` 指向 `D:\devtools\jdk21`）。
 
-❌ 若显示 `Java version: 17` 或更低：说明 `JAVA_HOME` 指向了旧 JDK，回去改 0.2.3。
-❌ 若 `mvn` 不是内部命令：Path 没配好或没重开终端。
+### 0.5 Docker（可选 / 预留，本机装不了就跳过）
 
----
-
-## 0.4 第 3 步：装 Git（拉代码用）
-
-### 0.4.1 去哪下载（国内直连）
-
-打开 npmmirror 的 git-for-windows 目录：
-
-```
-https://registry.npmmirror.com/-/binary/git-for-windows/
-```
-
-点进最新的版本文件夹（如 `v2.47.0.windows.1/`），下载 **`Git-2.XX.X-64-bit.exe`**（64 位安装包）。
-
-> 备用：官网 `https://git-scm.com/download/win`。
-
-### 0.4.2 安装
-
-双击 `.exe`，**一路 Next** 即可（默认选项对新手最友好，包括"添加到右键菜单""用 Vim 作默认编辑器"都无妨）。
-
-### 0.4.3 ✅ 验证
-
-重开终端敲：
-
-```bash
-git --version
-```
-
-看到 `git version 2.XX.X.windows.1` 即成功。
+> ⚠️ **你的开发机装不了 Docker？先跳过这一节，照常往下做。** Phase 0 脚手架现在就能用「本地零依赖启动」（见第 7 步路径 B）验证跑通；`docker-compose.yml` 原样保留，等你迁移到**能装 Docker 的机器**时再启用。
+> 下载：`https://www.docker.com/products/docker-desktop/`。装完启动 Desktop，命令行敲 `docker run --rm hello-world` 看到欢迎文字即成功。
 
 ---
 
-## 0.5 第 4 步：装 Docker Desktop（一键起依赖，可选 / 预留）
+## 第 1 步：建工程根目录 + 父 POM（统一版本的中枢）
 
-> ⚠️ **你的开发机装不了 Docker？先跳过这一节，照常往下做。** Phase 0 脚手架现在就能用「本地零依赖启动」（见 0.8 路径 B）或「原生装 MySQL/Redis/Kafka」（路径 C）验证跑通；Docker 这套 `docker-compose.yml` 我原样保留，等你迁移到**能装 Docker 的机器**时再启用（见 0.8 路径 A）。三种办法任选其一，不用全做。
+> 📖 **概念：父 POM 是"版本目录"。**
+> 一个多模块工程必须有个"总管"——父 `pom.xml`。它干两件关键事：① 用 `<modules>` 声明有哪些子模块；② 用 `<dependencyManagement>` 把所有依赖的**版本集中声明一次**。子模块要用依赖时只写 `groupId:artifactId`、**不写版本号**。好处：绝不会出现"A 模块用 Redisson 3.30、B 模块用 3.28 导致冲突"。
 
-### 0.5.1 去哪下载
-
-主选（官方，国内一般能下，只是稍慢）：
-
-```
-https://www.docker.com/products/docker-desktop/
-```
-
-点 **"Download for Windows"**。
-
-> 若官方下不动，可用 DaoCloud 镜像入口：`https://get.daocloud.io/`（页面里找 Docker Desktop 下载）。
-
-### 0.5.2 安装
-
-1. 双击安装包，勾选 **"Use WSL 2 instead of Hyper-V"**（用 WSL 2 后端，推荐）和 **"Add shortcut to desktop"**，然后 **OK → Install**。
-2. 装完启动 Docker Desktop。第一次启动会初始化 WSL 2，可能要等一两分钟。
-3. 看到窗口右上角鲸鱼图标变绿、状态显示 **"Docker Desktop is running"** 就ok了。
-4. **重启一次电脑**（WSL 2 有时要重启才完全就绪，能避开很多玄学报错）。
-
-> 系统要求：Windows 10/11 专业版或家庭版均可（家庭版会自动装 WSL 2）。若提示"WSL 2 未安装"，按 Docker 弹窗里的链接装一下 WSL 即可。
-
-### 0.5.3 ✅ 验证
-
-重开终端敲：
+### 1.1 建工程根目录
 
 ```bash
-docker --version
-docker compose version
-docker run --rm hello-world
+# 你的工作目录（按自己情况改，本教程约定根在 D:\Java）
+mkdir -p D:\Java\insightforge
+cd D:\Java\insightforge
 ```
 
-最后一条如果看到一段欢迎文字（"Hello from Docker!"），说明 Docker 真正能跑容器了。
+### 1.2 父 pom.xml（完整代码 + 注释）
 
-❌ 若 `docker run` 报错说"守护进程未启动"：Docker Desktop 没运行，去任务栏把它打开。
+> 文件： `D:\Java\insightforge\pom.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- 父工程的坐标：groupId 公司/组织反写，artifactId 工程名，version 版本 -->
+    <groupId>com.insightforge</groupId>
+    <artifactId>insightforge</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>   <!-- 父工程必须 packaging=pom，它本身不打 jar -->
+    <name>InsightForge</name>
+    <description>智析 · 智能秒杀/大促平台（Agent 辅助）— 多模块后端</description>
+
+    <!-- ① 声明四个子模块：Maven 编译时会按依赖顺序依次构建它们 -->
+    <modules>
+        <module>insightforge-common</module>
+        <module>insightforge-persistence</module>
+        <module>insightforge-seckill-core</module>
+        <module>insightforge-api</module>
+    </modules>
+
+    <!-- ② 统一属性：版本号集中在这里，子模块引用 ${...} 即可 -->
+    <properties>
+        <maven.compiler.release>21</maven.compiler.release>   <!-- 用 Java 21 编译 -->
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <java.version>21</java.version>
+
+        <!-- 统一依赖版本（详见 plan.md） -->
+        <spring-boot.version>3.3.5</spring-boot.version>
+        <mybatis-plus.version>3.5.11</mybatis-plus.version>
+        <redisson.version>3.34.1</redisson.version>
+        <spring-ai.version>1.0.0</spring-ai.version>
+        <drools.version>9.44.0.Final</drools.version>
+        <lombok.version>1.18.36</lombok.version>
+    </properties>
+
+    <!-- ③ 版本目录：子模块写依赖时不写版本，版本以这里为准 -->
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Boot BOM：一次性管理 web/actuator/data-redis/kafka/mysql 等 -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- MyBatis-Plus：ORM 框架（实体 ↔ 数据库表） -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-boot-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+
+            <!-- mybatis-spring 3.0.4：修复与 Spring 6.1 的 factoryBeanObjectType 类型不兼容
+                 （mybatis-plus 3.5.x 默认带 3.0.3，会在注册 Mapper 时抛异常，详见附录排查） -->
+            <dependency>
+                <groupId>org.mybatis</groupId>
+                <artifactId>mybatis-spring</artifactId>
+                <version>3.0.4</version>
+            </dependency>
+
+            <!-- Redisson：分布式锁 + 限流（防超卖心脏，Phase 3 起大量使用） -->
+            <dependency>
+                <groupId>org.redisson</groupId>
+                <artifactId>redisson-spring-boot-starter</artifactId>
+                <version>${redisson.version}</version>
+            </dependency>
+
+            <!-- Spring AI BOM：Phase 7+ Agent 接入（DeepSeek / Embedding） -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Drools BOM：Phase 9 护栏规则引擎（已选定 Drools，见 spec §5.5） -->
+            <dependency>
+                <groupId>org.drools</groupId>
+                <artifactId>drools-bom</artifactId>
+                <version>${drools.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Lombok：编译期自动生成 getter/setter，省掉样板代码 -->
+            <dependency>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+                <scope>provided</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <!-- 直接依赖：这里声明的，会传递给所有子模块 -->
+    <dependencies>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <!-- Spring Boot 打包插件：把应用打成可执行 fat jar（api 模块用） -->
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>${spring-boot.version}</version>
+                </plugin>
+                <!-- 启用 -parameters：保留方法参数名，避免 @PathVariable 因反射拿不到参数名而 500 -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.13.0</version>
+                    <configuration>
+                        <parameters>true</parameters>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>
+```
+
+> 🧠 **理解一下**：这份父 POM 自己不打包（`packaging=pom`），它只是"总管"。`<modules>` 告诉 Maven："我有四个小弟，按依赖顺序构建。" `<dependencyManagement>` 是"版本目录"——子模块写 `spring-boot-starter-web` 时不写版本，Maven 自动来这里查。这样全工程版本统一，杜绝冲突。
+
+**这一步做完**：工程有了"总管"，但四个子模块还没建。接下来逐个建。
 
 ---
 
-## 0.6 第 5 步：装 IntelliJ IDEA（写代码的"写字台"，强烈建议）
+## 第 2 步：建 common 模块（统一返回体）
 
-以后 Phase 1 起你要亲手改 Java 代码，没有编辑器会很痛苦。IDEA 社区版**免费**且够用。
+> 📖 **概念：统一返回体让前端好处理。**
+> 所有接口都返回同一格式 `{code, message, data}`：`code=0` 成功，非 0 出错，`data` 是真正的数据。前端不用每个接口猜返回长啥样。这个放 `common` 模块，因为所有模块都可能要返回数据。
 
-### 0.6.1 去哪下载
+### 2.1 建目录 + 建 pom.xml
 
+```bash
+mkdir -p insightforge-common/src/main/java/com/insightforge/common/result
 ```
-https://www.jetbrains.com/idea/download/?section=windows
+
+> 文件： `insightforge-common/pom.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <!-- 子模块必须声明 parent，指回父工程的坐标（版本要一致） -->
+    <parent>
+        <groupId>com.insightforge</groupId>
+        <artifactId>insightforge</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>insightforge-common</artifactId>
+    <name>InsightForge Common</name>
+    <description>公共模块：统一返回体、工具、异常等</description>
+
+    <dependencies>
+        <!-- 用 Lombok 生成 getter/setter；版本由父 POM 管理，这里不写 -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+    </dependencies>
+</project>
 ```
 
-选 **"Community"（社区版，免费）** 的 Download。
+### 2.2 ApiResult.java（统一返回体）
 
-### 0.6.2 安装 + 导入项目
+> 文件： `insightforge-common/src/main/java/com/insightforge/common/result/ApiResult.java`
 
-1. 双击安装，一路 Next（可勾选"创建桌面快捷方式""关联 .java 文件"）。
-2. 首次启动选 **"New Project" 先跳过**，进入主界面后点 **"Open"**，选中文件夹 `D:\Java\insightforge`（就是你后面 clone 下来的工程根目录，里面有 `pom.xml`）。
-3. IDEA 会自动识别 Maven 工程。等右下角"正在导入 Maven 项目"转完（首次会下载依赖，稍慢）。
-4. 配置 SDK：菜单 **File → Project Structure → Project**，把 **SDK** 设为你的 JDK 21（若列表没有，点"Add SDK → JDK"指向 `D:\devtools\jdk21`）。
-5. 配置 Maven：菜单 **File → Settings → Build → Build Tools → Maven**，确认 **Maven home path** 指向 `D:\devtools\apache-maven-3.9.x`，**User settings file** 指向你 0.3.3 配的 `C:\Users\你的用户名\.m2\settings.xml`。
+```java
+package com.insightforge.common.result;
 
-> 不必现在就跑项目，只是先把"写字台"准备好。真正启动项目在 0.10。
+import lombok.Data;
+import java.io.Serializable;
+
+/**
+ * 统一 API 返回体（教学骨架，Phase 0）。
+ * code=0 表示成功；非 0 表示业务/错误码。
+ */
+@Data                                    // Lombok：自动生成 getter/setter/toString
+public class ApiResult<T> implements Serializable {
+
+    private int code;                    // 0=成功，非0=失败（如 404/409）
+    private String message;              // 提示信息
+    private T data;                      // 真正的业务数据（泛型，什么类型都装）
+
+    /** 成功时调用：code=0, message="ok" */
+    public static <T> ApiResult<T> ok(T data) {
+        ApiResult<T> r = new ApiResult<>();
+        r.setCode(0);
+        r.setMessage("ok");
+        r.setData(data);
+        return r;
+    }
+
+    /** 失败时调用：只给 code 和 message，data 为 null */
+    public static <T> ApiResult<T> fail(int code, String message) {
+        ApiResult<T> r = new ApiResult<>();
+        r.setCode(code);
+        r.setMessage(message);
+        return r;
+    }
+}
+```
+
+> 🧠 **理解一下**：`@Data` 是 Lombok 注解，编译时自动帮你生成 `getCode()/setCode()` 等样板代码，你不用手写。`<T>` 是泛型——`ApiResult<String>` 装字符串，`ApiResult<StockInfo>` 装库存对象。两个静态工厂方法 `ok()/fail()` 让调用处写起来很干净：`return ApiResult.ok("pong")`。
 
 ---
 
-## 0.7 第 6 步：把代码拉到本地
+## 第 3 步：建 persistence 模块（ORM 底座）
 
-1. 打开终端，**先建好工作目录**（如果还没有）：
+> 📖 **概念：持久层管"数据库"。**
+> 这个模块负责把 Java 对象和数据库表互相转换（ORM）。它提供：实体基类（自带主键）、MyBatis-Plus 配置。后续 Phase 的表实体和 Mapper 都放这里。
 
-```bash
-mkdir D:\Java
-cd D:\Java
-```
-
-2. 克隆仓库（代码都在 Gitee 上）：
+### 3.1 建目录 + 建 pom.xml
 
 ```bash
-git clone https://gitee.com/paper-umbrella/insight-forge.git .
+mkdir -p insightforge-persistence/src/main/java/com/insightforge/persistence/entity
+mkdir -p insightforge-persistence/src/main/java/com/insightforge/persistence/config
 ```
 
-> 注意末尾的 `.` 表示"克隆到当前目录 D:\Java"。如果 D:\Java 里已经有文件会报错，那就先 `cd D:\Java` 后 `git clone https://gitee.com/paper-umbrella/insight-forge.git insightforge` 拉到子文件夹也行——但本教程约定代码在 `D:\Java` 根下，建议用第一种。
+> 文件： `insightforge-persistence/pom.xml`
 
-3. 克隆完，目录应长这样（节选）：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.insightforge</groupId>
+        <artifactId>insightforge</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>insightforge-persistence</artifactId>
+    <name>InsightForge Persistence</name>
+    <description>持久层：MyBatis-Plus + MySQL（实体、仓储、配置）</description>
 
+    <dependencies>
+        <!-- 依赖 common：用它的 ApiResult（虽然 persistence 现在还用不到，先连上） -->
+        <dependency>
+            <groupId>com.insightforge</groupId>
+            <artifactId>insightforge-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- MyBatis-Plus 起步依赖（含自动配置） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-boot-starter</artifactId>
+        </dependency>
+        <!-- 显式锁定 mybatis-spring 3.0.4（修复 Spring 6.1 的 factoryBeanObjectType 不兼容） -->
+        <dependency>
+            <groupId>org.mybatis</groupId>
+            <artifactId>mybatis-spring</artifactId>
+        </dependency>
+        <!-- MySQL 驱动：运行时才需要，编译不依赖 -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+    </dependencies>
+</project>
 ```
-D:\Java\
-├── insightforge\          ← 后端工程（多模块）
-│   ├── pom.xml
-│   ├── insightforge-common\
-│   ├── insightforge-persistence\
-│   ├── insightforge-seckill-core\
-│   └── insightforge-api\
-├── docker\
-│   └── docker-compose.yml
-└── specs\insightforge\    ← 文档（含本文件 tutorials/）
+
+### 3.2 BaseEntity.java（实体基类，自带主键 id）
+
+> 文件： `insightforge-persistence/src/main/java/com/insightforge/persistence/entity/BaseEntity.java`
+
+```java
+package com.insightforge.persistence.entity;
+
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import lombok.Data;
+
+import java.io.Serializable;
+
+/**
+ * 实体基类（Phase 0 已建）。
+ * 所有业务表实体都继承它，白嫖一个自增主键 id。
+ */
+@Data                                   // Lombok：自动生成 getter/setter/toString 等
+public abstract class BaseEntity implements Serializable {
+
+    @TableId(type = IdType.AUTO)        // 告诉 MyBatis-Plus：id 由数据库自增
+    private Long id;
+}
 ```
 
-✅ 看到 `insightforge` 和 `docker` 两个文件夹即成功。
+> 🧠 **理解一下**：`abstract` 表示它自己不被实例化，只作为父类被继承。`@TableId(type = AUTO)` 表示主键由数据库自增——你插入时不设 id，数据库自己填。所有实体继承它，每张表都有 `id` 字段，不用重复写。
+
+### 3.3 MybatisPlusConfig.java（MP 配置）
+
+> 文件： `insightforge-persistence/src/main/java/com/insightforge/persistence/config/MybatisPlusConfig.java`
+
+```java
+package com.insightforge.persistence.config;
+
+import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+/**
+ * MyBatis-Plus 配置（Phase 0 基础配置）。
+ * 本 Phase 还没有分页查询，故先注册 MybatisPlusInterceptor 占位；
+ * 后续 Phase 做分页列表时，再 addInnerInterceptor 一个分页拦截器。
+ */
+@Configuration                            // 标记为 Spring 配置类，容器启动会加载它
+public class MybatisPlusConfig {
+
+    @Bean                                // 把拦截器交给 Spring 容器管理
+    public MybatisPlusInterceptor mybatisPlusInterceptor() {
+        return new MybatisPlusInterceptor();
+    }
+}
+```
+
+> 🧠 **理解一下**：`@Configuration` + `@Bean` 是 Spring 里"把一个对象交给容器管理"的标准写法。后面所有模块启动时，`MybatisPlusInterceptor` 就存在于容器里，MP 才能正常工作。现在它还是空的"占位"，等以后加分页功能再填内容。
 
 ---
 
-## 0.8 第 7 步：拉起三个中间件（MySQL / Redis / Kafka）—— 三种办法，选你能用的
+## 第 4 步：建 seckill-core 模块（Redis / Kafka 规范）
 
-这几个就是项目的"数据库 / 缓存 / 消息队列"。**有三种办法起它们，你按自己机器情况选一种即可，不用全做：**
+> 📖 **概念：这是"高并发引擎"的栖息处。**
+> 秒杀的命根子是并发与互斥。本项目用 Redis（缓存 + 分布式锁 + Lua 原子扣减）和 Kafka（削峰异步）。这些 Key 怎么命名、Topic 叫什么，如果散落各处容易拼错。所以现在先建两个"规范类"集中管理——**提前把命名约定定死，后面省大麻烦**。
 
-- **路径 A（Docker，预留）**：迁移到能装 Docker 的机器时用，一条 `docker compose up -d` 拉起全部。本机装不了 Docker 就跳过。
-- **路径 B（本地零依赖，现在就用 ✅ 已验证）**：不装任何中间件，用项目内置的 `local` 启动 profile（自动用 H2 内存库代替 MySQL，不连 Redis/Kafka），直接把脚手架跑起来验证。最简单，推荐先走这条确认"项目能跑"。
-- **路径 C（原生安装，贴近真实）**：本机不想装 Docker、但又想用真实的 MySQL/Redis/Kafka，就各自装 Windows 原生版（下面给国内镜像），`application.yml` 的 `localhost` 配置对原生和 Docker 通用。
-
-### 路径 A：Docker（预留 / 迁移到可装 Docker 的机器时用）
+### 4.1 建目录 + 建 pom.xml
 
 ```bash
-cd D:\Java\docker
-docker compose up -d
+mkdir -p insightforge-seckill-core/src/main/java/com/insightforge/seckill/core/redis
+mkdir -p insightforge-seckill-core/src/main/java/com/insightforge/seckill/core/kafka
 ```
 
-首次会**下载镜像**（MySQL/Redis/Kafka 几个镜像加起来约 1GB，耐心等几分钟）。下载完看状态：
+> 文件： `insightforge-seckill-core/pom.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.insightforge</groupId>
+        <artifactId>insightforge</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>insightforge-seckill-core</artifactId>
+    <name>InsightForge Seckill Core</name>
+    <description>★高并发引擎：Redis Key 规范、Redisson 锁、Kafka 主题</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.insightforge</groupId>
+            <artifactId>insightforge-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Phase 1 起：秒杀服务需要访问持久层实体与 Mapper -->
+        <dependency>
+            <groupId>com.insightforge</groupId>
+            <artifactId>insightforge-persistence</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Redisson：分布式锁 + 限流（Phase 3 起大量使用） -->
+        <dependency>
+            <groupId>org.redisson</groupId>
+            <artifactId>redisson-spring-boot-starter</artifactId>
+        </dependency>
+        <!-- Kafka：削峰异步（Phase 4 起大量使用） -->
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+    </dependencies>
+</project>
+```
+
+### 4.2 RedisKeys.java（Redis Key 命名规范）
+
+> 文件： `insightforge-seckill-core/src/main/java/com/insightforge/seckill/core/redis/RedisKeys.java`
+
+```java
+package com.insightforge.seckill.core.redis;
+
+/**
+ * Redis Key 命名规范（与 spec §13.1 对齐）。
+ * 集中管理 key 拼装，避免散落各处拼错；后续 Phase 的 Lua 扣减 / 分段 / pending 均复用此处。
+ */
+public final class RedisKeys {           // final + 私有构造：纯工具类，不允许实例化
+
+    private RedisKeys() {
+    }
+
+    /** 主库存：stock:a:{aid}:s:{sid} */
+    public static String stock(long activityId, long skuId) {
+        return "stock:a:" + activityId + ":s:" + skuId;
+    }
+
+    /** 分段库存：stock:a:{aid}:s:{sid}:seg:{n}（调拨只建新段 seg_{N+1}） */
+    public static String stockSegment(long activityId, long skuId, int seg) {
+        return stock(activityId, skuId) + ":seg:" + seg;
+    }
+
+    /** 两阶段预留：pending_stock:a:{aid}:s:{sid} */
+    public static String pendingStock(long activityId, long skuId) {
+        return "pending_stock:a:" + activityId + ":s:" + skuId;
+    }
+
+    /** 细粒度锁：lock:a:{aid}:s:{sid}（用户 10ms / 规则引擎 0ms，见 spec §3.1） */
+    public static String lock(long activityId, long skuId) {
+        return "lock:a:" + activityId + ":s:" + skuId;
+    }
+
+    /** 订单幂等：order:idemp:{hash}（SETNX 去重，exactly-once） */
+    public static String orderIdempotent(String hash) {
+        return "order:idemp:" + hash;
+    }
+
+    /** 当前生效 DSL：guardrail:dsl:{aid}（Redis 热更新） */
+    public static String guardrailDsl(long activityId) {
+        return "guardrail:dsl:" + activityId;
+    }
+}
+```
+
+> 🧠 **理解一下**：这是"命名约定字典"。比如主库存的 Redis key 统一叫 `stock:a:1:s:1`。以后任何地方要操作库存，都调 `RedisKeys.stock(1,1)`，绝不会有人手滑拼成 `stock_1_1` 导致读不到。这种"集中规范"在大型项目里很重要。
+
+### 4.3 KafkaTopicConfig.java（Kafka 主题声明）
+
+> 文件： `insightforge-seckill-core/src/main/java/com/insightforge/seckill/core/kafka/KafkaTopicConfig.java`
+
+```java
+package com.insightforge.seckill.core.kafka;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.config.TopicBuilder;
+
+/**
+ * Kafka 主题声明（Phase 0 建 Topic；Broker 可达时由 Spring 自动创建）。
+ * 命名与 plan.md §4.3 / spec §13 对齐；guardrail.action.failed 为 DLQ（死信队列）。
+ */
+@Configuration
+public class KafkaTopicConfig {
+
+    public static final String ORDER_CREATED = "order.created";            // 订单创建事件
+    public static final String SALES_TICK = "sales.tick";                  // 销量心跳（流计算）
+    public static final String GUARDRAIL_ACTION = "guardrail.action";      // 护栏动作下发
+    public static final String GUARDRAIL_ACTION_FAILED = "guardrail.action.failed"; // 失败动作进 DLQ
+
+    @Bean   // 每个 @Bean 声明一个主题；3 个分区、1 副本
+    public org.apache.kafka.clients.admin.NewTopic orderCreated() {
+        return TopicBuilder.name(ORDER_CREATED).partitions(3).replicas(1).build();
+    }
+
+    @Bean
+    public org.apache.kafka.clients.admin.NewTopic salesTick() {
+        return TopicBuilder.name(SALES_TICK).partitions(3).replicas(1).build();
+    }
+
+    @Bean
+    public org.apache.kafka.clients.admin.NewTopic guardrailAction() {
+        return TopicBuilder.name(GUARDRAIL_ACTION).partitions(3).replicas(1).build();
+    }
+
+    @Bean
+    public org.apache.kafka.clients.admin.NewTopic guardrailActionFailed() {
+        return TopicBuilder.name(GUARDRAIL_ACTION_FAILED).partitions(3).replicas(1).build();
+    }
+}
+```
+
+> 🧠 **理解一下**：Kafka 是"消息队列"——一个模块生产消息，另一个模块消费，解耦削峰。`@Bean` 声明主题后，Spring 启动时若 Kafka 可达就自动建好，不用手动敲命令。`guardrail.action.failed` 是 **DLQ（死信队列）**：处理失败的动作丢这里，便于事后排查——这是生产级系统的标配。
+
+---
+
+## 第 5 步：建 api 模块（启动类 + 第一个接口 + 配置）
+
+> 📖 **概念：api 是"门面 / 启动入口"。**
+> 它是唯一一个能直接 `java -jar` 跑起来的模块。里面放：启动类（程序入口）、Controller（对外 HTTP 接口）、以及 `application.yml`（连接 MySQL/Redis/Kafka 的地址）。其他三个模块都是被它依赖、在它内部运行的"零件"。
+
+### 5.1 建目录 + 建 pom.xml
 
 ```bash
-docker compose ps
+mkdir -p insightforge-api/src/main/java/com/insightforge/api/controller
+mkdir -p insightforge-api/src/main/resources
+mkdir -p insightforge-api/src/test/java/com/insightforge/api
 ```
 
-等到三个服务 `STATUS` 都 **`healthy`**（Kafka 最慢，可能 20~40 秒）：
+> 文件： `insightforge-api/pom.xml`
 
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.insightforge</groupId>
+        <artifactId>insightforge</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>insightforge-api</artifactId>
+    <name>InsightForge API</name>
+    <description>REST + WebSocket 接入层（可启动的 Spring Boot 应用）</description>
+
+    <dependencies>
+        <!-- 依赖三个兄弟模块（注意：这里把前面三个模块全部连上了） -->
+        <dependency>
+            <groupId>com.insightforge</groupId>
+            <artifactId>insightforge-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.insightforge</groupId>
+            <artifactId>insightforge-persistence</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.insightforge</groupId>
+            <artifactId>insightforge-seckill-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Web 起步依赖：提供 @RestController / @GetMapping 等 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!-- Actuator：健康检查端点 /actuator/health -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!-- 测试：@SpringBootTest / JUnit（Phase 1 起用于并发超卖演示） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- 本地零依赖冒烟测试用（local profile）：H2 内存库代替 MySQL -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Spring Boot 打包插件：把应用打成可执行 fat jar -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>repackage</id>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
 ```
-NAME                    STATUS                    PORTS
-insightforge-mysql      Up 40 seconds (healthy)   3306/tcp
-insightforge-redis      Up 40 seconds (healthy)   6379/tcp
-insightforge-kafka      Up 35 seconds (healthy)   9092/tcp
+
+### 5.2 InsightForgeApplication.java（启动类）
+
+> 文件： `insightforge-api/src/main/java/com/insightforge/api/InsightForgeApplication.java`
+
+```java
+package com.insightforge.api;
+
+import org.mybatis.spring.annotation.MapperScan;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+/**
+ * InsightForge 启动类（Phase 0）。
+ * 扫描整个 com.insightforge 基包，装载各模块 Bean；
+ * @MapperScan 让 MyBatis-Plus 扫描持久层 Mapper 接口。
+ */
+@SpringBootApplication(scanBasePackages = "com.insightforge")
+@MapperScan("com.insightforge.persistence.mapper")
+public class InsightForgeApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(InsightForgeApplication.class, args);   // 程序入口：启动 Spring 容器
+    }
+}
 ```
 
-❌ 若某个一直 `starting`/`unhealthy`：`docker compose logs 服务名` 看报错，多半是首次初始化慢，等久点再看。账号密码/端口都在 `docker-compose.yml` 写好了，不用改。
+> 🧠 **理解一下**：`main` 方法是 Java 程序的入口。`@SpringBootApplication` 启动整个 Spring 世界；`scanBasePackages="com.insightforge"` 让 Spring 去这个包下找所有 `@Service/@RestController/@Configuration` 并实例化；`@MapperScan` 专门告诉 MyBatis-Plus"去 `persistence.mapper` 包给 Mapper 接口生成实现"。不加这行，运行时会报"找不到 Mapper 的 Bean"。
 
-### 路径 B：本地零依赖启动（现在就用，已验证能跑通）
+### 5.3 PingController.java（第一个接口）
 
-不用装任何中间件。项目里已内置 `application-local.yml`，它做两件事：① 用 **H2 内存库**代替 MySQL（db 健康项显示 H2 UP）；② 关闭 Redis/Redisson/Kafka 的自动配置（Phase 0 脚手架代码还没用到它们，所以不需要起这两个服务）。
+> 文件： `insightforge-api/src/main/java/com/insightforge/api/controller/PingController.java`
 
-构建并启动（注意先 `package -am` 把依赖模块打进可执行 jar，再用 `java -jar` 跑）：
+```java
+package com.insightforge.api.controller;
+
+import com.insightforge.common.result.ApiResult;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * 健康检查 / 连通性探测（Phase 0）。
+ * 真正的业务接口（/api/seckill 等）在后续 Phase 逐步加入。
+ */
+@RestController                              // 这是一个 HTTP 接口类
+public class PingController {
+
+    @GetMapping("/api/ping")                // 浏览器 GET 这个地址就触发下面方法
+    public ApiResult<String> ping() {
+        return ApiResult.ok("pong");        // 返回 {code:0, message:"ok", data:"pong"}
+    }
+}
+```
+
+> 🧠 **理解一下**：`@RestController` 表示"这个类专门处理 HTTP 请求"。`@GetMapping("/api/ping")` 把 `GET /api/ping` 这个地址绑定到 `ping()` 方法。浏览器一访问，就返回我们 `common` 模块定义的 `ApiResult.ok("pong")`。这个接口不碰数据库，纯粹用来证明"应用起来了 + 模块间打通了"。
+
+### 5.4 application.yml（默认配置：连真实 MySQL/Redis/Kafka）
+
+> 文件： `insightforge-api/src/main/resources/application.yml`
+
+```yaml
+server:
+  port: 8080                                # 应用监听 8080 端口
+
+spring:
+  application:
+    name: insightforge
+  # 每次启动自动执行 schema.sql（建表）+ data.sql（种子数据），与 local profile 共用
+  sql:
+    init:
+      mode: always
+  datasource:                               # ① MySQL 连接信息
+    url: jdbc:mysql://localhost:3306/insightforge?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: insightforge
+    password: insightforge
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:                                  # ② Redis 连接信息
+      host: localhost
+      port: 6379
+      database: 0
+  kafka:                                    # ③ Kafka 连接信息
+    bootstrap-servers: localhost:9092
+    producer:
+      acks: all                             # 生产端：等所有副本确认，保证不丢消息
+      retries: 3
+    consumer:
+      group-id: insightforge-default
+      auto-offset-reset: earliest
+
+management:                                 # ④ 健康检查端点
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.insightforge: INFO
+```
+
+> 🧠 **理解一下**：这份是"默认 profile"的配置——假设你的机器上已经跑着真实的 MySQL(3306)/Redis(6379)/Kafka(9092)。`localhost` 是因为中间件都在本机。`management` 那段把 `/actuator/health` 打开，等会验证时用。如果你本机没装这些、又装不了 Docker，就用下面这份 `application-local.yml` 零依赖跑。
+
+### 5.5 application-local.yml（零依赖 profile：H2 代替 MySQL，关掉 Redis/Kafka）
+
+> 文件： `insightforge-api/src/main/resources/application-local.yml`
+
+```yaml
+# Phase 0 本地零依赖冒烟测试 profile（激活方式：启动时加 --spring.profiles.active=local）
+# 用途：本机装不了 Docker 时，用 H2 内存库代替 MySQL，不连 Redis/Kafka，直接把脚手架跑起来。
+spring:
+  datasource:
+    url: jdbc:h2:mem:insightforge;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE   # H2 内存库
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  h2:
+    console:
+      enabled: true                        # 打开 H2 控制台，浏览器可看库内容
+  sql:
+    init:
+      mode: always                         # 同样启动建表 + 灌种子
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+      - org.redisson.spring.starter.RedissonAutoConfigurationV2   # Redisson 也会连 Redis，一起关
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.insightforge: INFO
+```
+
+> 🧠 **理解一下**：`local` profile 是"懒人救星"。它做两件事：① 把数据源换成 **H2 内存库**（不用装 MySQL，启动即建库）；② 用 `autoconfigure.exclude` **关掉 Redis / Kafka / Redisson 的自动配置**（因为本机没起这些服务，不关的话启动会报错连不上）。这样你**零中间件**就能把脚手架跑起来验证。等将来接了真实中间件，不加参数用默认 `application.yml` 即可。
+
+**这一步做完**：四个模块全部建好，骨架已能编译运行。接下来（可选）加 Docker 一键起依赖。
+
+---
+
+## 第 6 步（可选）：docker-compose 一键起依赖
+
+> 📖 **概念：Docker Compose 把"装三个中间件"变成"一条命令"。**
+> 如果你迁移到能装 Docker 的机器，可以用这份 `docker-compose.yml` 一次拉起 MySQL/Redis/Kafka。它和 `application.yml` 里的 `localhost` 端口一一对应。本机装不了 Docker 就跳过，用上面的 `local` profile 验证即可。
+
+> 文件： `D:\Java\docker\docker-compose.yml`
+
+```yaml
+version: "3.8"
+
+# InsightForge 本地依赖（Phase 0）
+# 启动顺序：先 docker compose up -d，再启动 Spring Boot 应用。
+# Kafka 采用 KRaft 单节点；Spring 会自动按 seckill-core 的 NewTopic 建主题。
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: insightforge-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: insightforge
+      MYSQL_USER: insightforge
+      MYSQL_PASSWORD: insightforge
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2
+    container_name: insightforge-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: insightforge-kafka
+    environment:
+      KAFKA_CFG_NODE_ID: "1"
+      KAFKA_CFG_PROCESS_ROLES: "broker,controller"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9092"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD", "kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  mysql-data:
+```
+
+> 🧠 **理解一下**：`image` 是现成的官方镜像；`ports` 把容器端口映射到本机（3306/6379/9092），正好对应 `application.yml`；`healthcheck` 让 Docker 知道"服务真起来了没"。Kafka 用 **KRaft** 新架构（去掉了 ZooKeeper），单节点够本地开发。启用方式：`cd D:\Java\docker && docker compose up -d`，等三个都 `healthy` 再启动应用。
+
+---
+
+## 第 7 步：编译 + 启动 + 验证（看到 pong 即通关）
+
+> 📖 **为什么这是"通关标志"？** 编译通过 = 四个模块代码/依赖无误；启动成功 = Spring 容器、各模块 Bean、数据源都装配好了；`/api/ping` 返回 `pong` = HTTP 链路 + 模块间调用打通。这三件事齐了，地基就牢了。
+
+### 7.1 编译（mvn clean package）
 
 ```bash
 cd D:\Java\insightforge
-mvn -pl insightforge-api -am package -DskipTests
-java -jar insightforge-api/target/insightforge-api-0.1.0-SNAPSHOT.jar --spring.profiles.active=local
-```
 
-> 不要用 `spring-boot:run`：本项目多模块结构下它有时找不到主类而报错；`java -jar` 跑打好的 fat jar 最稳。也可以在 IDEA 里直接右键 `InsightForgeApplication` 的 `main` 方法运行，并在 Run/Debug Configuration 的 **Active profiles** 填 `local`。
-> 若报 `Port 8080 was already in use`，说明有上一次没退出的 java 进程，任务管理器结束掉 `java.exe` 再跑。
-
-### 路径 C：原生装 MySQL / Redis / Kafka（贴近真实，无 Docker 也能装）
-
-装好后它们默认就监听 `localhost:3306 / 6379 / 9092`，和 `application.yml` 的配置完全一致，用默认 profile（不加 `local`）启动应用即可。国内能直连的下载地址：
-
-- **MySQL 8**：清华镜像 `https://mirrors.tuna.tsinghua.edu.cn/mysql/`（进 `mysql-8.0/` 找 Windows 的 zip，解压后 `bin\mysqld --initialize-insecure` + `bin\mysqld` 起；或装官方 MSI 一路下一步，建库 `insightforge`、用户 `insightforge/insightforge`）。
-- **Redis（Windows 版）**：用 **Memurai**（Redis 的 Windows 兼容实现，开发免费）：`https://www.memurai.com/` 下载安装，默认监听 6379。
-- **Kafka**：Apache 官方 `https://kafka.apache.org/downloads`（下二进制，用 KRaft 单节点：`bin\windows\kafka-server-start.bat config\kraft\server.properties`）。Kafka 跑在 JVM 上，本机已有 JDK 21 即可。
-
-> 路径 C 是"贴近生产"的玩法，后面要做真实秒杀压测时建议走这条；Path B 只是让你现在零成本确认"脚手架能编译、能启动、接口能通"。
-
----
-
-## 0.9 第 8 步：编译项目（mvn clean package）
-
-1. 开终端：
-
-```bash
-cd D:\Java\insightforge
+# 你自己的机器（已装好 Maven）：
 mvn clean package -DskipTests
+
+# 沙箱 / Windows+GitBash 下 mvn 启动报错时，用这条「直调 Java 启动 Maven」绕过：
+# MVN_HOME="D:/devtools/maven/apache-maven-3.9.9"
+# java -classpath "$MVN_HOME/boot/plexus-classworlds-2.8.0.jar" \
+#   -Dclassworlds.conf="$MVN_HOME/bin/m2.conf" -Dmaven.home="$MVN_HOME" \
+#   -Dmaven.multiModuleProjectDirectory="D:/Java/insightforge" \
+#   -Dlibrary.jansi.path="$MVN_HOME/lib/jansi-native" \
+#   org.codehaus.plexus.classworlds.launcher.Launcher clean package -DskipTests
 ```
 
-2. **首次编译会下载大量依赖**（Spring Boot、MyBatis-Plus、Redisson、Drools 等，几百 MB），配合 0.3.3 的阿里云镜像，一般 3~8 分钟。后面再编就快了（有本地缓存）。
-3. 看到结尾出现：
+看到结尾 `[INFO] BUILD SUCCESS` 即编译通过。每个模块会生成 `target/*.jar`，其中 `insightforge-api/target/insightforge-api-0.1.0-SNAPSHOT.jar` 是可执行的。
 
-```
-[INFO] BUILD SUCCESS
-```
+### 7.2 启动（零依赖 local profile，最稳）
 
-✅ 即编译通过。每个模块会生成 `target/*.jar`。
-
-❌ 若报 `invalid target release: 21`：JDK 不是 21，回去查 0.2。
-❌ 若卡在下载不动：检查 0.3.3 的 `settings.xml` 是否配对路径、内容是否正确。
-❌ 若报某个依赖找不到：通常是网络瞬间抖，重试一次 `mvn clean package -DskipTests` 即可。
-
----
-
-## 0.10 第 9 步：启动应用 + 验证通不通
-
-### 0.10.1 启动（推荐用 `java -jar` 跑 fat jar，最稳）
-
-**方式 A：命令行（本地零依赖，推荐先走这条 ✅ 已验证）**
 ```bash
-cd D:\Java\insightforge
-mvn -pl insightforge-api -am package -DskipTests
-java -jar insightforge-api/target/insightforge-api-0.1.0-SNAPSHOT.jar --spring.profiles.active=local
-```
-看到 `Started InsightForgeApplication` 且无报错即成功。这条用 `local` profile，不需要任何中间件。
-
-**方式 B：命令行（接真实 MySQL/Redis/Kafka，走默认 profile）**
-```bash
-# 先按 0.8 路径 A 或 C 把三个中间件跑起来（都用 localhost 默认端口）
-java -jar insightforge-api/target/insightforge-api-0.1.0-SNAPSHOT.jar
+# 用 local profile：H2 内存库 + 不连 Redis/Kafka，无需任何中间件
+java -jar insightforge-api/target/insightforge-api-0.1.0-SNAPSHOT.jar \
+     --spring.profiles.active=local --server.port=8080
 ```
 
-**方式 C：用 IDEA**
-在 IDEA 左侧找到 `insightforge-api` 模块下的 `InsightForgeApplication.java`，右键 → **Run 'InsightForgeApplication'**；若要零依赖验证，在 Run/Debug Configuration 的 **Active profiles** 填 `local`。
+看到 `Started InsightForgeApplication` 且无报错即成功。
+> 💡 不要用 `mvn spring-boot:run`：本项目多模块结构下它可能报"找不到主类"，`java -jar` 跑打好的 fat jar 最稳。若报 `Port 8080 was already in use`，任务管理器结束 `java.exe` 再跑。
 
-> 不要用 `mvn spring-boot:run`：本多模块项目下它有时会报"找不到主类"，`java -jar` 跑打好的 fat jar 最稳。
-> 若报 `Port 8080 was already in use`，说明上次 java 进程没退，任务管理器结束 `java.exe` 再跑。
-
-### 0.10.2 验证 1：健康检查
+### 7.3 验证 1：健康检查
 
 浏览器打开（或命令行 `curl http://localhost:8080/actuator/health`）：
 
@@ -412,7 +952,7 @@ java -jar insightforge-api/target/insightforge-api-0.1.0-SNAPSHOT.jar
 http://localhost:8080/actuator/health
 ```
 
-- **走 `local` profile（路径 B）** 应看到：
+走 `local` profile 应看到（没有 redis/kafka 项，因为故意没加载，这是正常的）：
 ```json
 {
   "status": "UP",
@@ -423,224 +963,39 @@ http://localhost:8080/actuator/health
   }
 }
 ```
-（没有 redis/kafka 项，因为 local profile 故意没加载它们——这是正常的，说明脚手架已独立跑通。）
 
-- **走默认 profile（接真实中间件）** 应看到 `db` / `redis` / `kafka` 三个都 `UP`。
-
-### 0.10.3 验证 2：第一个接口
+### 7.4 验证 2：第一个接口
 
 浏览器打开（或 `curl http://localhost:8080/api/ping`）：
-
 ```
 http://localhost:8080/api/ping
 ```
-
 应看到：
 ```json
 {"code":0,"message":"ok","data":"pong"}
 ```
 
-✅ **`pong` + 健康页 `status: UP` 出现 = Phase 0 通关！**（走 local 时健康页里是 `db=H2 UP`；走默认且中间件都起时则是三个 UP。）
-
-❌ 若走 local 仍起不来：看日志有没有 `could not be excluded` / `redis` 相关报错（说明 profile 没生效，确认 jar 是重新 `package` 过的、且带了 `--spring.profiles.active=local`）。
-❌ 若走默认 profile 时 `db DOWN`：MySQL 没起或账号错（路径 A 看 `docker compose ps`，路径 C 看 `mysqld` 是否在跑）。
-❌ 若 `redis DOWN`：路径 A `docker compose restart redis`；路径 C 确认 Memurai 在跑。
-❌ 若 `kafka DOWN`：Kafka 首次启动慢，多等一会。
-❌ 若页面打不开（连不上 8080）：应用没起来，看启动日志有没有 `Exception`。
+✅ **`pong` + 健康页 `status: UP` 出现 = Phase 0 通关！**
 
 ---
 
-## 0.11 ✅ 检查点汇总表（照着打钩）
+## 第 8 步：流程图 + 排错 + 收尾
 
-| # | 检查项 | 命令 / 操作 | 期望结果 |
-|---|---|---|---|
-| 1 | JDK | `java -version` | 21.x |
-| 2 | Maven | `mvn -version` | 3.9.x + Java 21 |
-| 3 | Maven 镜像 | 看 `C:\Users\你\.m2\settings.xml` | 含 aliyun mirror |
-| 4 | Git | `git --version` | 有版本号 |
-| 5 | Docker（可选） | `docker run --rm hello-world` | 欢迎文字（本机装不了就跳过，用路径 B/C） |
-| 6 | 代码 | 看 `D:\Java\insightforge\pom.xml` | 文件存在 |
-| 7 | 脚手架跑通 | `java -jar ... --spring.profiles.active=local` 后开 `/api/ping` | `pong` + 健康页 `status: UP` |
-| 8 | 编译 | `mvn clean package -DskipTests` | BUILD SUCCESS |
-| 9 | 接口 | 浏览器开 `/api/ping` | `{"code":0,"data":"pong"}` |
-| 10 | 健康 | 浏览器开 `/actuator/health` | local: db=H2 UP；默认(接中间件): db/redis/kafka 全 UP |
-
-全部打钩 → 在 `tasks.md` 的 **Phase 0** 把"验收"行勾成 `[x]`，然后进入 Phase 1。
-
----
-
-## 0.12 常见坑（按现象查）
-
-| 现象 | 原因 | 解决 |
-|---|---|---|
-| `java / mvn / git` 不是内部命令 | Path 没配 or 没重开终端 | 检查环境变量；**关掉所有终端重开** |
-| `invalid target release: 21` | JDK 不是 21 | `java -version` 确认；`JAVA_HOME` 指向 21 |
-| `mvn` 编译卡在 Download | 没配阿里云镜像 | 按 0.3.3 配 `settings.xml` 后重试 |
-| Docker 装完跑不了容器 | WSL 2 没就绪 | 重启电脑；或按 Docker 提示装 WSL |
-| `docker compose` 命令不存在 | Docker 太旧 | 升级 Docker Desktop（新版自带 compose v2） |
-| 本机装不了 Docker | WSL/Hyper-V 受限等 | 跳过 Docker，用 0.8 路径 B（local profile 零依赖）或路径 C（原生装 MySQL/Redis/Kafka） |
-| `mvn spring-boot:run` 报找不到主类 | 多模块下插件检测问题 | 改用 `mvn -pl insightforge-api -am package` 后 `java -jar target/...jar` |
-| `Port 8080 was already in use` | 上次 java 进程没退 | 任务管理器结束 `java.exe` 再跑；或加 `--server.port=8080` |
-| 走 local 启动报 `could not be excluded ... RedissonAutoConfiguration` | 用了旧 jar / profile 没生效 | 重新 `mvn -pl insightforge-api -am package` 确保新 `application-local.yml` 进了 jar |
-| 端口被占用 8080/3306/6379/9092 | 本机已跑着同款服务 | 关掉占用进程，或改 `application.yml`/`compose` 端口 |
-| `/actuator/health` 里某个 DOWN（默认 profile） | 对应中间件没起/账号错 | 路径 A 看 `docker compose ps`；路径 C 确认 mysqld/Memurai/Kafka 在跑 + 核对 `application.yml` |
-| 依赖偶尔下载失败 | 网络抖动 | 重试 `mvn clean package -DskipTests` |
-
----
-
-## 0.13 代码讲解（看懂骨架用，不要求手写）
-
-> Phase 0 的代码**我已经写好放在仓库里了**，你 clone 下来就有。下面帮你"看懂每个文件是干嘛的"，方便以后改。
-
-### 0.13.1 目录与模块依赖
-
-```
-D:/Java/insightforge/
-├── pom.xml                  ← 父 POM：统一版本 + 模块声明
-├── insightforge-common/     ← 工具类、统一返回体 ApiResult
-├── insightforge-persistence/← MyBatis-Plus 配置 + 实体基类
-├── insightforge-seckill-core/← Redis Key 规范 + Kafka 主题声明
-└── insightforge-api/        ← 启动类 + PingController + application.yml
-```
-
-```mermaid
-graph TD
-    parent["insightforge 父POM<br/>dependencyManagement 统一版本"] --> common["common<br/>ApiResult/工具"]
-    parent --> persistence["persistence<br/>MyBatis-Plus/BaseEntity"]
-    parent --> seckill["seckill-core<br/>RedisKeys/KafkaTopicConfig"]
-    parent --> api["api<br/>启动类/Controller"]
-    api --> common
-    api --> persistence
-    api --> seckill
-    seckill --> common
-    persistence --> common
-```
-
-> 含义：`api` 是门面/启动入口，依赖其余三个；`common` 被大家依赖（放共享东西）。这种拆分就是"职责分离"——以后高并发引擎、规则引擎、Agent 各占一个模块，互不污染。
-
-### 0.13.2 父 `pom.xml`（为什么"只写一次版本"很重要）
-
-父 POM 用 `<dependencyManagement>` 把所有依赖版本**集中声明一次**。子模块要用时只写 `groupId:artifactId`，**不写版本号**。好处：绝不会出现"A 模块用 Redisson 3.30、B 模块用 3.28 导致冲突"这种坑。
-
-```xml
-<properties>
-    <maven.compiler.release>21</maven.compiler.release>
-    <spring-boot.version>3.3.5</spring-boot.version>
-    <mybatis-plus.version>3.5.9</mybatis-plus.version>
-    <redisson.version>3.34.1</redisson.version>
-    <spring-ai.version>1.0.0</spring-ai.version>
-    <drools.version>9.44.0.Final</drools.version>   <!-- 你选的规则引擎 Drools -->
-</properties>
-<dependencyManagement>
-    <dependencies>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-dependencies</artifactId>
-            <version>${spring-boot.version}</version>
-            <type>pom</type><scope>import</scope>
-        </dependency>
-        <!-- MyBatis-Plus / Redisson / Spring-AI / Drools BOM / Lombok 同理 -->
-    </dependencies>
-</dependencyManagement>
-```
-
-### 0.13.3 `application.yml`（应用怎么连三个中间件）
-
-```yaml
-server:
-  port: 8080
-spring:
-  datasource:                              # ① MySQL
-    url: jdbc:mysql://localhost:3306/insightforge?...&serverTimezone=Asia/Shanghai
-    username: insightforge
-    password: insightforge
-  data:
-    redis:                                 # ② Redis
-      host: localhost
-      port: 6379
-  kafka:                                   # ③ Kafka
-    bootstrap-servers: localhost:9092
-    producer: { acks: all, retries: 3 }
-    consumer: { group-id: insightforge-default, auto-offset-reset: earliest }
-management:                                # ④ 健康检查端点
-  endpoints.web.exposure.include: health,info,metrics
-  endpoint.health.show-details: always
-```
-
-> `localhost` 是因为中间件都跑在 Docker 里、映射到了本机端口。
-
-### 0.13.4 `docker-compose.yml`（一键拉起三件套）
-
-```yaml
-version: "3.8"
-services:
-  mysql:
-    image: mysql:8.0
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: insightforge
-      MYSQL_USER: insightforge
-      MYSQL_PASSWORD: insightforge
-    ports: ["3306:3306"]
-    volumes: ["mysql-data:/var/lib/mysql"]
-    healthcheck:
-      test: ["CMD","mysqladmin","ping","-h","localhost","-uroot","-proot"]
-      interval: 10s; timeout: 5s; retries: 5
-  redis:
-    image: redis:7.2
-    ports: ["6379:6379"]
-    healthcheck: { test: ["CMD","redis-cli","ping"], interval: 10s; timeout: 5s; retries: 5 }
-  kafka:
-    image: bitnami/kafka:3.7
-    environment:
-      KAFKA_CFG_NODE_ID: "1"
-      KAFKA_CFG_PROCESS_ROLES: "broker,controller"
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
-      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
-      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9092"
-      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
-    ports: ["9092:9092"]
-    healthcheck: { test: ["CMD","kafka-topics.sh","--bootstrap-server","localhost:9092","--list"], interval: 15s; timeout: 10s; retries: 5 }
-volumes: { mysql-data: }
-```
-
-> Kafka 用 **KRaft**（新版，去掉了 ZooKeeper），单节点够本地开发。Spring 启动时会按 `seckill-core` 自动建好主题，不用手动建。
-
-### 0.13.5 骨架代码（每个文件讲一句"为什么存在"）
-
-- **`common/ApiResult.java`**：统一返回体，所有接口都返回 `{code, message, data}`，前端好处理。
-- **`persistence/MybatisPlusConfig.java`**：注册 MP 分页插件（以后列表查询要分页）。
-- **`persistence/BaseEntity.java`**：实体基类，业务表实体继承它就有自增主键 `id`。
-- **`seckill-core/RedisKeys.java`**：**Redis Key 命名规范**，和 spec §13.1 对齐；以后 Lua 扣减/分段/pending 都复用它，避免到处拼错。
-- **`seckill-core/KafkaTopicConfig.java`**：声明 4 个主题，其中 `guardrail.action.failed` 是 **DLQ（死信队列）**，处理失败的动作进这里排查。
-- **`api/InsightForgeApplication.java`**：启动类，`scanBasePackages="com.insightforge"` 让 Spring 扫描所有模块。
-- **`api/PingController.java`**：第一个接口，验证"应用起来了 + common 模块打通"。
-
-```java
-@RestController
-public class PingController {
-    @GetMapping("/api/ping")
-    public ApiResult<String> ping() {
-        return ApiResult.ok("pong");
-    }
-}
-```
-
----
-
-## 0.14 流程图：从零到跑通
+### 8.1 从零到跑通的流程图
 
 ```mermaid
 flowchart TD
     A[装 JDK21 + 配 JAVA_HOME] --> B[装 Maven + 配 MAVEN_HOME + 阿里云镜像]
-    B --> C[装 Git / Docker / IDEA]
-    C --> D["git clone 到 D:/Java"]
-    D --> E["docker compose up -d 起三件套"]
-    E --> F[等 mysql/redis/kafka healthy]
-    F --> G["mvn clean package 编译"]
-    G --> H["启动应用 spring-boot:run"]
-    H --> I["/api/ping → pong"]
-    I --> J["/actuator/health → 三段 UP"]
+    B --> C[装 Git / IDEA]
+    C --> D["建工程根目录 + 父 pom.xml（第1步）"]
+    D --> E["common 模块：ApiResult（第2步）"]
+    E --> F["persistence 模块：BaseEntity + 配置（第3步）"]
+    F --> G["seckill-core 模块：RedisKeys + KafkaTopic（第4步）"]
+    G --> H["api 模块：启动类 + PingController + yml（第5步）"]
+    H --> I["mvn clean package 编译"]
+    I --> J["启动 --spring.profiles.active=local"]
+    J --> K["/api/ping → pong"]
+    K --> L["/actuator/health → 三段 UP"]
 ```
 
 ```mermaid
@@ -653,11 +1008,22 @@ flowchart LR
     end
 ```
 
-> 大白话：应用是"店铺"，三个中间件是"仓库（MySQL）/ 前台缓存（Redis）/ 后台传话筒（Kafka）"。Docker 把它们装进集装箱一起运来，应用按 `application.yml` 里的地址去敲门。
+> 大白话：应用是"店铺"，三个中间件是"仓库（MySQL）/ 前台缓存（Redis）/ 后台传话筒（Kafka）"。Docker 把它们装进集装箱一起运来，应用按 `application.yml` 里的地址去敲门。现在你用 `local` profile 时，MySQL 被 H2 替代、Redis/Kafka 暂时没接——店铺先空跑验证灯亮。
 
----
+### 8.2 排错（按现象查）
 
-## 0.15 本阶段"故意留白"的地方（Phase 1 预告）
+| 现象 | 原因 | 解决 |
+|---|---|---|
+| `java / mvn / git` 不是内部命令 | Path 没配 or 没重开终端 | 检查环境变量；**关掉所有终端重开** |
+| `invalid target release: 21` | JDK 不是 21 | `java -version` 确认；`JAVA_HOME` 指向 21 |
+| `mvn` 编译卡在 Download | 没配阿里云镜像 | 按第 0.2 节配 `settings.xml` 后重试 |
+| `mvn` 报 `ClassNotFoundException: org.codehaus.plexus.classworlds.launcher.Launcher` | Windows+GitBash 下 Maven 把 `MAVEN_HOME` 解析成 `/d/...`，但 `java.exe` 要 `D:/...` | 在 **cmd.exe** 里跑 `mvn`；或沙箱里用第 7.1 节"直调 Java 启动 Maven"命令 |
+| 启动报 `Invalid value type for attribute 'factoryBeanObjectType': java.lang.String` | MyBatis-Plus 3.5.9 + Spring 6.1 不兼容旧 mybatis-spring | 父 POM 升 `mybatis-plus 3.5.11` + 锁 `mybatis-spring 3.0.4`（本 Phase 已做） |
+| `mvn spring-boot:run` 报找不到主类 | 多模块下插件检测问题 | 改用 `mvn -pl insightforge-api -am package` 后 `java -jar target/...jar` |
+| `Port 8080 was already in use` | 上次 java 进程没退 | 任务管理器结束 `java.exe` 再跑 |
+| 走 local 启动报 `could not be excluded ... RedissonAutoConfiguration` | 用了旧 jar / profile 没生效 | 重新 `mvn clean package` 确保新 `application-local.yml` 进了 jar |
+
+### 8.3 本阶段"故意留白"的地方（Phase 1 预告）
 
 Phase 0 只保证"地基 + 水电 + 灯亮"，下面这些**刻意没做**，是后面 Phase 的核心：
 - ❌ 没有秒杀下单接口（Phase 1 才加 `POST /api/seckill`，且**故意不做并发保护，先暴露超卖**）。
@@ -669,20 +1035,6 @@ Phase 0 只保证"地基 + 水电 + 灯亮"，下面这些**刻意没做**，是
 
 ---
 
-## 0.16 术语速查（本阶段出现）
+## 下一步（进入 Phase 1）
 
-- **JDK / Maven / Git / Docker**：见 `glossary.md` → "基础设施"。
-- **环境变量（JAVA_HOME 等）**：操作系统里存的"路径便签"，让命令行能找到工具。
-- **Actuator / 健康检查**：Spring 提供的"体检端点"，暴露 `UP/DOWN`。
-- **DLQ（死信队列）**：处理失败的消息被丢进的独立队列，便于事后排查。
-- **KRaft**：Kafka 新架构，去掉 ZooKeeper，单节点也能跑。
-- **BOM（Bill of Materials）**：Maven 的"版本目录"，`import` 后子模块不用写版本号。
-
-> 看不懂的词，先去 `glossary.md` 查；那是本项目的大白话词典。
-
----
-
-## 0.17 完成后请做
-
-1. 在 `tasks.md` 的 **Phase 0** 把"验收"那行勾选 `[x]`。
-2. 进入下一阶段：打开 `tutorials/phase1.md`（最小秒杀主流程，故意不安全），或先看 `tutorial.md` 的 Phase 1 概要。
+打开 `tutorials/phase1.md`（最小秒杀主流程，**故意不安全**）：从建实体类开始，一步步写出"点抢购 → 库存-1 → 出订单"的接口，并亲手用 300 并发测试把"超卖"演给你看。
