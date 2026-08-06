@@ -1,0 +1,14 @@
+# 通用 Worker 构建：用 MODULE 参数指定要打包的模块（agent-core / rule-engine）。
+# ⚠️ 沙箱未实跑（无 Docker），仅描述生产构建方式。
+# 用法（见 docker-compose.yml 的 build.args.MODULE）：
+#   docker build -f deploy/Dockerfile.worker --build-arg MODULE=insightforge-rule-engine -t if-rule-engine insightforge
+ARG MODULE=insightforge-agent-core
+FROM maven:3.9.9-eclipse-temurin-21 AS build
+WORKDIR /workspace
+COPY . .
+RUN mvn -B -pl ${MODULE} -am package -DskipTests
+
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY --from=build /workspace/${MODULE}/target/${MODULE}-*.jar app.jar
+ENTRYPOINT ["java", "-jar", "app.jar"]

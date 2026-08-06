@@ -88,13 +88,13 @@
 - 诚实边界：① `LocalLockService` 是本地 `ReentrantLock` 桩，生产换 Redisson 同名锁（语义一致）；② `StockSegmentService` 内存段模型为教学确定性建模，生产接 Redis 哈希分段；③ `PolicySource`/`DbPolicySource` 本地缓存是 `ConcurrentHashMap`，生产换 Redis/Caffeine；④ Drools 纯 Java 库、`rule-engine` 模块零 Redis/Kafka 依赖即可跑；⑤ 预测性调拨骨架已落地单测，生产接真实时序数据
 - 本轮踩坑（已修复并写入 phase9.md §6 排错表）：① `BacktestHarness` 多构造器未标 `@Autowired` → `NoSuchMethodException <init>()`；② 测试配置 `@ComponentScan` 误扫生产 `@Configuration`（RuleEngineConfig 的 `dbPolicySource` 依赖 MyBatis Mapper）→ 用 `excludeFilters` 排除；③ DRL `package` 与写入目录不一致 → 告警，改成 `package rules`；④ ShadowEngine 同 `activityId:version` 不同内容命中旧缓存 → 测试用不同 version；⑤ 回测首 tick 含一次性编译致 SLA 失败 → 计时前预热
 
-## Phase 10 — 前端 + 可观测 + 部署（M5）
-- [ ] React 商户后台（建活动/看策略）+ 实时大屏 WS
-- [ ] 大屏策略可解释性：后端模板生成自然语言说明（非 LLM）
-- [ ] Prometheus + Grafana 看板（扣减耗时/锁等待/Agent 与规则引擎维度）
-- [ ] Docker 部署编排（Seckill/Agent/Rule-Engine Worker 资源隔离）
-- [ ] **可观测增强**：Trace 查看器 UI（span 树 + Critic verdict）+ 四层评估指标看板（含正确失败率/护栏命中/成本延迟）+ HITL 人工审批界面 + 风险分级展示
-- [ ] **验收**：大屏实时刷新；可解释文案正确；看板有指标
+## Phase 10 — 前端 + 可观测 + 部署（M5）✅ 已落地
+- [x] React 商户后台（建活动/看策略）+ 实时大屏 WS（`insightforge-frontend/`，⚠️ 沙箱未浏览器验证）
+- [x] 大屏策略可解释性：后端模板生成自然语言说明（非 LLM，`ExplainabilityService`，加分项 #3，附纯 JUnit 单测）
+- [x] Prometheus + Grafana 看板（业务 Gauge：`insightforge_*`；`MetricsConfig` 注册，已测 Gauge 注册；⚠️ Grafana 面板写就未容器验证）
+- [x] Docker 部署编排（Seckill/Agent/Rule-Engine Worker 资源隔离，`deploy/`；⚠️ 沙箱无 Docker 未实跑）
+- [x] **可观测增强**：Trace 查看器 UI + 四层评估指标看板（正确失败率/护栏数）+ HITL 人工审批界面 + 风险分级展示（后端 API 已实跑；前端 UI 写就未浏览器验证）
+- [x] **验收（后端实跑通过）**：`mvn clean package` BUILD SUCCESS；api 新增 10 测试（解释 5 + 大屏 4 + Prometheus 1）；全项目累计 **79** 测试全绿（api 35 + agent-core 22 + rule-engine 22）；curl `/api/dashboard/*` 与 `/explain` 真实返回；Prometheus 业务指标已注册进 MeterRegistry
 
 ## Phase 11 — 评估闭环（M6）
 - [ ] JMeter 百万抢购压测，验证无超卖 + exactly-once

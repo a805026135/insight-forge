@@ -1,0 +1,11 @@
+# Prometheus 抓取配置（Phase 10）。
+# 抓取对象：api 的 /actuator/prometheus（Spring Boot 暴露的 Prometheus 格式端点）。
+# ⚠️ 沙箱未实跑（无 Docker），仅描述生产配置方式。
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'insightforge'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['api:8080']

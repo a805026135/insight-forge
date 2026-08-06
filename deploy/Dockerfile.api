@@ -1,0 +1,12 @@
+# 多阶段构建：先 maven 编译打包，再丢进 JRE 运行镜像（Phase 10）。
+# ⚠️ 沙箱未实跑（无 Docker），仅描述生产构建方式。
+FROM maven:3.9.9-eclipse-temurin-21 AS build
+WORKDIR /workspace
+COPY . .
+RUN mvn -B -pl insightforge-api -am package -DskipTests
+
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY --from=build /workspace/insightforge-api/target/insightforge-api-*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]

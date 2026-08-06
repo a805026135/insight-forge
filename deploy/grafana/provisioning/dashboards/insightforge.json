@@ -1,0 +1,42 @@
+{
+  "title": "InsightForge 智析 · 业务指标",
+  "uid": "insightforge",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "title": "活动总数",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "insightforge_activities_total", "refId": "A" }
+      ]
+    },
+    {
+      "title": "秒杀订单总数",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "insightforge_seckill_orders_total", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Agent 正确失败率",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "insightforge_agent_correct_failure_rate", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "min": 0, "max": 1, "unit": "percentunit" } }
+    },
+    {
+      "title": "护栏策略版本数",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        { "expr": "insightforge_guardrail_policies_total", "refId": "A" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,122 @@
+# InsightForge 一键编排（Phase 10，M5 部署）。
+#
+# ⚠️ 诚实边界：本文件在沙箱未实跑（沙箱无 Docker 守护进程）。它描述的是「生产该长这样」，
+#    读者在本机装好 Docker / Docker Compose 后 `docker compose up -d` 即可起整套。
+#
+# 拓扑（控制面 / 数据面分离在部署层体现为进程隔离）：
+#   - api           ：REST + WebSocket 接入层（秒杀热路径 + 大屏数据 API）
+#   - agent-worker  ：Agent 离线规划（控制面，生成 DSL，绝不进热路径）
+#   - rule-engine-worker：在线确定性规则执行（数据面，消费 sales.tick）
+#   - mysql/redis/kafka：中间件
+#   - nginx         ：统一入口 + 令牌桶限流 + WS 反代
+#   - prometheus/grafana：指标抓取与看板
+#
+# 资源隔离：每个 Worker 单独 limits（CPU/内存），避免 AI 规划/编译挤占秒杀热路径资源。
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: insightforge
+      MYSQL_USER: insightforge
+      MYSQL_PASSWORD: insightforge
+      MYSQL_ROOT_PASSWORD: root
+    ports: ["3306:3306"]
+    volumes: ["mysql-data:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 5
+
+  kafka:
+    image: bitnami/kafka:3.7
+    environment:
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    ports: ["9092:9092"]
+
+  api:
+    build:
+      context: ./insightforge
+      dockerfile: ../deploy/Dockerfile.api
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/insightforge
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_KAFKA_BOOTSTRAP-SERVERS: kafka:9092
+    ports: ["8080:8080"]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1g }
+
+  agent-worker:
+    build:
+      context: ./insightforge
+      dockerfile: ../deploy/Dockerfile.worker
+      args:
+        MODULE: insightforge-agent-core
+    depends_on: ["mysql", "redis"]
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/insightforge
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512m }   # 离线规划，资源占用小
+
+  rule-engine-worker:
+    build:
+      context: ./insightforge
+      dockerfile: ../deploy/Dockerfile.worker
+      args:
+        MODULE: insightforge-rule-engine
+    depends_on: ["mysql", "redis", "kafka"]
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/insightforge
+      SPRING_KAFKA_BOOTSTRAP-SERVERS: kafka:9092
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 768m }   # 在线确定性执行，给足 CPU 保低延迟
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on: ["api"]
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./insightforge-frontend/dist:/usr/share/nginx/html:ro
+    ports: ["80:80"]
+
+  prometheus:
+    image: prom/prometheus:v2.54.0
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    depends_on: ["prometheus"]
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports: ["3000:3000"]
+
+volumes:
+  mysql-data:
+  grafana-data:

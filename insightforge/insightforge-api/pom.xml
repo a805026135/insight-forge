@@ -36,6 +36,15 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- Phase 10：Prometheus 抓取端点（/actuator/prometheus），配合 Grafana 看板 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
         <!-- 测试：@SpringBootTest / JUnit（Phase 1 用于并发超卖演示） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

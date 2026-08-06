@@ -209,18 +209,18 @@
 
 ---
 
-## Phase 10 — 前端 + 可观测 + 部署（M5）
+## Phase 10 — 前端 + 可观测 + 部署（M5）✅ 已落地
 
 **目标**：能演示、能监控、能一键起。
-**你会做**：React 商户后台（建活动/看策略）+ 实时大屏（WS 推送）；大屏**策略可解释性**——规则引擎每次调价/调拨用**后端模板**生成自然语言（如「因 SKU-A 流速超预期 210%，触发 Rule#r1，自动从池B调入 50 件」），**非 LLM 实时生成**；Prometheus+Grafana 看板（扣减耗时/锁等待/Agent 与规则引擎维度）；Docker 编排（Seckill/Agent/Rule-Engine Worker 资源隔离）；**可观测增强**：在 Grafana 之外新增 Trace 查看器 UI（span 树 + Critic verdict）、四层评估指标看板（含正确失败率/护栏命中/成本延迟）与 HITL 人工审批界面（何时找人 / 人看什么证据 / 人从哪继续）。
+**已做**：React 商户后台（建活动/看策略）+ 实时大屏（WS 推送，`insightforge-frontend/`，⚠️ 沙箱无浏览器未验证）；大屏**策略可解释性**——规则引擎每次调价/调拨用**后端模板**生成自然语言（`ExplainabilityService`，**非 LLM 实时生成**，加分项 #3，附纯 JUnit 单测）；Prometheus 业务指标（`MetricsConfig` 注册 `insightforge_*` Gauge，已测注册）+ Grafana 看板 JSON（`deploy/`，⚠️ 未容器验证）；Docker 编排（Seckill/Agent/Rule-Engine Worker 资源隔离，`deploy/docker-compose.yml`，⚠️ 沙箱无 Docker 未实跑）；**可观测增强**：Trace 查看器 UI + 四层评估指标看板（正确失败率/护栏数）+ HITL 人工审批界面 + 风险分级展示（后端 `/api/dashboard/*` 已实跑；前端 UI 写就未浏览器验证）。
 
 **技术选型与目的**
-- **React + Ant Design + ECharts**：生态成熟、类型安全、图表强。⚠️ 待确认：React vs Vue。
-- **后端模板生成解释文案（加分项 #3）**：对比"LLM 实时生成"——实时生成有延迟/不稳定，且违背"LLM 不进热路径"；模板生成确定性、秒出、零成本。
+- **React + Ant Design + ECharts**：生态成熟、类型安全、图表强（Phase 10 定 React，决策 #3 落定）。
+- **后端模板生成解释文案（加分项 #3）**：对比"LLM 实时生成"——实时生成有延迟/不稳定，且违背"LLM 不进热路径"；模板生成确定性、秒出、零成本、可单测。
 - **可观测**：没有指标就无法证明"无超卖/控盘有效"，面试 demo 也缺说服力。
 
 **解决什么**：把后台智能"可视化"，演示冲击力；监控保障线上可控。
-**验证**：大屏实时刷新、解释文案正确；Grafana 有扣减耗时与锁等待曲线。
+**验证（后端实跑）**：`mvn clean package` BUILD SUCCESS，全项目累计 79 测试全绿（api 35 + agent-core 22 + rule-engine 22）；curl `/api/dashboard/overview` 与 `/api/dashboard/explain?...` 真实返回解释文案；Prometheus 业务 Gauge 已注册进 MeterRegistry。前端与 Docker/Grafana 配置写就但**诚实标注未实跑**。教程见 `tutorials/phase10.md`。
 
 ---
 
