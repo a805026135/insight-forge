@@ -153,7 +153,7 @@
 ## Phase 7 — Agent Core 自研运行时（M3）
 
 **目标**：给"AI 辅助"打底座——一个能调工具、会记忆、能反思的自研 Agent。
-**你会做**：`agent-core` 实现工具注册（JSON Schema 声明）、ReAct/Plan-Execute 循环、三层记忆（短期窗口 / 长期 Milvus / 跨 Agent Artifact）、Critic 反思重试（`maxRetry=3`）；Spring AI + DeepSeek 接模型；沙箱（独立进程/容器）跑规划计算。
+**你会做**：`agent-core` 实现工具注册（JSON Schema 声明）、ReAct/Plan-Execute 循环、三层记忆（短期窗口 / 长期 Milvus / 跨 Agent Artifact）、Critic 反思重试（`maxRetry=3`）；Spring AI + DeepSeek 接模型；沙箱（独立进程/容器）跑规划计算；**监测内建**：从第一行就落 Trace（trace_id + span 持久化 MySQL）+ 预算/Token 上限 + 三态状态机（SUCCESS/CORRECT_FAILURE/FAILED）+ L1 组件指标埋点，详见 `agent-observability-evaluation.md`。
 
 **技术选型与目的**
 - **自研 Agent 运行时**：对比直接用 **LangChain / AutoGPT**——成熟但黑盒、与本项目高并发主题脱节、面试难讲清；自研能把"工具注册/记忆/反思"逐个讲透，且**不绑死模型**（Spring AI 抽象层）。教学与面试价值更高。
@@ -168,7 +168,7 @@
 ## Phase 8 — 多智能体离线规划（M4）
 
 **目标**：把运营目标变成可上线的选品/定价/库存方案 + 护栏 DSL。
-**你会做**：Planner 拆 DAG → 选品/定价/预热/风控 Agent 并行产出 → Guardrail Policy Agent 把控盘预案编译成 **DSL JSON** → DSL 自编译校验（失败回 Critic ≤3 次）→ 版本化存 `guardrail_policy`（MySQL）+ 缓存 `guardrail:dsl:{aid}`（Redis 热更新）。
+**你会做**：Planner 拆 DAG → 选品/定价/预热/风控 Agent 并行产出 → Guardrail Policy Agent 把控盘预案编译成 **DSL JSON** → DSL 自编译校验（失败回 Critic ≤3 次）→ 版本化存 `guardrail_policy`（MySQL）+ 缓存 `guardrail:dsl:{aid}`（Redis 热更新）；**评估内建**：Critic 升级为独立验证器（确定性程序→规则→模型/人工三道校验），Agent 主动 ASK/REFUSE/ESCALATE 计入正确失败率，并采集 L2 轨迹指标、建立最小 golden 评估集。
 
 **技术选型与目的**
 - **多智能体分工 vs 单个大提示词**：单 Agent 一把梭，提示词爆炸、难维护、易遗漏；多 Agent 各管一摊（选品/定价/风控），结果经 Artifact 传递，清晰可审计。
@@ -189,6 +189,8 @@
 4. **两阶段预留**：调拨先加 `pending_stock`（缓冲池），补偿时**只删 pending 标记，绝不碰已售硬库存**。
 5. **预测性调拨**：滑动窗口线性回归算 `TTL = 剩余库存 / 流速`，`TTL < 5min` 提前预调拨。
 
+**结果评估内建**：DSL Fail-Close 作为 L3 结果评估硬门槛（发布前 100% 编译通过）；新增影子模式（`sales.tick` 副本评估、不执行）+ 历史回测骨架（重放断言 oversell=0 / SLA 达标）+ 护栏命中埋点 + 风险分级（查询低 / 写入中 / 跨活动预算再分配高）。详见 `agent-observability-evaluation.md`。
+
 **技术选型与目的**
 - **独立模块**：AI 策略逻辑与并发原语解耦，扩展规则（阶梯调价、多池联动）不污染秒杀核心。
 - **DSL 静态编译器（致命隐患 #3）**：LLM 可能抽风生成 `threshold:0.999` 或错误嵌套 → 运行时裸奔。编译器把"能不能上线"在启动前挡住。
@@ -203,7 +205,7 @@
 ## Phase 10 — 前端 + 可观测 + 部署（M5）
 
 **目标**：能演示、能监控、能一键起。
-**你会做**：React 商户后台（建活动/看策略）+ 实时大屏（WS 推送）；大屏**策略可解释性**——规则引擎每次调价/调拨用**后端模板**生成自然语言（如「因 SKU-A 流速超预期 210%，触发 Rule#r1，自动从池B调入 50 件」），**非 LLM 实时生成**；Prometheus+Grafana 看板（扣减耗时/锁等待/Agent 与规则引擎维度）；Docker 编排（Seckill/Agent/Rule-Engine Worker 资源隔离）。
+**你会做**：React 商户后台（建活动/看策略）+ 实时大屏（WS 推送）；大屏**策略可解释性**——规则引擎每次调价/调拨用**后端模板**生成自然语言（如「因 SKU-A 流速超预期 210%，触发 Rule#r1，自动从池B调入 50 件」），**非 LLM 实时生成**；Prometheus+Grafana 看板（扣减耗时/锁等待/Agent 与规则引擎维度）；Docker 编排（Seckill/Agent/Rule-Engine Worker 资源隔离）；**可观测增强**：在 Grafana 之外新增 Trace 查看器 UI（span 树 + Critic verdict）、四层评估指标看板（含正确失败率/护栏命中/成本延迟）与 HITL 人工审批界面（何时找人 / 人看什么证据 / 人从哪继续）。
 
 **技术选型与目的**
 - **React + Ant Design + ECharts**：生态成熟、类型安全、图表强。⚠️ 待确认：React vs Vue。
@@ -218,7 +220,7 @@
 ## Phase 11 — 评估闭环（M6）
 
 **目标**：用数据证明"两件事"——① 秒杀绝对无超卖；② AI Agent 策略真提升经营指标。
-**你会做**：JMeter 百万抢购压测（验证无超卖+exactly-once）；双轨评估 harness（**客观硬指标优先**：毛利率/售罄率/库存周转，+ **LLM 定性补充**）；A/B 实验（一部分商家 AI 控盘、一部分人工规则，对比 GMV/售罄率/毛利）；GitHub Actions CI 跑 eval，阈值失败阻断。
+**你会做**：JMeter 百万抢购压测（验证无超卖+exactly-once）；双轨评估 harness（**客观硬指标优先**：毛利率/售罄率/库存周转，+ **LLM 定性补充**）；A/B 实验（一部分商家 AI 控盘、一部分人工规则，对比 GMV/售罄率/毛利）；GitHub Actions CI 跑 eval，阈值失败阻断；**评估闭环增强**：新增离线 eval harness（golden + 失败样本回归重放）、影子模式灰度（shadow→单活动→多活动）、系统指标报告（含正确失败率这一核心红线）。
 
 **技术选型与目的**
 - **双轨评估**：纯 LLM 打分有主观偏差；客观数值（毛利率等）才是硬证据，LLM 仅做补充定性。

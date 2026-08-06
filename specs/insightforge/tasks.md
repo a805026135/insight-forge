@@ -62,12 +62,16 @@
 - [ ] `agent-core`：工具注册（JSON Schema）、ReAct/Plan-Execute 循环、三层记忆（短期/长期 Milvus/跨 Agent Artifact）
 - [ ] Critic 反思重试（`maxRetry=3`）
 - [ ] Spring AI + DeepSeek 接入；沙箱（独立进程/容器）跑规划计算
+- [ ] **监测内建**：`agent_trace`/`agent_span` 持久化（trace_id 生成）+ 预算/Token 上限 + 停止条件 + 三态状态机（SUCCESS/CORRECT_FAILURE/FAILED）
+- [ ] **评估内建**：L1 组件指标埋点（工具选择准确率/参数 Schema 合规率/记忆召回/模型成功率）+ Critic 结构化 verdict 框架
 - [ ] **验收**：单 Agent 能调工具、产出结构化结果；Critic 能拦截不合规输出
 
 ## Phase 8 — 多智能体离线规划（M4）
 - [ ] Planner + 选品/定价/预热/风控 Agent；Guardrail Policy Agent 生成 DSL
 - [ ] DSL 产出后自编译校验（失败回 Critic，≤3 次）
 - [ ] DSL 版本化存入 `guardrail_policy`（MySQL）+ 缓存 `guardrail:dsl:{aid}`（Redis 热更新）
+- [ ] **评估内建**：Critic 升级为独立验证器（确定性程序→规则→模型/人工三道校验）+ 正确失败行为（ASK/REFUSE/ESCALATE 计入正确失败率）
+- [ ] **评估内建**：L2 轨迹指标采集（Critic 拦截率/重复调用/无效步骤/越权/恢复成功率）+ 最小 golden 评估集 seed
 - [ ] **验收**：输入 GMV/ROI 目标 → 产出可上线 DSL + 选品定价方案
 
 ## Phase 9 — 护栏规则引擎（M4，在线确定性）
@@ -76,6 +80,7 @@
 - [ ] 调拨/调价走同一 Redisson 锁（0ms 超时，失败重入队 5s）；**调拨只建新段 `seg_{N+1}`**
 - [ ] 两阶段预留：`pending_stock`；补偿仅删 pending 标记
 - [ ] 预测性调拨：滑动窗口线性回归算 TTL<5min 预调拨
+- [ ] **评估内建**：DSL Fail-Close 门禁（L3 结果评估硬门槛，发布前 100% 编译）+ 影子模式框架 + 回测骨架（历史重放 oversell=0/SLA）+ 护栏命中埋点 + 风险分级
 - [ ] **验收**：规则引擎并发控盘，用户流量优先；无 LLM 热路径调用；pending 回滚不超卖
 
 ## Phase 10 — 前端 + 可观测 + 部署（M5）
@@ -83,6 +88,7 @@
 - [ ] 大屏策略可解释性：后端模板生成自然语言说明（非 LLM）
 - [ ] Prometheus + Grafana 看板（扣减耗时/锁等待/Agent 与规则引擎维度）
 - [ ] Docker 部署编排（Seckill/Agent/Rule-Engine Worker 资源隔离）
+- [ ] **可观测增强**：Trace 查看器 UI（span 树 + Critic verdict）+ 四层评估指标看板（含正确失败率/护栏命中/成本延迟）+ HITL 人工审批界面 + 风险分级展示
 - [ ] **验收**：大屏实时刷新；可解释文案正确；看板有指标
 
 ## Phase 11 — 评估闭环（M6）
@@ -90,6 +96,7 @@
 - [ ] 双轨评估 harness：客观硬指标优先 + LLM 定性补充
 - [ ] A/B 实验：AI 控盘 vs 人工规则对比 GMV/售罄率/毛利
 - [ ] GitHub Actions CI 跑 eval，阈值失败阻断
+- [ ] **评估闭环增强**：离线 eval harness（golden + 失败样本回归重放）+ 在线灰度 shadow→单活动→多活动 + 影子/A/B + 系统指标报告（含正确失败率）+ CI 阈值阻断
 - [ ] **验收**：给出量化报告（无超卖 + Agent 策略提升经营指标）
 
 ---
