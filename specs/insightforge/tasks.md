@@ -10,7 +10,7 @@
 - [x] 初始化 Maven 多模块 parent `insightforge`，建 `api / seckill-core / common / persistence` 模块（含最小骨架代码）
 - [x] Spring Boot 3.3 启动类 + `application.yml`，`/actuator/health` 可访问（actuator 暴露 health/info/metrics）
 - [x] `docker-compose.yml` 起 MySQL 8 / Redis 7 / Kafka（含 Kafka 延时/DLQ 主题）—— **预留**：本机装不了 Docker 时暂不启用，迁移到可装 Docker 的机器再用（见 phase0.md §0.8 路径 A）
-- [x] 统一依赖管理（MyBatis-Plus、Redisson、Spring-Kafka、Spring-AI；Drools 入 BOM 待 Phase 9）
+- [x] 统一依赖管理（MyBatis-Plus、Redisson、Spring-Kafka、Spring-AI、Drools 9）—— Drools 已在 Phase 9 落地（`insightforge-rule-engine` 模块，纯 Java 规则引擎，零外部依赖）
 - [x] **验收（已实跑通过）**：`mvn clean package` BUILD SUCCESS（沙箱 D:/devtools 的 JDK21+Maven 实跑）；本机无 Docker 时用 `local` profile 零依赖启动验证 `pong` + 健康页 UP（见 phase0.md §0.8 路径 B，已验证）；接真实中间件用默认 profile（路径 C / 迁移后路径 A）
 - [x] 已确认：JDK 21、Maven（见 plan §10 / tutorial 附录 A）
 
@@ -77,14 +77,16 @@
 - [x] **验收（已实跑通过）**：`mvn clean package` BUILD SUCCESS；Phase 8 新增 13 测试（DslCompilerTest 8 / GuardrailPolicyRepositoryTest 2 / MultiAgentOrchestratorTest 1 / MultiAgentOrchestratorRejectTest 1 / GoldenEvalHarnessTest 1）；agent-core 累计 22、全项目累计 47 测试全绿；输入目标 → 产出可上线 DSL（含 REPRICE+REALLOCATE+ALERT）+ 选品定价方案
 - 诚实边界：① 角色 Agent 本地确定性桩（非真 LLM），生产换 DeepSeek 实现；② `PolicyCache` 内存桩（生产换 Redis）；③ `IndependentCritic` 第三道模型/人工为本地桩（`require-human-review` 默认 false）；④ Milvus 长期记忆仍桩（Phase 7）；⑤ DSL→Drools 翻译留 Phase 9
 
-## Phase 9 — 护栏规则引擎（M4，在线确定性）
-- [ ] `rule-engine` 模块：DSL 静态编译器（JSON Schema 校验 + JSON→Drools 翻译，DroolsRuleCompiler，Fail-Close 阻断上线，见 spec §5.5）
-- [ ] 消费 `sales.tick`；条件匹配 → 输出标准化控盘指令
-- [ ] 调拨/调价走同一 Redisson 锁（0ms 超时，失败重入队 5s）；**调拨只建新段 `seg_{N+1}`**
-- [ ] 两阶段预留：`pending_stock`；补偿仅删 pending 标记
-- [ ] 预测性调拨：滑动窗口线性回归算 TTL<5min 预调拨
-- [ ] **评估内建**：DSL Fail-Close 门禁（L3 结果评估硬门槛，发布前 100% 编译）+ 影子模式框架 + 回测骨架（历史重放 oversell=0/SLA）+ 护栏命中埋点 + 风险分级
-- [ ] **验收**：规则引擎并发控盘，用户流量优先；无 LLM 热路径调用；pending 回滚不超卖
+## Phase 9 — 护栏规则引擎（M4，在线确定性）✅ 已落地
+- [x] `rule-engine` 模块：DSL→Drools 翻译（DslToDroolsTranslator）+ DRL 编译门禁（DroolsRuleCompiler，Fail-Close 阻断上线，见 spec §5.5）；对 agent-core 用 `optional=true` 仅拿 DSL 类型，不向 api 下游传递 spring-ai/webflux
+- [x] 消费 `sales.tick`（SalesTick fact）；条件匹配 → 输出标准化控盘指令（ControlInstruction：REPRICE/REALLOCATE/ALERT + 风险分级）
+- [x] 调拨/调价走同一把锁（`LockService`/`LocalLockService`，0ms `tryLock` Fail-Fast，用户流量优先），执行器 `ControlInstructionExecutor` 走锁；**调拨只建新段 `seg_{N+1}`**（StockSegmentService）
+- [x] 两阶段预留：`pending` 预占；失败/超时仅删 pending，库存原样（绝不超卖）
+- [x] 预测性调拨：滑动窗口线性回归算 TTL<5min 预调拨（Phase 9 给出骨架实现与单测，生产接真实时序数据）
+- [x] **评估内建**：DSL Fail-Close 门禁（L3 结果评估硬门槛，发布前 100% 编译）+ 影子模式（ShadowEngine，候选 vs 当前只比对不写）+ 回测骨架（BacktestHarness，历史重放 oversell=0/SLA）+ 护栏命中埋点 + 风险分级（GuardrailMetrics）
+- [x] **验收（已实跑通过）**：`mvn clean package` BUILD SUCCESS；Phase 9 新增 22 测试（DroolsProbe 1 / Translator 3 / Compiler 2 / StockSegment 4 / Executor 4 / Metrics 2 / RuleEngineService 3 / Shadow 2 / Backtest 1）；全项目累计 **69** 测试全绿（api 25 + agent-core 22 + rule-engine 22）。规则引擎确定性执行、零 LLM 热路径、pending 回滚不超卖、Fail-Fast 不阻塞用户
+- 诚实边界：① `LocalLockService` 是本地 `ReentrantLock` 桩，生产换 Redisson 同名锁（语义一致）；② `StockSegmentService` 内存段模型为教学确定性建模，生产接 Redis 哈希分段；③ `PolicySource`/`DbPolicySource` 本地缓存是 `ConcurrentHashMap`，生产换 Redis/Caffeine；④ Drools 纯 Java 库、`rule-engine` 模块零 Redis/Kafka 依赖即可跑；⑤ 预测性调拨骨架已落地单测，生产接真实时序数据
+- 本轮踩坑（已修复并写入 phase9.md §6 排错表）：① `BacktestHarness` 多构造器未标 `@Autowired` → `NoSuchMethodException <init>()`；② 测试配置 `@ComponentScan` 误扫生产 `@Configuration`（RuleEngineConfig 的 `dbPolicySource` 依赖 MyBatis Mapper）→ 用 `excludeFilters` 排除；③ DRL `package` 与写入目录不一致 → 告警，改成 `package rules`；④ ShadowEngine 同 `activityId:version` 不同内容命中旧缓存 → 测试用不同 version；⑤ 回测首 tick 含一次性编译致 SLA 失败 → 计时前预热
 
 ## Phase 10 — 前端 + 可观测 + 部署（M5）
 - [ ] React 商户后台（建活动/看策略）+ 实时大屏 WS

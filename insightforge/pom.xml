@@ -17,6 +17,7 @@
         <module>insightforge-seckill-core</module>
         <module>insightforge-api</module>
         <module>insightforge-agent-core</module>
+        <module>insightforge-rule-engine</module>
     </modules>
 
     <properties>

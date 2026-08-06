@@ -184,26 +184,28 @@
 
 ---
 
-## Phase 9 — 护栏规则引擎（M4，在线确定性，核心亮点）
+## Phase 9 — 护栏规则引擎（M4，在线确定性，核心亮点）✅ 已落地
 
 **目标**：把 DSL 以**确定性**方式落到热路径，LLM 不进热路径。
 **你会做**：独立 `rule-engine` 模块：
-1. **DSL 静态编译器**（Antlr 或纯 Java）：启动前 + 每版发布时校验语法/类型（`metric` 是否在枚举、`AND/OR` 嵌套是否合法）。**编译不过 Fail-Close 直接阻断上线**。
-2. 消费 `sales.tick` 事件 → 条件匹配 → 输出标准化控盘指令（`REPRICE`/`REALLOCATE`）。
-3. 调拨/调价**走同一 Redisson 锁**（0ms 超时，失败重入队 5s）；**调拨只建新段 `seg_{N+1}`**。
-4. **两阶段预留**：调拨先加 `pending_stock`（缓冲池），补偿时**只删 pending 标记，绝不碰已售硬库存**。
-5. **预测性调拨**：滑动窗口线性回归算 `TTL = 剩余库存 / 流速`，`TTL < 5min` 提前预调拨。
+1. **DSL→Drools 翻译 + 编译门禁**（纯 Java，非 Antlr）：`DslToDroolsTranslator` 把 DSL 翻成 DRL，`DroolsRuleCompiler` 真正编译成 `KieContainer`，**编译不过 Fail-Close 直接阻断上线**（Drools 是纯 Java 库、零外部依赖、可在沙箱跑）。
+2. 消费 `sales.tick` 事件 → 条件匹配 → 输出标准化控盘指令（`REPRICE`/`REALLOCATE`/`ALERT` + 风险分级）。
+3. 调拨/调价**走同一把锁**（`LocalLockService` 0ms `tryLock` Fail-Fast，用户流量优先），执行器 `ControlInstructionExecutor` 走锁；**调拨只建新段 `seg_{N+1}`**。
+4. **两阶段预留**：调拨先加 `pending`（缓冲池），补偿时**只删 pending 标记，绝不碰已售硬库存**。
+5. **预测性调拨**：滑动窗口线性回归算 `TTL = 剩余库存 / 流速`，`TTL < 5min` 提前预调拨（骨架 + 单测）。
 
-**结果评估内建**：DSL Fail-Close 作为 L3 结果评估硬门槛（发布前 100% 编译通过）；新增影子模式（`sales.tick` 副本评估、不执行）+ 历史回测骨架（重放断言 oversell=0 / SLA 达标）+ 护栏命中埋点 + 风险分级（查询低 / 写入中 / 跨活动预算再分配高）。详见 `agent-observability-evaluation.md`。
+**结果评估内建**：DSL Fail-Close 作为 L3 结果评估硬门槛（发布前 100% 编译通过）；新增影子模式（`ShadowEngine`，候选 vs 当前只在副本比对、不执行任何写）+ 历史回测骨架（`BacktestHarness`，重放断言 oversell=0 / SLA 达标）+ 护栏命中埋点 + 风险分级（`GuardrailMetrics`）。详见 `agent-observability-evaluation.md`。
 
 **技术选型与目的**
 - **独立模块**：AI 策略逻辑与并发原语解耦，扩展规则（阶梯调价、多池联动）不污染秒杀核心。
-- **DSL 静态编译器（致命隐患 #3）**：LLM 可能抽风生成 `threshold:0.999` 或错误嵌套 → 运行时裸奔。编译器把"能不能上线"在启动前挡住。
-- **两阶段预留 pending_stock（加分项 #2）**：补偿时若硬库存已被抢光，直接恢复会成负数超卖；pending 只删标记，永不碰硬库存。
+- **DSL 编译门禁（致命隐患 #3）**：LLM 可能抽风生成非法 DSL → 运行时裸奔。编译器把"能不能上线"在发布前挡住（Phase 8 结构/语义校验 + Phase 9 DRL 编译双重 Fail-Close）。
+- **两阶段预留 pending（加分项 #2）**：补偿时若硬库存已被抢光，直接恢复会成负数超卖；pending 只删标记，永不碰硬库存。
 - **预测性调拨（加分项 #1）**：从"售罄 2 倍才救火"变"TTL<5min 就调度"，AI 控盘智能感拉满，且是确定性算法、**不进 LLM**。
 
 **解决什么**：AI 策略真实驱动高并发写路径，但彻底规避大模型延迟/幻觉/非确定风险。
 **验证**：规则引擎并发控盘时用户流量优先；注入错误 DSL → 编译器拒绝、不上线；模拟补偿时硬库存=0 → 仅删 pending、无超卖。
+
+✅ **本 Phase 已落地**：新建 `insightforge-rule-engine` 模块（对 agent-core 用 `optional=true` 仅拿 DSL 类型，不向 api 下游传递 spring-ai/webflux）；`DslToDroolsTranslator`+`DroolsRuleCompiler`（Fail-Close）+ `RuleEngineService`（吞 tick 吐指令，只读不写）+ `ControlInstructionExecutor`（走同一把锁 + 只建新段 + pending 两阶段预留）+ `StockSegmentService` + `GuardrailMetrics`/`ShadowEngine`/`BacktestHarness`（评估三件套）。Phase 9 新增 22 测试，全项目累计 **69** 测试全绿（api 25 + agent-core 22 + rule-engine 22）。诚实边界：`LocalLockService`/`StockSegmentService`/`PolicySource` 本地桩，生产换 Redisson/Redis；Drools 纯 Java 库；预测性调拨骨架已落单测。详见 `tutorials/phase9.md`。
 
 ---
 

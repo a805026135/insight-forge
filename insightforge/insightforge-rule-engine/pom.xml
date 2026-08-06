@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.insightforge</groupId>
+        <artifactId>insightforge</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>insightforge-rule-engine</artifactId>
+    <name>InsightForge Rule Engine</name>
+    <description>护栏规则引擎（Phase 9）：DSL→Drools 翻译 + 在线确定性控盘执行（控制面/数据面分离，LLM 不进热路径）</description>
+
+    <dependencies>
+        <!-- 内部模块 -->
+        <dependency>
+            <groupId>com.insightforge</groupId>
+            <artifactId>insightforge-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.insightforge</groupId>
+            <artifactId>insightforge-persistence</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!--
+          DSL 领域类型（Metric/Operator/Action/GuardrailRule/GuardrailPolicy）位于 agent-core 的 planning 包。
+          optional=true：编译期拿类型即可，不向依赖本模块的下游（如 api）传递 agent-core / spring-ai / webflux，
+          保持「规则引擎零 LLM 依赖」的干净隔离（符合热路径 100% 确定性、LLM 不进热路径的硬约束）。
+        -->
+        <dependency>
+            <groupId>com.insightforge</groupId>
+            <artifactId>insightforge-agent-core</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Drools 9：护栏规则引擎执行面（JSON→DRL 翻译 + 编译执行，Fail-Close 门禁） -->
+        <dependency>
+            <groupId>org.drools</groupId>
+            <artifactId>drools-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.drools</groupId>
+            <artifactId>drools-compiler</artifactId>
+        </dependency>
+        <!--
+          Drools 9 默认走「可执行模型（MVEL）」编译后端；缺 drools-mvel 会 fallback 到
+          DummyConstraintBuilder 抛 UnsupportedOperationException。必须显式引入。
+        -->
+        <dependency>
+            <groupId>org.drools</groupId>
+            <artifactId>drools-mvel</artifactId>
+        </dependency>
+
+        <!-- 测试：H2 本地零依赖 + Spring Boot Test（JUnit 5 由 starter-test 提供） -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
