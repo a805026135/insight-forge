@@ -12,9 +12,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 秒杀接入层（Phase 2，已加 DB 级防超卖）。
+ * 秒杀接入层（Phase 3，Redis + Lua 主路径 + DB 兜底）。
  *
- * POST /api/seckill              用户抢购（扣减走原子条件更新，并发不会超卖）
+ * POST /api/seckill               用户抢购（优先 Redis Lua 原子扣减，无 Redis 走 DB 兜底）
+ * POST /api/seckill/admin/preheat/{skuId}  库存预热：把 DB 库存刷进 Redis（秒杀前必调一次）
  * GET  /api/seckill/stock/{skuId} 查看某 SKU 剩余/已售/初始库存（便于验证与压测后核对）
  */
 @RestController
@@ -30,6 +31,11 @@ public class SeckillController {
     @PostMapping
     public ApiResult<String> seckill(@RequestBody SeckillRequest req) {
         return seckillService.seckill(req);
+    }
+
+    @PostMapping("/admin/preheat/{skuId}")
+    public ApiResult<Void> preheat(@PathVariable("skuId") Long skuId) {
+        return seckillService.preheat(skuId);
     }
 
     @GetMapping("/stock/{skuId}")

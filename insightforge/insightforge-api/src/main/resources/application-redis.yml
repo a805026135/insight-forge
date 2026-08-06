@@ -1,0 +1,30 @@
+# Phase 3 启用 Redis 主路径的 profile。
+#
+# 激活方式（二选一）：
+#   1) 命令行：java -jar insightforge-api.jar --spring.profiles.active=redis
+#   2) IDE 运行配置里加 VM option：-Dspring.profiles.active=redis
+#
+# 前置条件：本机/容器里得有 Redis。最简单的是在仓库根目录执行：
+#   docker compose up -d redis        # 见 docker/docker-compose.yml，默认 127.0.0.1:6379
+#
+# 本 profile 与 local 是"互斥"的两种跑法：
+#   - local：零依赖冒烟（H2 + 不连 Redis），SeckillService 自动走 DB 兜底。
+#   - redis：连 Redis，StringRedisTemplate / RedissonClient / RedisStockService 全部装配，
+#            SeckillService 走 Redis Lua 原子扣减主路径。
+#
+# 下面这几行其实 application.yml 里已经写好了（spring.data.redis.host=localhost），
+# 这里再显式写一次是为了"文档即配置"——读者一眼能看到 Redis 连到哪里。
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+  # 关键：本 profile 不 exclude 任何自动配置，所以 Redis / Redisson 自动配置都会生效。
+  # （local profile 才会 exclude 它们，见 application-local.yml）
+
+logging:
+  level:
+    com.insightforge: INFO
+    # 想看 Redis 命令/连接细节可临时打开：
+    # org.springframework.data.redis: DEBUG

@@ -75,47 +75,49 @@
 
 ---
 
-## Phase 3 — Redis 预扣 + Lua 原子（并发心脏，M2）
+## Phase 3 — Redis + Lua 原子扣减 + Redisson 分布式锁（并发心脏，M2）
 
-**目标**：把高并发扣减从 DB 移到 Redis，真正解决性能 + 超卖。
+> 📘 **逐行详解**：`tutorials/phase3.md`（从加依赖/新建 redis profile → 写 Lua 脚本 → RedisStockService → RedisConfig → 改 SeckillService 双路 → 加预热接口 → 写 Redis+Lua 回归测试 → 本机端到端验证，每一步含命令+完整代码+逐行注释+📖概念/🧠理解+排错表）。本阶段跟着它做即可。
+
+**目标**：把高并发扣减从 DB 移到 Redis，真正解决性能 + 超卖；同时保留 DB 兜底，一份代码两种跑法。
 **你会做**：
-1. 预热：活动 `ARM` 前把库存 `SET stock:a:{aid}:s:{sid} 100`；
-2. 写 Lua 脚本：
-```lua
--- KEYS[1]=stock key, ARGV[1]=扣减量
-local stock = tonumber(redis.call('GET', KEYS[1]) or '0')
-if stock >= tonumber(ARGV[1]) then
-  return redis.call('DECRBY', KEYS[1], ARGV[1])
-else
-  return -1   -- 售罄
-end
-```
-3. `POST /api/seckill` 改调这段 Lua；DB 先简单同步落库（Phase 4 改 Kafka）。
-4. 加 **Redisson 分布式锁**：`lock:a:{aid}:s:{sid}`（细粒度）；读写锁（查用读锁、写用写锁）；分段锁 `seg:{n}`；**锁超时分级——用户 `tryLock(10ms)` 抢不到即"拥挤请重试"，规则引擎 `tryLock(0ms)` 拿不到就放弃本次、Kafka 延迟 5s 重试**。
+1. 预热：`POST /api/seckill/admin/preheat/{skuId}` 把库存 `SET stock:a:{aid}:s:{sid} 100`（秒杀前必调，也是 Agent"库存预热"入口）；
+2. 写 Lua 脚本（GET+判断+DECRBY 单 key 原子，不存在返回 -1）；
+3. `SeckillService` 改走**双路**：有 Redis → Lua 原子扣减（成功才建单 + Redisson 锁保护 DB 同步）；无 Redis（`local`）→ 自动回退 Phase 2 的 DB 条件更新；
+4. 加 **Redisson 分布式锁**：`lock:a:{aid}:s:{sid}` 细粒度，**用户 `tryLock(10ms)` 抢不到即 Fail-Fast**（规则引擎 0ms 让路是 Phase 9 增强）。
 
 **技术选型与目的**
 - **Redis + Lua 原子扣减**：对比"应用层先 `GET` 再 `DECR`"——后者在并发下多个线程同时读到同一库存，都判断"有货"再扣，必超卖；Lua 把"判断+扣减"变成**单线程原子操作**，彻底杜绝。这是秒杀的命门。
 - **Redisson 分布式锁**：对比裸 `SETNX`——裸锁有"无自动过期→死锁""过期了业务没跑完→误释放""主从切换空窗→重复获锁"三缺陷；Redisson 看门狗自动续期、可重入、防死锁，工业级。
 - **细粒度锁 `activity:sku`**：对比"全局一把锁"——全局锁会让所有 SKU 串行，吞吐暴跌。
-- **锁超时分级（你的致命隐患 #1）**：规则引擎调拨若持锁 200ms，上千用户会排队、RT 飙升。所以**用户 10ms 优先、规则引擎 0ms 立刻让路**——Agent 流量永远不阻塞用户。
-- **分段只建新段（致命隐患 #2）**：调拨 `SET segment_{N+1}`（O(1)，只锁新 Key），绝不向正在热卖的旧段追加写；用户扣减时 Lua 遍历所有段汇总。旧段锁竞争不受影响。
+- **锁超时分级（你的致命隐患 #1）**：规则引擎调拨若持锁 200ms，上千用户会排队、RT 飙升。所以**用户 10ms 优先、规则引擎 0ms 立刻让路**——Agent 流量永远不阻塞用户（本 Phase 落地用户 10ms；规则引擎 0ms 在 Phase 9 控盘时启用）。
+- **双路自动降级**：用 `ObjectProvider` 探测 Redis 相关 Bean 是否存在，`local` 下 Redis 缺失就走 DB 兜底，零代码切换——这也是"控制面/数据面分离、DB 是最终真相"的工程落地。
 
-**解决什么**：百万级并发扣减不超卖、低延迟；Agent 控盘不拖垮用户抢购。
-**验证**：压测 10 万并发抢 1 万库存 → 无超卖；用户扣减小 P99；模拟规则引擎持锁时用户请求仍快速返回（0ms 放弃）。
+**解决什么**：百万级并发扣减不超卖、低延迟；Redis 挂了 DB 仍兜得住。
+**验证**：`SeckillRedisLuaTest` 用 embedded-redis 证明 300 并发抢 100 → 成功=100、Redis 剩余=0、无超卖（沙箱无 redis 时该测试被 Assumptions 跳过，构建仍绿）；`SeckillNoOversellTest` 持续守护 DB 兜底路。
+> 注：分段锁 `seg:{n}` + 读写锁属更精细的增强，本 Phase 先单 key 原子（已 100% 不超卖），留待 Phase 5/9 扩充，不虚报完成度。
 
 ---
 
 ## Phase 4 — Kafka 异步削峰 + 幂等（M2）
 
-**目标**：抢购接口秒回，下单异步落库，扛峰值。
-**你会做**：Lua 扣减成功后发 `order.created` 到 Kafka；消费者异步建单；`order:idemp:{hash(userId,skuId,activityId)}` 用 Redis `SETNX` 去重。
+> 📘 **逐行详解**：`tutorials/phase4.md`（从加依赖/yml 生产者可靠性 → 事件 DTO → Redis SETNX 幂等闸门 → Kafka 生产者 → 消费者异步建单 → schema 唯一约束 → 改 SeckillService 双路（异步快路径+同步兜底）→ 幂等回归测试 → 本机端到端验证，每一步含命令+完整代码+逐行注释+📖概念/🧠理解+排错表）。本阶段跟着它做即可。
+
+**目标**：抢购接口秒回，下单异步落库，扛峰值；同一用户重复点抢只生成 1 张单。
+**你会做**：
+1. 扣减成功后往 Kafka `order.created` 发事件 → **立刻返回用户**（接口 ~毫秒级，P99<10ms）；
+2. 消费者异步建单 + 把 DB 库存补齐（Redis 先扣，DB 后追，最终一致）；
+3. 幂等双保险：`order:idemp:{orderId}` Redis **SETNX** 前置闸门（拦重复扣减） + `orders.order_id` **唯一约束**最终兜底（Kafka 重投也不重复建单，exactly-once）；
+4. 生产者 `acks=all` + `enable.idempotence=true` + 重试，消息 key=orderId（保序+分区幂等）。
 
 **技术选型与目的**
-- **Kafka**：异步解耦 + 原生事件流（销量事件供规则引擎订阅）。对比 **RabbitMQ**——RabbitMQ 更轻、易上手，但 Kafka 吞吐更高、分区并行、支持事件重放，契合"销量流驱动控盘"。
-- **幂等 `orderId=hash(...)` + SETNX**：对比"靠数据库唯一索引"——Redis 去重更快且不进 DB 热路径；Kafka 重投也不会重复建单（exactly-once 语义）。
+- **Kafka 异步解耦**：对比"请求里同步写 DB"——同步写在高并发下把 DB 变成瓶颈、RT 飙升；Kafka 把"建单落库"挪到后台匀速消费，用户路径只剩"Redis 扣减+发消息"，极速返回、峰值被队列削平。对比 RabbitMQ——Kafka 吞吐更高、分区并行、支持事件重放，契合"销量流驱动控盘"。
+- **幂等双保险（SETNX + DB 唯一约束）**：SETNX 在热路径前置拦"同一用户重复抢"造成的重复扣减（不进 DB）；DB 唯一约束作为最终兜底，即便 Kafka at-least-once 重投、生产者重试，也只落一张单。对比"只靠 DB 唯一索引"——SETNX 更快且不占 DB 热路径；对比"只靠 SETNX"——DB 约束防止 Redis 宕/超时导致漏拦。
+- **控制面/数据面分离**：Kafka 是"数据面"的异步管道，**不是**把 LLM 塞进链路——Agent 仍只在离线生成策略（Phase 8）。本 Phase 落地"热路径无阻塞写"。
 
-**解决什么**：接口从"等 DB 写完"变成"<10ms 返回"，峰值流量被队列削平。
-**验证**：并发下单接口 P99 < 10ms；重复请求只产生 1 张订单。
+**解决什么**：接口从"等 DB 写完"变成"<10ms 返回"；重复点击/网络重试/消息重投都只生成 1 张单；Redis 与 DB 库存最终一致（Phase 6 对账兜底）。
+**验证**：`SeckillIdempotencyTest` 证明同用户两次请求只建 1 单、库存只扣 1 次；`SeckillNoOversellTest` 继续守护 DB 兜底路；`mvn clean package` 全绿（local 零依赖也能跑，Kafka/Redis Bean 用 `@Profile("!local")` 与非 local 互斥）。
+> 注：order 消息的异常（如反序列化失败）当前以日志兜底；专用 DLQ 主题 `guardrail.action.failed` 在 Phase 9 用于护栏动作，order 消息的 exactly-once 由"acks=all + 幂等生产者 + DB 唯一约束"三道防线保证，不虚报。
 
 ---
 

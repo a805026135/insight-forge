@@ -28,9 +28,23 @@
             <groupId>org.redisson</groupId>
             <artifactId>redisson-spring-boot-starter</artifactId>
         </dependency>
+        <!-- Phase 3：RedisTemplate / StringRedisTemplate（执行 Lua 脚本用）。
+             注意：Redis 自动配置在 local profile 下被排除，所以本依赖只会让 Bean 在
+             "非 local" profile 出现；local 下 RedisStockService 不会被创建，自动走 DB 兜底。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.kafka</groupId>
             <artifactId>spring-kafka</artifactId>
+        </dependency>
+        <!-- Phase 4：生产者/消费者用 Jackson 把 OrderCreatedEvent 序列化/反序列化成 JSON。
+             这是 Spring Boot 的 JSON starter（web 模块也用它），显式声明以保证 seckill-core
+             独立编译时就有 jackson-databind（不依赖 api 模块的 web 依赖传递）。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-json</artifactId>
         </dependency>
     </dependencies>
 </project>

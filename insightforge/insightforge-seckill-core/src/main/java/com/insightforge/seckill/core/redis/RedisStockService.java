@@ -1,0 +1,68 @@
+package com.insightforge.seckill.core.redis;
+
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
+
+import java.util.Collections;
+import java.util.List;
+
+/**
+ * Redis 库存服务（Phase 3 的主路径）。
+ *
+ * 它只做两件事，但都做得很"原子"：
+ * 1) 预热 preheat()：把 DB 里的剩余库存刷进 Redis（秒杀开始前必须做，否则 key 不存在）。
+ *    这一步对应项目里 Agent 的"库存预热"任务——上线前由 Agent/运维把库存铺到 Redis。
+ * 2) 扣减 deduct()：执行 seckill_deduct.lua，靠 Redis 单线程 + Lua 原子，
+ *    保证"读→判→扣"不被并发打断，绝不会超卖。
+ *
+ * 注意：本类**不**加 @Service 注解，而是只由 RedisConfig（@Profile("!local")）以 @Bean 方式装配。
+ * 这样在 local profile（沙箱零依赖冒烟）下 RedisConfig 不生效、本类也不会被组件扫描到，
+ * SeckillService 检测到它不存在，自动走 Phase 2 的 DB 条件更新兜底——一份代码两种跑法。
+ */
+public class RedisStockService {
+
+    private final StringRedisTemplate redis;
+    private final RedisScript<Long> deductScript;
+
+    public RedisStockService(StringRedisTemplate redis, RedisScript<Long> deductScript) {
+        this.redis = redis;
+        this.deductScript = deductScript;
+    }
+
+    /**
+     * 库存预热：把 DB 剩余库存写入 Redis，作为秒杀期间的"权威库存"。
+     * key 形如 stock:a:{activityId}:s:{skuId}（见 RedisKeys）。
+     */
+    public void preheat(long activityId, long skuId, int stock) {
+        redis.opsForValue().set(RedisKeys.stock(activityId, skuId), String.valueOf(stock));
+    }
+
+    /**
+     * 原子扣减（秒杀热路径的核心调用）。
+     *
+     * redis.execute(script, keys, args) 会把这个脚本发到 Redis 单线程执行，
+     * 返回的数字被 Spring 自动转成 Long，我们再把 Long 翻译成 DeductResult。
+     *
+     * @return SUCCESS 扣成功 / SOLD_OUT 售罄 / NOT_PREHEATED 没预热 / ERROR 异常
+     */
+    public DeductResult deduct(long activityId, long skuId, int qty) {
+        String key = RedisKeys.stock(activityId, skuId);
+        // KEYS 列表（脚本里用 KEYS[1] 取），ARGV 是参数（这里传 qty）
+        List<String> keys = Collections.singletonList(key);
+        Long result = redis.execute(deductScript, keys, String.valueOf(qty));
+        if (result == null) {
+            return DeductResult.ERROR;
+        }
+        return switch (result.intValue()) {
+            case 1 -> DeductResult.SUCCESS;
+            case 0 -> DeductResult.SOLD_OUT;
+            default -> DeductResult.NOT_PREHEATED; // -1 或意外值
+        };
+    }
+
+    /** 读取 Redis 里的剩余库存（演示/验证用）。没预热返回 -1。 */
+    public int getStock(long activityId, long skuId) {
+        String v = redis.opsForValue().get(RedisKeys.stock(activityId, skuId));
+        return v == null ? -1 : Integer.parseInt(v);
+    }
+}

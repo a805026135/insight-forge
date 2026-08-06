@@ -7,11 +7,14 @@ import lombok.EqualsAndHashCode;
 import java.time.LocalDateTime;
 
 /**
- * 订单（Phase 1 建表）。
+ * 订单（Phase 1 建表；Phase 4 改为幂等订单号）。
  *
- * orderId：订单号。Phase 1 先用 UUID 占位；
- *          Phase 4 会改成 orderId = hash(userId, skuId, activityId)，
- *          配合 Redis SETNX 做幂等（同一用户重复点抢只生成 1 张单）。
+ * orderId：订单号。Phase 4 起由 {@code SeckillService.buildOrderId} 确定性推导为
+ *          {@code "OF-{activityId}-{skuId}-{userId}"}，而非随机 UUID。
+ *          这样「同一用户 + 同一活动 + 同一 SKU」永远算出同一个订单号，配合
+ *          orders 表上的 uk_order_id 唯一约束（见 schema.sql），实现 exactly-once
+ *          幂等：无论用户重复点击、网络重试，还是 Kafka 重投，都只生成 1 张单。
+ *          非 local 路径还在 Redis 用 order:idemp:{orderId} 做 SETNX 前置闸门。
  * status：Phase 1 写 "CREATED"，Phase 6 升级成订单状态机
  *         （PRE_CHECK → LOCK_STOCK → CREATE_ORDER → PAY → DONE / CANCEL）。
  */

@@ -21,11 +21,17 @@ spring:
   kafka:
     bootstrap-servers: localhost:9092
     producer:
-      acks: all
-      retries: 3
+      # —— Phase 4 生产者可靠性 ——
+      acks: all                       # 所有 in-sync 副本都收到才算成功，防丢
+      retries: 3                      # 网闪自动重试
+      enable-idempotence: true        # 配合 acks=all + retries，broker 端去重，防重
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
     consumer:
       group-id: insightforge-default
       auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
 management:
   endpoints:

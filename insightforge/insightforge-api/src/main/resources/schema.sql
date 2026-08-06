@@ -35,7 +35,10 @@ CREATE TABLE IF NOT EXISTS activity_sku (
 
 CREATE TABLE IF NOT EXISTS orders (
     id           BIGINT AUTO_INCREMENT PRIMARY KEY,
-    order_id     VARCHAR(64),
+    -- Phase 4 幂等锚点：order_id 由 (activityId,skuId,userId) 确定性推导（见 SeckillService.buildOrderId），
+    -- 唯一约束保证「同一用户同一活动同一 SKU」无论请求几次、Kafka 重投几次，都只落一张单（exactly-once）。
+    -- 用标准 inline UNIQUE（H2 默认模式与 MySQL 8 都支持，无需 MODE=MySQL）。
+    order_id     VARCHAR(64) UNIQUE,
     user_id      BIGINT,
     activity_id  BIGINT,
     sku_id       BIGINT,

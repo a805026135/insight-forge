@@ -48,6 +48,15 @@
             <artifactId>h2</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!-- Phase 3 验证用：内嵌 Redis（无需 Docker，测试里一键起一个真 redis-server 进程）。
+             仅在测试 classpath，不进生产。测试用 Assumptions 守护：若沙箱无法启动则自动跳过，
+             保证构建在零依赖环境也能绿灯通过；读者本机可一键 `mvn test` 复现 Lua 原子证明。 -->
+        <dependency>
+            <groupId>com.github.codemonstur</groupId>
+            <artifactId>embedded-redis</artifactId>
+            <version>1.4.3</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
