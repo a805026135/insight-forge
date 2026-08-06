@@ -53,11 +53,12 @@
 - [x] **验收**：SeckillCacheTest（读穿/防穿透/失效 3 用例）+ SeckillRateLimitTest（内存窗口 + Redis Lua 2 用例）全绿；`mvn clean package` 12 测试全过
 - [ ] 接入层限流（Nginx+Lua 令牌桶）/ Sentinel 应用层 —— 属部署与运维纵深防御，M2 不做（诚实留待部署/增强章，不虚报）
 
-## Phase 6 — 状态机 + 对账（M2）
-- [ ] 活动状态机 `DRAFT→ARMED→LIVE→SETTLING→CLOSED`（ARMED 前 MySQL-Redis 对账）
-- [ ] 订单状态机 `PRE_CHECK→LOCK_STOCK→CREATE_ORDER→PAY→DONE/CANCEL`
-- [ ] 结算对账：校验 `最终库存 = 初始 - 成功单数`
-- [ ] **验收**：非法状态迁转被拒；对账报告无偏差
+## Phase 6 — 状态机 + 对账（M2）✅ 已落地
+- [x] 活动状态机 `DRAFT→ARMED→LIVE→SETTLING→CLOSED`（ARMED 前 MySQL-Redis 对账）——`ActivityStatus` 枚举 + 迁转矩阵 + `ActivityService.arm` 前置对账闸门
+- [x] 订单状态机 `PRE_CHECK→LOCK_STOCK→CREATE_ORDER→PAY→DONE/CANCEL`——`OrderStatus` 枚举 + `OrderStateService`（cancel 回补库存 / markPaid 演示迁转）
+- [x] 结算对账：校验 `最终库存 = 初始 - 成功单数`——`ReconcileService.reconcileFinalStock`（成功单 = 非 CANCEL 订单）
+- [x] **验收**：`ActivityStateMachineTest`(9) + `ReconcileTest`(4) 全绿；`mvn clean package` 25 测试全过
+- 诚实边界：① Redisson 分布式锁在路线图但未单独引入 Bean（防超卖由 Phase 3 Lua 原子 + Phase 2 条件更新承载，如实不虚报）；② `PAY→DONE` 支付链路属 M7+ 范围红线，本 Phase 仅暴露迁转 API 演示状态机；③ local 无 Redis 时 MySQL↔Redis 对账降级为 DB 内部校验
 
 ## Phase 7 — Agent Core 自研运行时（M3）
 - [ ] `agent-core`：工具注册（JSON Schema）、ReAct/Plan-Execute 循环、三层记忆（短期/长期 Milvus/跨 Agent Artifact）

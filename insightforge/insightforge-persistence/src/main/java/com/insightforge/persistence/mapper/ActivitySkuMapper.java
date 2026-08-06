@@ -34,4 +34,13 @@ public interface ActivitySkuMapper extends BaseMapper<ActivitySku> {
     @Update("UPDATE activity_sku SET stock = stock - #{qty}, sold = sold + #{qty} " +
             "WHERE id = #{id} AND stock >= #{qty}")
     int decrementStock(@Param("id") Long id, @Param("qty") int qty);
+
+    /**
+     * Phase 6：库存回补（订单取消时用，与 decrementStock 对称）。
+     * stock 加回、sold 扣减；WHERE 加 {@code sold >= #{qty}} 防止 sold 扣成负数。
+     * 返回值 = 受影响行数：0 表示 sold 不足（已回补过 / 数据异常），业务层据此返回失败。
+     */
+    @Update("UPDATE activity_sku SET stock = stock + #{qty}, sold = sold - #{qty} " +
+            "WHERE id = #{id} AND sold >= #{qty}")
+    int incrementStock(@Param("id") Long id, @Param("qty") int qty);
 }

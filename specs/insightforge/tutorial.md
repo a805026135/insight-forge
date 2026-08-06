@@ -149,6 +149,8 @@
 **解决什么**：生命周期混乱、状态错乱、超卖无法自证。
 **验证**：非法状态迁转被拒；结算报告 `stock = init - sold` 成立。
 
+✅ **本 Phase 已落地**：活动/订单状态机枚举 + 迁转矩阵、`ReconcileService`（上线前 MySQL↔Redis 对账 + 结算公式对账）、`ActivityController`/`OrderController` 均已实现；`ActivityStateMachineTest`(9) + `ReconcileTest`(4) 全绿，`mvn clean package` 共 25 测试全过。诚实边界：Redisson 锁未单独引入（Lua 原子 + 条件更新承载防超卖）；支付链路延后 M7+；local 对账降级 DB 内部校验。详见 `tutorials/phase6.md`。
+
 ---
 
 ## Phase 7 — Agent Core 自研运行时（M3）

@@ -13,6 +13,7 @@ import com.insightforge.seckill.core.kafka.OrderEventProducer;
 import com.insightforge.seckill.core.redis.DeductResult;
 import com.insightforge.seckill.core.redis.RedisIdempotentService;
 import com.insightforge.seckill.core.redis.RedisStockService;
+import com.insightforge.seckill.core.state.OrderStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -139,7 +140,9 @@ public class SeckillService {
         order.setActivityId(req.getActivityId());
         order.setSkuId(req.getSkuId());
         order.setQty(req.getQty());
-        order.setStatus("CREATED");
+        // 订单落库即进入状态机的第一个持久状态 CREATE_ORDER（代表「下单成功、库存已锁」）。
+        // PRE_CHECK / LOCK_STOCK 是在内存里完成的前置瞬态，不落库。
+        order.setStatus(OrderStatus.CREATE_ORDER.name());
         order.setCreatedAt(LocalDateTime.now());
         try {
             ordersMapper.insert(order); // 幂等闸门：重复用户在这里被唯一约束挡住
