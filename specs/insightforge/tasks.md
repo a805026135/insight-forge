@@ -23,10 +23,10 @@
 - [x] ⚠️ 待确认：REST 接口风格（已采用 JSON 入参，POST /api/seckill）
 
 ## Phase 2 — DB 层防超卖（M2）
-- [ ] `activity_sku` 加 `version` 字段；MyBatis-Plus 乐观锁更新（`UPDATE ... SET stock=stock-1, version=version+1 WHERE id=? AND stock>0 AND version=?`）
-- [ ] 或小改造为 `UPDATE ... SET stock=stock-1 WHERE id=? AND stock>=1`（条件更新兜底）
-- [ ] **验收**：JMeter 中小并发压测后 `stock ≥ 0` 且 `sold = total - stock`，无超卖
-- [ ] ⚠️ 待确认：乐观锁 vs 行锁条件更新
+- [x] `activity_sku` 已带 `version` 字段（Phase 1 建表即预留）；**采用 `UPDATE ... SET stock=stock-1 WHERE id=? AND stock>=#{qty}` 原子条件更新**（最简单最稳，不依赖 version 即 100% 不超卖）
+- [x] `ActivitySkuMapper.decrementStock` 改为条件更新；`SeckillService.seckill` 用受影响行数判断 + `@Transactional` 包扣减与建单
+- [x] **验收（已实跑通过）**：`mvn clean package` BUILD SUCCESS；`SeckillNoOversellTest` 用 300 并发抢 100 库存，断言收敛到 `stock=0 / sold=100 / 订单=100 / 无负数`，无超卖（Phase 1 的 `SeckillOversellDemoTest` 已翻转为本回归测试）
+- [x] ⚠️ 已决策：**条件更新 vs 乐观锁 @Version** — 选条件更新作 DB 兜底（见 phase2.md §5 对比）；`version` 字段保留给 Phase 6 对账/乐观并发场景。原因：库存扣减必须原子校验 `stock>=qty`，条件更新已内置该原子性，version 在此为冗余
 
 ## Phase 3 — Redis 预扣 + Lua 原子（M2，并发心脏）
 - [ ] 预热脚本：活动 `ARM` 前把 `activity_sku.stock` 加载到 `stock:a:{aid}:s:{sid}`

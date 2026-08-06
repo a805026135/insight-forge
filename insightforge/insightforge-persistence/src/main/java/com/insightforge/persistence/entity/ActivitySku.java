@@ -11,9 +11,13 @@ import java.math.BigDecimal;
  *
  * 三个库存相关字段的分工（也是 Phase 2/3/6 的伏笔）：
  * - totalStock：初始库存，创建活动时写入，之后不变，用于对账（最终库存 = 初始 - 已售）。
- * - stock：剩余库存，热路径每次扣减就改它（Phase 1 用 UPDATE SET stock=stock-1）。
+ * - stock：剩余库存，热路径每次扣减就改它。
  * - sold：已售数量，扣减时同步 +1，用于对账与销量流（供规则引擎订阅）。
- * - version：乐观锁版本号，Phase 2 启用（UPDATE ... SET ... , version=version+1 WHERE version=?）。
+ *
+ * - version：乐观锁版本号（表里已建好）。Phase 2 的「防超卖」主修复走的是
+ *   `UPDATE ... WHERE stock >= qty` 原子条件更新（不依赖 version 即可 100% 不超卖）；
+ *   version 字段保留，供 Phase 6 对账 / 后续可能的乐观并发场景使用。
+ *   关于「条件更新 vs 乐观锁 @Version」的取舍，见 tutorials/phase2.md 的对比章节。
  */
 @Data
 @EqualsAndHashCode(callSuper = true)

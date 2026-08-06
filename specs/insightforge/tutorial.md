@@ -59,16 +59,19 @@
 
 ## Phase 2 — DB 层防超卖（M2）
 
+> 📘 **逐行详解**：`tutorials/phase2.md`（竞态对比流程图 + 条件更新伪代码 + 逐文件核心代码 + 乐观锁 `@Version` 对比 + 回归测试 + 验收/排错）。本阶段跟着它做即可。
+
 **目标**：第一道超卖防线——即使并发，数据库也不让库存变负。
-**你会做**：给 `activity_sku` 加 `version`；用 MyBatis-Plus 乐观锁：`UPDATE ... SET stock=stock-1, version=version+1 WHERE id=? AND stock>0 AND version=?`；或更直接的条件更新 `UPDATE ... SET stock=stock-1 WHERE id=? AND stock>=1`。
+**你会做**：把「库存够不够」的判断塞进 `UPDATE` 的 `WHERE`（原子条件更新 `UPDATE ... SET stock=stock-1 WHERE id=? AND stock>=#{qty}`）；业务层用受影响行数判断、扣减与建单包 `@Transactional`。
 
 **技术选型与目的**
-- **乐观锁（version）**：不加行锁，靠版本号检测冲突，冲突则重试。对比 **悲观锁 `SELECT ... FOR UPDATE`**——悲观锁直接锁行，绝对不超卖但**串行化、吞吐低、易死锁**；乐观锁无锁、高并发友好，冲突少时最优。
-- 更懒人的做法：**`WHERE stock>=1` 条件更新**——连 version 都不用，DB 单行更新原子，最简单也最稳。教学推荐先用这个。
+- **原子条件更新（采用）**：把「查库存 → 判断 → 扣减」三步合成一条 SQL，DB 行锁内重判 `stock>=qty`，并发绝不可能同时穿过，最简单也最稳，**不依赖 version 即 100% 不超卖**。
+- **乐观锁 `@Version`（对比，未采用）**：靠版本号检测冲突、冲突重试。但对「库存扣减」而言，它仍需额外 `stock>=qty` 条件才能真正防超卖，单靠 version 拦不住；既然条件更新已内置该原子性，version 在此为冗余。详见 phase2.md §5。
+- `version` 字段仍保留在表里，留给 Phase 6 对账 / 其他乐观并发场景。
 
-**为什么 DB 只是"兜底"**：DB 是最终真相，但高并发下所有请求打 DB 会压垮它。所以 DB 兜底 + 下一步 Redis 主战场。
+**为什么 DB 只是"兜底"**：DB 是最终真相，但高并发下所有请求打 DB 会压垮它。所以 DB 兜底 + 下一步 Redis 主战场（Phase 3）。
 **解决什么**：即使后面 Redis 挂了，DB 也不超卖。
-**验证**：JMeter 起 200 并发抢 100 库存 → 最终 `stock=0` 且 `sold=100`，无负数。
+**验证**：300 并发抢 100 库存 → 最终 `stock=0`、`sold=100`、订单 100、无负数（`SeckillNoOversellTest` 回归看护）。
 
 ---
 
