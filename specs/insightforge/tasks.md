@@ -174,3 +174,43 @@
 - [ ] 不训练/微调模型
 - [ ] 不做完整多租户 SaaS
 - ⚠️ 任何跨域新增功能须先回此红线确认
+
+---
+
+## 项目收尾（2026-08-07）
+
+> 最终构建验证：**96 测试全绿**，`mvn clean package` BUILD SUCCESS（seckill-core 2 + api 39 + agent-core 26 + rule-engine 29）。
+> 沙箱无 Docker，以下项诚实标注为「待迁移到有 Docker 的机器」，未虚报已完成。
+
+### 待迁移项（需 Docker 环境）
+
+| 序号 | 待做 | 来源 | 阻塞原因 |
+|------|------|------|----------|
+| ① | 端到端集成验证：docker-compose 起 Redis/Kafka/Redisson，跑 `integration` profile 串全链路 | M7+ §2 | 沙箱无 Docker 守护 |
+| ② | Phase 14 真实 A/B 评估：驱动规则引擎在模拟秒杀流上实跑指标，替换硬编码占位种子 | M7+ §4 | 依赖 ① 的集成环境 |
+| ③ | 前端大屏浏览器验证 / Grafana 面板容器验证 / JMeter 百万抢购实压 / CI eval 实跑 | Phase 10/11 | 沙箱无浏览器/Docker/JMeter |
+
+### 文档收尾（已完成）
+
+- [x] `insightforge/README.md`：项目入口，含快速开始、模块结构、核心亮点、文档导航、诚实边界
+- [x] `tutorials/00-学习路线.md`：主线必学 × 选做进阶索引
+- [x] `tutorials/选做1–7`：多智能体/Agent 运行时/Drools 深入/分段库存/AB 评估/大屏/部署压测
+- [x] Phase 7–11 顶部加「⚠️ 选做」标注 + 跳转指针
+
+### 最终交付物清单
+
+| 文件 | 说明 |
+|------|------|
+| `README.md` | 项目入口 |
+| `specs/insightforge/plan.md` | 技术方案 |
+| `specs/insightforge/spec.md` | 详细设计规格 |
+| `specs/insightforge/tasks.md` | 任务清单（本文） |
+| `specs/insightforge/analysis.md` | 架构分析 |
+| `specs/insightforge/glossary.md` | 术语速查 |
+| `specs/insightforge/面试讲解稿.md` | 面试 Q&A |
+| `specs/insightforge/本机实跑指南.md` | 4 档递进运行指南 |
+| `specs/insightforge/全项目体检报告.md` | 代码/依赖/技术债盘点 |
+| `specs/insightforge/REVIEW-规划审查与风险分析.md` | 规划审查 |
+| `specs/insightforge/tutorials/00-学习路线.md` | 学习路线总览 |
+| `specs/insightforge/tutorials/phase0–11.md` | 食谱式手把手教程 |
+| `specs/insightforge/tutorials/选做1–7.md` | 选做进阶章 |
