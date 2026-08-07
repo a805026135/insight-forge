@@ -9,7 +9,7 @@
 ## 1. 项目定位与目标
 
 ### 1.1 一句话定位
-一个**智能秒杀 / 大促平台（Agent 辅助）**：商家配置大促目标，多智能体自动产出**选品 / 定价 / 库存预热 / 风控**策略并预热上线；活动期间高并发抢购由经典秒杀引擎（Redis+Lua+分布式锁）保证**不超卖**。**大模型延迟红线**：LLM 永不进入秒杀热路径（扣减/调价/再分配/下单）——**Guardrail Policy Agent 在离线规划期把活动目标编译成「护栏策略 DSL」**，**确定性规则引擎**在 LIVE 期消费实时销量流、触发动态调价/库存再分配，**走与用户抢购相同的 Redisson 锁 + Lua 原子**。Agent 通过它生成的策略间接驱动热路径（差异化保留），但 LLM 推理零热路径调用（红线遵守）。
+一个**智能秒杀 / 大促平台（Agent 辅助）**：商家配置大促目标，多智能体自动产出**选品 / 定价 / 库存预热 / 风控**策略并预热上线；活动期间高并发抢购由经典秒杀引擎（Redis+Lua+分布式锁）保证**不超卖**。**大模型延迟红线**：LLM 永不进入秒杀热路径（扣减/调价/再分配/下单）——**Guardrail Policy Agent 在离线规划期把活动目标编译成「护栏策略 DSL」**，**确定性规则引擎**在 LIVE 期消费实时销量流、触发动态调价/库存再分配，**走与用户抢购相同的 Redis 库存键**——用户热路径 Lua 原子扣减、规则引擎控盘在 Redisson 锁 `lock:a:{aid}:s:{skid}`（0ms Fail-Fast）下 `INCRBY` 写回同一 `stock:a:{aid}:s:{skid}`，二者在同一份库存上真实相遇、互不丢失更新。Agent 通过它生成的策略间接驱动热路径（差异化保留），但 LLM 推理零热路径调用（红线遵守）。
 
 ### 1.2 业务背景与典型场景（User Stories）
 **业务背景**：秒杀 / 大促是电商最典型的高并发场景，核心工程难题是"高并发下库存扣减不超卖、流量削峰、限流"。传统做法靠人工配活动、靠规则拦流量。我们的差异点：用 **AI Agent** 把"选品 / 定价 / 库存预热 / 风控阈值"自动化，并在活动中**实时控盘**（某 SKU 售罄过快 → 自动再分配库存或调价），且控盘的写动作走与用户抢购**相同的分布式锁**——Agent 与高并发/互斥真正纠缠。
@@ -17,7 +17,7 @@
 **典型场景（User Stories）**
 - **US-1 活动规划**：运营给目标"双11 美妆场，目标 GMV 500万、ROI≥3" → Planner 拆子任务 → 选品/定价/预热/风控 专员 Agent 产出方案 → 运营确认 → 库存预热到 Redis → 活动上线。
 - **US-2 高并发抢购（互斥心脏）**：活动开始，百万用户抢购 → Redis+Lua 原子扣减 + Redisson 分布式锁防超卖 + Kafka 异步下单削峰 + Nginx+Lua 限流。
-- **US-3 实时控盘（规则引擎走锁，Agent 离线出策略）**：护栏规则引擎发现"SKU-A 售罄速度超预期 2 倍" → 在护栏内**自动再分配**库存（从池 B 调拨）或**动态调价**（走同一 Redisson 锁+Lua 原子）；超阈值的重大动作转人工确认。该护栏策略由 **Guardrail Policy Agent 离线生成 DSL**，LLM 本身不在 LIVE 热路径。
+- **US-3 实时控盘（规则引擎走锁，Agent 离线出策略）**：护栏规则引擎发现"SKU-A 售罄速度超预期 2 倍" → 在护栏内**自动再分配**库存（从池 B 调拨）或**动态调价**（写回同一 Redis 库存键 `stock:a:{aid}:s:{skid}`，控制面在 Redisson 锁 `lock:a:{aid}:s:{skid}` 下串行化）；超阈值的重大动作转人工确认。该护栏策略由 **Guardrail Policy Agent 离线生成 DSL**，LLM 本身不在 LIVE 热路径。
 - **US-4 异常检测 / 客服**：Agent 检测刷单 / 异常流量并告警；智能客服答活动规则。
 - **US-5 质量保障**：平台用评测集跑 eval，双维度量化——秒杀无超卖 + Agent 策略/控盘质量。
 
@@ -111,12 +111,12 @@
 1. **规划期（含 LLM 控制面）**：Planner 收"双11 美妆场"目标 → 选品/定价/预热/风控 Agent 出方案 → 运营确认 → **Guardrail Policy Agent 把"控盘预案"编译成护栏策略 DSL**（如"售罄速率>1.8×预期且余量<阈值→从池B自动调拨≤X件；调价幅度≤Y%；超出→人工"）预加载 Redis → 预热 Agent 把库存 Lua 预载 Redis（`ARMED`）。
 2. **LIVE 开始**：用户抢购 → API 限流 → Lua 原子扣库存（不超卖）→ 发 Kafka 异步建单 → WS 推结果。
 3. **实时流**：每次成交发 Kafka 销量事件 → **护栏规则引擎（确定性，非 LLM）**消费，发现 SKU-A 售罄过快。
-4. **规则引擎控盘（走锁，无 LLM）**：规则引擎按 DSL 决策从池 B 调拨库存 → 调 `reallocator` 工具 → **Redisson 锁 + Lua 原子**在池 A/B 间移动库存（与并发用户抢购争用同一锁）→ 护栏内自动生效；若超阈值则转人工确认（human-in-the-loop）。**整段在线零 LLM 调用。**
+4. **规则引擎控盘（走锁，无 LLM）**：规则引擎按 DSL 决策从池 B 调拨库存 → 调 `reallocator` 工具 → 在 Redisson 锁 `lock:a:{aid}:s:{skid}`（0ms Fail-Fast）下 **`INCRBY` 写回同一 Redis 库存键 `stock:a:{aid}:s:{skid}`**（与并发用户抢购争用同一份库存，用户走 Lua 原子、AI 走 Redisson 锁，互不丢失更新）→ 护栏内自动生效；若超阈值则转人工确认（human-in-the-loop）。**整段在线零 LLM 调用。**
 5. **Critic 校验**：动作前校验（库存>0？幅度在护栏内？）→ 不通过则走兜底规则或转人工。
 6. **全程**：状态变更发 Kafka + 更新 Redis + WS 推大屏；`traceId` 贯穿；Grafana 监控锁等待。
 7. **闭环（异步 LLM 复盘）**：活动结束 `SETTLING` 对账（库存=初始-成功单数，验证无超卖）→ `CLOSED`；**复盘 Critic Agent（异步、离线）**分析策略/控盘效果，写入 Milvus 供下次规划参考。
 
-> 这条链路里：Redis+Lua 防超卖是用户抢购与规则引擎控盘**共用**的原子基座；Redisson 锁同时保护"用户扣库存"和"规则引擎再分配"——Agent 通过它离线生成的策略 DSL 间接驱动热路径（差异化保留），但 LLM 推理始终在控制面，绝不在数据面热路径。
+> 这条链路里：Redis+Lua 防超卖是用户抢购与规则引擎控盘**共用**的原子基座；二者真正"同一"的是**同一份 Redis 库存键** `stock:a:{aid}:s:{skid}`（用户 Lua 扣减、AI 经 Redisson 锁 `lock:a:{aid}:s:{skid}` + `INCRBY` 写回，互不丢失更新）——Agent 通过它离线生成的策略 DSL 间接驱动热路径（差异化保留），但 LLM 推理始终在控制面，绝不在数据面热路径。
 
 ### 3.4 状态机
 - **活动生命周期**：`DRAFT`(Agent 规划) → `ARMED`(库存预热 Redis) → `LIVE`(用户抢 + Agent 控) → `SETTLING`(对账) → `CLOSED`。
@@ -205,7 +205,7 @@
   - `human_gate`：人工判定边界（超 `bounds` 的重大动作转人工审批）。
 - **版本化存储**：DSL 以版本号存入 **MySQL**（如 `guardrail_policy` 表，`activity_id + version` 唯一），支持单活动多版本策略、**灰度切换、一键回滚**。
 - **热更新**：当前生效 DSL 缓存至 **Redis**；规则引擎监听配置变更事件（或定时拉取）实现**规则热更新，无需重启服务**。DSL 样例见 §13 附录。
-- **DSL 静态编译器（Fail-Close，防 LLM 幻觉/冷启动裸奔）**：`insightforge-rule-engine` **启动前（及每个 DSL 新版本发布时）**必须先过一道**静态编译器**。因 DSL 为结构化 **JSON**，第一步用**纯 Java（Jackson 反序列化 + Schema 校验）**完成语法/类型检查：引用的 `metric` 是否在预定义枚举内、运算符/阈值合法、`AND/OR` 嵌套合法、`action` 类型与 `bounds` 匹配；**校验通过后，由 `DroolsRuleCompiler` 将每条策略翻译为 Drools `when/then` 规则**（Drools 7.x `Kie` API）。**任一校验或翻译失败 → Fail-Close 直接 `System.exit(1)` 阻断上线（绝不把解析异常留到运行时）**；同时 Guardrail Policy Agent 产出 DSL 后先自编译一次，失败则携带错误回 Critic 修订，最多 `maxRetry=3`。> 选型说明：在线执行采用 **Drools**（v0.8 初稿为自研轻量引擎）；JSON DSL 形态、控制面/数据面分离与 Fail-Close 语义完全不变，仅"静态编译"由"纯 Java 校验"扩展为"JSON 校验 + JSON→Drools 翻译"。翻译层 `DroolsRuleCompiler` 隔离，未来可换回自研 matcher 而不动 DSL 与上游。
+- **DSL 静态编译器（Fail-Close，防 LLM 幻觉/冷启动裸奔）**：`insightforge-rule-engine` **启动前（及每个 DSL 新版本发布时）**必须先过一道**静态编译器**。因 DSL 为结构化 **JSON**，第一步用**纯 Java（对扁平 record 直接字段校验，无 JSON Schema 校验路径）**完成语法/类型检查：引用的 `metric` 是否在预定义枚举内、运算符/阈值合法、`AND/OR` 嵌套合法、`action` 类型与 `bounds` 匹配；**校验通过后，由 `DroolsRuleCompiler` 将每条策略翻译为 Drools `when/then` 规则**（Drools 9 `Kie` API）。**任一校验或翻译失败 → Fail-Close 直接 `System.exit(1)` 阻断上线（绝不把解析异常留到运行时）**；同时 Guardrail Policy Agent 产出 DSL 后先自编译一次，失败则携带错误回 Critic 修订，最多 `maxRetry=3`。> 选型说明：在线执行采用 **Drools**（v0.8 初稿为自研轻量引擎）；JSON DSL 形态、控制面/数据面分离与 Fail-Close 语义完全不变，仅"静态编译"由"纯 Java 校验"扩展为"JSON 校验 + JSON→Drools 翻译"。翻译层 `DroolsRuleCompiler` 隔离，未来可换回自研 matcher 而不动 DSL 与上游。
 
 ### 5.6 工具权限分级管控（三层校验，防幻觉/误复用）
 `reallocator` / `repricer` 直接操作库存与价格，仅靠 Critic 前置校验不足，建立三层防护：
@@ -317,7 +317,7 @@ specs/insightforge/             # spec.md / plan.md / tasks.md
 3. 前端：**React**（**默认推荐**，生态/类型成熟度）。Vue 亦可。
 4. 报告导出：是否要 **PDF / Word**（运营方案文档导出，M5/M6 后期可选）。
 5. 多用户：先做 **JWT 单用户**（**推荐**，最快验证主线），后期再上简单多用户。
-6. 护栏规则引擎：**Drools**（成熟 RETE/PHREAK 推理引擎，已选）vs 自研轻量 Java 规则引擎（可控、轻量）。选型结论：采用 Drools；JSON DSL 与 Fail-Close 语义不变，仅以 `DroolsRuleCompiler`（JSON→Drools 翻译 + 校验）替换原自研静态编译，翻译层隔离可回退（详见 §5.5）。
+6. 护栏规则引擎：**Drools 9**（成熟 RETE/PHREAK 推理引擎，已选，父 POM `drools.version=9.44.0.Final`）vs 自研轻量 Java 规则引擎（可控、轻量，可回退备选）。选型结论：采用 Drools；JSON DSL 与 Fail-Close 语义不变，仅以 `DroolsRuleCompiler`（JSON→Drools 翻译 + 校验）替换原自研静态编译，翻译层隔离可回退（详见 §5.5）。
 
 ---
 
@@ -338,26 +338,23 @@ flowchart TB
     H -->|"REPRICE / REALLOCATE"| I["seckill-core 原子接口"]
     J["用户抢购 API"] -->|"Lua 原子扣减"| I
   end
-  I <-->|"同一 Redisson 锁"| K["Redis 库存/价格"]
+  I <-->|"同一 Redis 库存键：用户 Lua 原子扣减 / 规则引擎 Redisson 锁 + INCRBY 写回"| K["Redis 库存/价格"]
   H -. "超护栏阈值" .-> L["人工审批流"]
 ```
 
-### 12.2 分布式锁共用逻辑（用户抢购 vs 规则引擎调拨争用同一锁）
+### 12.2 同一份库存键的并发写（用户抢购 vs 规则引擎控盘）
 ```mermaid
 sequenceDiagram
   participant U as 用户抢购
   participant R as 规则引擎控盘
-  participant L as Redisson 锁(activity:sku)
-  participant Rd as Redis 库存/价格
-  U->>L: 获取 WriteLock（扣减）
-  L-->>U: 获锁
-  U->>Rd: Lua 原子扣减
-  U->>L: 释放锁
-  R->>L: 获取 WriteLock（调拨/调价）
-  L-->>R: 获锁（与用户串行互斥）
-  R->>Rd: Lua 原子调拨/改价
+  participant L as "Redisson 锁 lock:a:{aid}:s:{skid}"
+  participant Rd as "Redis 库存 stock:a:{aid}:s:{skid}"
+  U->>Rd: Lua 原子扣减（无显式锁，原子不可打断）
+  R->>L: tryLock(0ms) 抢锁（调拨/调价）
+  L-->>R: 获锁（用户流量优先，抢不到即放弃）
+  R->>Rd: INCRBY 写回（与用户同一份库存键）
   R->>L: 释放锁
-  Note over U,R: 二者争用同一把细粒度锁，互斥执行
+  Note over U,R: 二者真正"同一"的是同一份 Redis 库存键；用户走 Lua 原子、AI 走 Redisson 锁，互不丢失更新
 ```
 
 ### 12.3 端到端时序（规划 → 抢购 → 控盘 → 复盘）
@@ -376,7 +373,7 @@ sequenceDiagram
   U->>SE: 抢购
   SE->>Rd: Lua 原子扣减（不超卖）
   SE->>RE: Kafka 销量事件
-  RE->>Rd: 命中 DSL → 调拨/调价（走同一锁）
+  RE->>Rd: 命中 DSL → 调拨/调价（写回同一 stock 键，锁 lock:a:{aid}:s:{skid}）
   Note over RE: 在线无 LLM 调用
   O->>GP: 活动结束（异步复盘 → Milvus）
 ```
@@ -398,27 +395,38 @@ sequenceDiagram
 ### 13.2 护栏 DSL 样例（JSON）
 ```json
 {
-  "activity_id": "A1001",
-  "version": 3,
+  "activityId": 1001,
+  "version": "v3",
   "rules": [
     {
       "id": "r1",
-      "trigger": { "metric": "sellout_rate", "op": ">", "threshold": "1.8×expected" },
-      "condition": { "remaining_ratio_lt": 0.1 },
-      "action": { "type": "REALLOCATE", "from_pool": "B", "to_pool": "A", "max_units_pct": 0.1 },
-      "bounds": { "max_units_pct": 0.1, "circuit_breaker": { "window": "60s", "max_triggers": 5 } },
-      "human_gate": { "when": "units_pct > 0.1", "approve_flow": true }
+      "metric": "STOCK_RATIO",
+      "operator": "LT",
+      "threshold": 0.2,
+      "action": "REALLOCATE",
+      "params": { "amount": 50 }
     },
     {
       "id": "r2",
-      "trigger": { "metric": "remaining_ratio", "op": "<", "threshold": 0.05 },
-      "action": { "type": "REPRICE", "delta_pct": -0.03 },
-      "bounds": { "delta_abs_pct": 0.05, "floor": "cost_price" },
-      "human_gate": { "when": "delta_abs_pct > 0.05", "approve_flow": true }
+      "metric": "PRICE_GAP",
+      "operator": "GT",
+      "threshold": 0.15,
+      "action": "REPRICE",
+      "params": { "repriceTo": 6299, "costFloor": 5999 }
+    },
+    {
+      "id": "r3",
+      "metric": "SALES_VELOCITY",
+      "operator": "LT",
+      "threshold": 5,
+      "action": "ALERT",
+      "params": {}
     }
   ]
 }
 ```
+
+> 注：DSL 为扁平 record（`GuardrailRule(id, metric, operator, threshold, action, params)`），`params` 按动作携带键（`REALLOCATE→amount`、`REPRICE→repriceTo/costFloor`、`ALERT→{}`）；`DslCompiler` 直接校验 record 字段（metric 在枚举内、operator/threshold 合法、action 与 params 匹配、REPRICE≥costFloor、REALLOCATE≥0），无 JSON Schema 层。与 plan §4.5、代码 `GuardrailRule` 一致。
 
 ### 13.3 Kafka 事件体定义
 - `order.created`（下单 Topic，至少一次 + DLQ）：`{orderId, userId, activityId, skuId, qty, status, ts}`

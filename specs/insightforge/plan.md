@@ -10,7 +10,7 @@
 
 按 **spec-kit** 流程，从 v0.8 spec 落到可真实运行的代码。核心思想贯穿全程：
 
-- **控制面 / 数据面分离**：LLM Agent 只在离线规划期生成护栏策略 DSL、异步复盘；在线由**确定性护栏规则引擎**执行，走与用户抢购**同一套 Redisson 锁 + Lua 原子**。**LLM 永不进入秒杀热路径。**
+- **控制面 / 数据面分离**：LLM Agent 只在离线规划期生成护栏策略 DSL、异步复盘；在线由**确定性护栏规则引擎**执行，走与用户抢购**同一份 Redis 库存键**——用户热路径 Lua 原子扣减、规则引擎控盘在 Redisson 锁 `lock:a:{aid}:s:{skid}`（0ms Fail-Fast）下 `INCRBY` 写回同一 `stock:a:{aid}:s:{skid}`，二者在同一份库存上真实相遇、互不丢失更新（控制面写在同一锁键命名空间串行化）。**LLM 永不进入秒杀热路径。**
 - **最小功能叠加（教学构建）**：先跑通主流程（故意暴露超卖）→ DB 兜底 → Redis+Lua 真正解决 → Kafka 削峰 → 缓存/限流 → 状态机/对账 → Agent Core → 多智能体规划 → 规则引擎 → 前端/可观测 → 评估。每步可运行、可验证。
 
 ---
@@ -26,7 +26,7 @@
 | 消息队列 | Kafka | 异步下单削峰 + 实时销量事件流（供规则引擎） |
 | 多级缓存 | Caffeine + Redis | 商品/活动配置热点 |
 | 向量库 | Milvus | Agent 长期记忆（历史策略向量化，相似复用） |
-| 规则引擎 | Drools 7.x | 护栏 DSL 在线执行（JSON→Drools 翻译 + Fail-Close，见 spec §5.5） |
+| 规则引擎 | Drools 9（父 POM `drools.version=9.44.0.Final`） | 护栏 DSL 在线执行（扁平 record → Drools 翻译 + Fail-Close，见 spec §5.5） |
 | Agent 接入 | Spring AI + DeepSeek | 模型调用 / Embedding |
 | 限流 | Nginx+Lua / Redis+Lua / Sentinel | 接入层 + 模型 + 应用层限流 |
 | 压测 | JMeter | 百万抢购验证无超卖 |
@@ -82,7 +82,7 @@ docker/                         # docker-compose / Dockerfile
 - 订单：`PRE_CHECK → LOCK_STOCK → CREATE_ORDER → PAY → DONE / CANCEL`。
 
 ### 4.5 护栏 DSL Schema（见 spec §13.2）
-JSON：`{activity_id, version, rules:[{id, trigger{metric,op,threshold}, condition, action{type,params}, bounds{max,circuit_breaker}, human_gate{when, approve_flow}}]}`。
+**扁平 record**（非嵌套 JSON）：`GuardrailPolicy(activityId, version, rules)`，每条 `GuardrailRule(id, metric, operator, threshold, action, params)`——`params` 为 `Map<String,Object>`，按动作携带键：`REPRICE→{repriceTo, costFloor}`、`REALLOCATE→{amount}`、`ALERT→{}`。`DslCompiler` 直接校验 record 字段（metric 在枚举内、operator/threshold 合法、action 与 params 匹配、REPRICE≥costFloor、REALLOCATE≥0），无 JSON Schema 校验层。
 
 ---
 
@@ -107,7 +107,7 @@ JSON：`{activity_id, version, rules:[{id, trigger{metric,op,threshold}, conditi
 | 控制面/数据面分离 | LLM 离线生成 DSL，规则引擎在线执行 | LLM 延迟/非确定/幻觉不进热路径，AI 智能仍以确定性落地 |
 | 锁超时分级 Fail-Fast | 用户 10ms / 规则引擎 0ms+延迟重试 | Agent 策略流量绝不阻塞用户抢购 |
 | 分段只建新段 | 调拨 `SET segment_{N+1}` O(1) | 调拨不阻塞正在热卖的旧段 |
-| DSL 静态编译器 | JSON Schema 校验 + JSON→Drools 翻译（DroolsRuleCompiler），Fail-Close | 防 LLM 幻觉 DSL 导致运行时裸奔（Drools 已选，翻译层隔离可回退） |
+| DSL 静态编译器 | 扁平 record 字段校验 + record→Drools 翻译（DroolsRuleCompiler），Fail-Close | 防 LLM 幻觉 DSL 导致运行时裸奔（Drools 9 已选，翻译层隔离可回退） |
 | 两阶段预留 | 先加 `pending_stock`，补偿仅删标记 | 杜绝补偿时恢复成负数超卖 |
 | 预测性调拨 | 滑动窗口线性回归算 TTL<5min 预调拨 | 被动救火→主动调度（仍无 LLM） |
 
@@ -149,7 +149,7 @@ Redis 宕机（Caffeine 兜底+DB 行锁兜底）、Milvus 不可用（降级历
 | 2 | 构建工具 | **Maven** | 父 POM 多模块标准范式，资料最多 |
 | 3 | 前端框架 | **React 18 + TS** | Ant Design 原生、ECharts 大屏最顺 |
 | 4 | 用户模型 | **单用户 JWT** | 鉴权骨架一次到位，多用户 M7+ 扩 |
-| 5 | 护栏规则引擎 | **Drools 7.x** | 替代初稿自研；JSON DSL + Fail-Close 不变，翻译层 `DroolsRuleCompiler` 隔离可回退（见 spec §5.5） |
+| 5 | 护栏规则引擎 | **Drools 9**（父 POM `9.44.0.Final`） | 替代初稿自研；扁平 record DSL + Fail-Close 不变，翻译层 `DroolsRuleCompiler` 隔离可回退（见 spec §5.5） |
 | 6 | 预测性调拨 / A/B | **纳入（M4 / M6）** | 确定性算法不进 LLM 热路径；A/B 给护栏有效性客观背书 |
 | 7 | 报告导出 PDF/Word | **延后 M7+** | 先在网页大屏看评估结果 |
 | 8 | 范围红线 | **优惠券/积分/分销延后 M7+** | 守住库存互斥核心，规避资金强一致风险 |

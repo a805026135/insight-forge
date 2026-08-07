@@ -140,6 +140,35 @@
 
 ---
 
+## M7+ 修复路线图（基于 REVIEW-规划审查与风险分析.md）
+
+> 来源：`REVIEW-规划审查与风险分析.md` §1–§8 对「规划文档 vs 真实代码」的落差审查。本路线图把每条发现转为可追踪修复项，状态与 `tasks.md` 同步；§1 集成缝已由 Phase 12 落地，§5 文档失真已就地修正（见下）。
+> 严重度沿用 REVIEW §7：🔴 高（架构/正确性）/ 🟠 中（评估 rigor/诚实披露）/ 🟡 低（文档失真·已就地修正 / 规划超前·已知限制）。
+
+### 🔴 高（架构 / 正确性问题）
+- [x] **§1 三大支柱未集成** → **Phase 12 已修复**：`sales.tick` 有生产者（`SeckillService` 扣减后发）+ 消费者（`SalesTickConsumer`）；`StockSegmentService`/`PriceStore` 提接口并新增 Redis 实现（`confirmPending` 经 `INCRBY` 写回**同一** `stock:a:{aid}:s:{skid}`）；`RedissonLockService` 替换本地锁桩；锁键修正 `lock:` 前缀；`RuleEngineRedisKeys` 与 `RedisKeys` 逐字符对齐。验收：91 测试全绿。
+- [ ] **§2 零端到端验证** → 待做（**Phase 13**）：本机 docker-compose 起 Redis/Kafka/Redisson，跑 `integration` profile 串「建活动→arm 对账→live→用户抢购→规则引擎消费 tick→调拨→大屏」；补 `@SpringBootTest` 集成测试（`Assumptions` 守卫，沙箱跳过）。诚实边界：当前仅「键契约一致 + 契约级单测」证明链路接通，未虚报已端到端跑通。
+- [ ] **§3.1 异步订单状态不一致** → 待做（**Phase 13**）：`OrderCreatedConsumer` 写死 `"CREATED"` vs 状态机首态 `CREATE_ORDER`，导致经异步快路径创建的订单 cancel/pay 直接 500。改为用 `OrderStatus.CREATE_ORDER` 枚举常量；补回归测试。
+- [ ] **§3.2 结算对账只查 DB 且为恒等式** → 待做（**Phase 13/14**）：`ReconcileService.reconcileFinalStock` 不读 Redis、公式（`总库存−成功单` vs `stock`）恒等，发现不了 Redis↔DB 双写漂移。改为交叉核对 Redis `stock` 键与 DB `sold`。
+
+### 🟠 中（评估 rigor / 诚实披露）
+- [ ] **§3.3 幂等键限一单未声明** → 待做（**Phase 13**）：`buildOrderId = OF-{activityId}-{skuId}-{userId}` 隐含每用户每 SKU 限一单（秒杀限购 1 单）。在 spec/plan/API 文档显式声明为有意业务规则，或改 `OF-...-{qty}` 允许同 SKU 多单。
+- [ ] **§4 A/B 评估「自证」** → 待做（**Phase 14**）：`InMemoryBusinessMetricsSource` 硬编码种子（人工 82%/28% vs AI 95%/36%）让 AI 胜，未真实驱动规则引擎。改为从真实/模拟秒杀跑出指标，或明确标注「示例数据、非实测结论」。
+
+### 🟡 低（文档失真，已就地修正于本轮）
+- [x] **§5 DSL Schema 失真**：plan §4.5 / spec §13.2 写嵌套 `{trigger,condition,action,bounds,human_gate}` vs 实现扁平 `GuardrailRule(id, metric, operator, threshold, action, params)`（params 按动作携 `repriceTo/costFloor/amount`）→ 已修正为扁平结构 + 真实 `params` 键。
+- [x] **§5 Drools 版本失真**：plan 技术栈 + 决策 #5 写 `Drools 7.x` vs 父 POM `drools.version=9.44.0.Final` → 已修正为 Drools 9。
+- [x] **§5 analysis.md 过期**：头部「已对齐 v0.6」+ §6 仍列 Drools 为开放问题 vs 决策 #5 已选定 → 已修正头部版本 + §6 决策状态。
+- [x] **§5 「同一把锁」叙事失真**：spec/plan/analysis 称「争用同一 Redisson 锁」→ 已修正为精确含义（同一份 Redis 库存键 + 控制面同锁键命名空间；用户热路径走 Lua 原子），见 Phase 12 诚实边界 + glossary。
+- [x] **§5 JSON Schema 校验 DSL 叙事**：spec §5.5 称 Jackson+JSON Schema 校验路径 → 已修正为 `DslCompiler` 直接校验扁平 record（无 JSON Schema 路径）。
+
+### 🟡 规划超前实现（§6，已知限制，非本次范围，已显式标注未虚报）
+- [ ] Redisson 在用户热路径实际零使用（防超卖由 Lua + DB 条件更新承担）——文档已据实表述，不称「互斥心脏」。
+- [ ] 分段 / pending / 预测性调拨仅内存原型 + 键名常量；生产接 Redis 分段未做。
+- [ ] Canal / Nginx+Lua / Sentinel / Milvus / WS 大屏未落地（Milvus 仍抛 `UnsupportedOperationException` 桩）。
+
+---
+
 ## 范围红线（M1–M6 不做，延后 M7+）
 - [ ] 不内置优惠券/积分/多渠道分销/支付网关对接
 - [ ] 不训练/微调模型
