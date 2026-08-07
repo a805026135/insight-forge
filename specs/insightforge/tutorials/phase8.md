@@ -1,5 +1,7 @@
 # Phase 8 — 多智能体离线规划（M4）
 
+> ⚠️ **本章含选做进阶内容**：MultiAgentOrchestrator / RoleAgent / IndependentCritic / GoldenEvalHarness 属「多智能体编制」（选做1）。**主线只需**"一个 Planner 产出可上线 DSL"。多角色编排按需读 → [`选做1-多智能体编制.md`](选做1-多智能体编制.md) / [`00-学习路线.md`](00-学习路线.md)。
+
 > 配套代码：`insightforge-agent-core/.../planning/`（新建包）+ `insightforge-persistence`（护栏表）。本 Phase 把 Phase 7 的「单 Agent 发动机」升级成「一支团队」：输入运营目标 → 多 Agent 分工产出 → 汇编成一份**护栏策略 DSL** → 编译校验 → 版本化发布并上架缓存。
 > 全部代码已在仓库带逐行中文注释；本教程按「先搞懂 → 看架构 → 走读关键代码 → 自己跑一遍 → 排错」的顺序带你过一遍。
 
