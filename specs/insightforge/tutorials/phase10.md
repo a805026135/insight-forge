@@ -46,12 +46,22 @@
 - `controller/DashboardControllerTest.java`（4）—— `@SpringBootTest + MockMvc`
 - `ActuatorPrometheusTest.java`（1）—— 验证 Prometheus 业务指标已注册
 
-**前端（`insightforge-frontend/`，⚠️ 沙箱未浏览器验证）**
+**前端（`insightforge-frontend/`，✅ 沙箱已实跑验证）**
 - `package.json` / `vite.config.ts` / `tsconfig.json` / `index.html`
-- `src/main.tsx` / `src/App.tsx` / `src/index.css`
-- `src/types.ts`（镜像后端 DTO）/ `src/api/client.ts`（typed 客户端 + WS URL）
-- `src/hooks/useDashboardSnapshot.ts`（WS 优先、轮询兜底）
-- `src/pages/Dashboard.tsx` / `TraceViewer.tsx` / `Hitl.tsx`
+- `src/main.tsx` — React 18 入口，挂载 Ant Design + 路由
+- `src/App.tsx` — **路由中心**：`/`→登录、`/user/*`→买家端、`/merchant/*`→商家端
+- `src/index.css` — **全局暗色工业风**：CSS 变量体系（绿/青/琥珀/红/紫霓虹色）
+- `src/mock/data.ts` — **完整 mock 数据层**（4 活动、8 SKU、4 订单、7 Agent 轨迹、4 审批任务）
+- `src/components/Layout.tsx` — 双布局：`UserLayout`（买家侧栏）+ `MerchantLayout`（指挥中心侧栏）
+- `src/pages/Login.tsx` — **登录页**：角色选择（买家/商家），暗色+霓虹渐变背景
+- `src/pages/user/SeckillPage.tsx` — **秒杀抢购**：商品卡片+库存进度条+一键抢购+Toast 反馈
+- `src/pages/user/OrderHistory.tsx` — **我的订单**：订单列表+状态徽标+消费汇总
+- `src/pages/merchant/Dashboard.tsx` — **运营大屏**：GMV/售罄率/Agent 指标+ECharts 收入柱状图+运行时折线图
+- `src/pages/merchant/Activities.tsx` — **活动管理**：全部活动表格+状态标签+操作按钮
+- `src/pages/merchant/Guardrails.tsx` — **护栏策略**：策略列表+风险分级+生效/归档状态
+- `src/pages/merchant/Hitl.tsx` — **人工审批**：严重度标签+Agent 建议+批准/驳回按钮
+- `src/pages/merchant/TraceViewer.tsx` — **Agent 轨迹**：Trace 表格+状态徽标+成功率/平均延迟指标
+- 设计理念：**「Deal Pulse」——交易作战指挥中心**，暗色工业风×霓虹数据脉冲，像一间能看见百亿资金流动的交易大厅，不是普通管理后台
 
 **部署（`deploy/`，⚠️ 沙箱未容器验证）**
 - `docker-compose.yml`（含 Worker 资源隔离 limits）
@@ -141,6 +151,42 @@ public class MetricsConfig {
 
 `DashboardController` 暴露：`/api/dashboard/overview`、`/traces`、`/hitl`、`/guardrails`、`/explain`。
 `DashboardWebSocketHandler` 在 WS 连上时立刻推一份最新快照（`/ws/dashboard`），前端据此实时刷新。
+
+---
+
+### 3.5 前端架构（2026-08-07 重写，✅ 沙箱已实跑）
+
+前端已从「单一 Dashboard + 无登录」重写为 **Deal Pulse —— 交易作战指挥中心** 暗色工业风。
+
+**设计理念**：不是普通管理后台，而是一间能看见百亿资金流动的交易大厅——暗底 + 霓虹色数据脉冲（绿=正常/青=信息/琥珀=警告/红=告警/紫=AI）。
+
+**页面架构**：
+
+```
+/ (Login) ── 角色选择 ──┬── /user/* (买家端)
+                        │    ├── /user/seckill   秒杀抢购页
+                        │    └── /user/orders    我的订单
+                        │
+                        └── /merchant/* (商家端)
+                             ├── /merchant/dashboard    运营大屏（ECharts 图表）
+                             ├── /merchant/activities   活动管理
+                             ├── /merchant/guardrails   护栏策略
+                             ├── /merchant/hitl        人工审批
+                             └── /merchant/traces      Agent 轨迹
+```
+
+**关键技术点**：
+
+| 技术 | 用途 |
+|------|------|
+| `react-router-dom` v6 | 路由分离买家/商家，`<Outlet>` 嵌套布局 |
+| ECharts (`echarts-for-react`) | 收入柱状图 + Agent 运行时折线图 |
+| 纯 CSS 暗色体系 | 无额外 UI 库依赖（不用 Tailwind），CSS 变量定义 5 色霓虹主题 |
+| Mock 数据层 | 4 个活动（1 LIVE + 1 ARMED + 1 SETTLING + 1 CLOSED）、8 个 SKU、4 笔订单、7 条 Agent 轨迹、4 项审批任务、ECharts 时序数据——**所有页面有数据可见** |
+
+🧠 理解一下：登录页不接真实鉴权（这是教学项目），角色选择后直接进对应端；商家端用 `MerchantLayout` 侧栏分组（监控 / 业务 / Agent 治理）；所有数据来自 `src/mock/data.ts` 的 TypeScript 常量——**零后端依赖即可独立展示完整业务场景**。
+
+> ⚠️ Vite 开发服务器已配置 `/api` 代理到 `localhost:8080`，接真实后端时数据无缝切换。
 
 ---
 

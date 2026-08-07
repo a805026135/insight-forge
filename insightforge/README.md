@@ -26,7 +26,7 @@ AI 像「聪明的店长」，离线算好今天哪些货该降价、哪些该�
 
 ### 前提
 
-- JDK 21（`D:/devtools/jdk21`）
+- JDK 21（`D:/devtools/jdk21/jdk-21.0.12+8`）
 - Maven 3.9+（`D:/devtools/maven/apache-maven-3.9.9`）
 
 ### 构建（零依赖，开箱即跑）

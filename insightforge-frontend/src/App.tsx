@@ -1,57 +1,33 @@
-import { useState } from 'react';
-import { Layout, Menu, Typography } from 'antd';
-import { DashboardOutlined, PartitionOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
-import Dashboard from './pages/Dashboard';
-import TraceViewer from './pages/TraceViewer';
-import Hitl from './pages/Hitl';
-
-const { Header, Sider, Content } = Layout;
-
-type PageKey = 'dashboard' | 'traces' | 'hitl';
-
-const menuItems = [
-  { key: 'dashboard', icon: <DashboardOutlined />, label: '实时大屏' },
-  { key: 'traces', icon: <PartitionOutlined />, label: 'Trace 查看器' },
-  { key: 'hitl', icon: <SafetyCertificateOutlined />, label: 'HITL 人工复核' },
-];
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { UserLayout, MerchantLayout } from './components/Layout';
+import Login from './pages/Login';
+import SeckillPage from './pages/user/SeckillPage';
+import OrderHistory from './pages/user/OrderHistory';
+import Dashboard from './pages/merchant/Dashboard';
+import Activities from './pages/merchant/Activities';
+import Guardrails from './pages/merchant/Guardrails';
+import Hitl from './pages/merchant/Hitl';
+import TraceViewer from './pages/merchant/TraceViewer';
 
 export default function App() {
-  const [page, setPage] = useState<PageKey>('dashboard');
-
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider theme="dark" breakpoint="lg" collapsible>
-        <div
-          style={{
-            color: '#fff',
-            fontWeight: 700,
-            fontSize: 18,
-            padding: '16px',
-            textAlign: 'center',
-          }}
-        >
-          InsightForge 智析
-        </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={[page]}
-          items={menuItems}
-          onClick={(e) => setPage(e.key as PageKey)}
-        />
-      </Sider>
-      <Layout>
-        <Header style={{ background: '#fff', paddingLeft: 24 }}>
-          <Typography.Title level={4} style={{ margin: '14px 0' }}>
-            智能秒杀 / 大促平台 · 控制面可视化
-          </Typography.Title>
-        </Header>
-        <Content style={{ margin: 24 }}>
-          {page === 'dashboard' && <Dashboard />}
-          {page === 'traces' && <TraceViewer />}
-          {page === 'hitl' && <Hitl />}
-        </Content>
-      </Layout>
-    </Layout>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route path="/user" element={<UserLayout />}>
+          <Route index element={<Navigate to="/user/seckill" replace />} />
+          <Route path="seckill" element={<SeckillPage />} />
+          <Route path="orders" element={<OrderHistory />} />
+        </Route>
+        <Route path="/merchant" element={<MerchantLayout />}>
+          <Route index element={<Navigate to="/merchant/dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="activities" element={<Activities />} />
+          <Route path="guardrails" element={<Guardrails />} />
+          <Route path="hitl" element={<Hitl />} />
+          <Route path="traces" element={<TraceViewer />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }
