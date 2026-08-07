@@ -1,49 +1,61 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
-import { orderApi } from '../../api';
-
-interface Order {
-  orderId: string;
-  activityId: number;
-  skuId: number;
-  qty: number;
-  status: string;
-  createdAt: string;
-}
+import { orderApi, OrderView } from '../../api';
 
 export default function OrderHistory() {
   const { user } = useAuth();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [msg, setMsg] = useState('');
+  const [orders, setOrders] = useState<OrderView[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const refresh = async () => {
-    // 后端目前没有"查我的订单"接口，先通过已知 orderId 模式查询
-    // 实际项目中应有 GET /api/order?userId= 接口
-    setMsg('订单列表功能需后端补充 GET /api/order?userId= 接口。');
-    setMsg('当前支持：抢购后在秒杀页直接取消订单，或通过命令行 curl 操作。');
+    if (!user?.id) return;
+    setLoading(true);
+    setError('');
+    try {
+      const data = await orderApi.list(user.id);
+      setOrders(data);
+    } catch (e: any) {
+      setError(e.message || '加载订单失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     refresh();
   }, []);
 
+  const statusLabel = (s: string) => {
+    const map: Record<string, string> = {
+      CREATE_ORDER: '已下单',
+      PAY: '已支付',
+      DONE: '已完成',
+      CANCEL: '已取消',
+    };
+    return map[s] || s;
+  };
+
   return (
     <div className="order-page">
       <h2>我的订单</h2>
       <p className="welcome">欢迎，{user?.displayName}！</p>
-      <div className="info-msg">
-        <p>{msg}</p>
-        {orders.length === 0 && (
-          <p className="hint">
-            提示：先在「秒杀抢购」页下单，然后在页面底部可以看到订单号并操作取消/支付。
-          </p>
-        )}
-      </div>
+
+      {loading && <p className="info-msg">加载中…</p>}
+      {error && <p className="error-msg">{error}</p>}
+
+      {!loading && !error && orders.length === 0 && (
+        <div className="info-msg">
+          <p>暂无订单。先去「秒杀抢购」页下一单吧！</p>
+        </div>
+      )}
+
       {orders.length > 0 && (
         <table className="order-table">
           <thead>
             <tr>
               <th>订单号</th>
+              <th>活动</th>
               <th>SKU</th>
               <th>数量</th>
               <th>状态</th>
@@ -54,11 +66,12 @@ export default function OrderHistory() {
           <tbody>
             {orders.map((o) => (
               <tr key={o.orderId}>
-                <td>{o.orderId}</td>
+                <td title={o.orderId}>{o.orderId.slice(0, 12)}…</td>
+                <td>{o.activityId}</td>
                 <td>{o.skuId}</td>
                 <td>{o.qty}</td>
-                <td className={`status-${o.status?.toLowerCase()}`}>{o.status}</td>
-                <td>{o.createdAt}</td>
+                <td className={`status-${o.status?.toLowerCase()}`}>{statusLabel(o.status)}</td>
+                <td>{o.createdAt?.replace('T', ' ').slice(0, 19)}</td>
                 <td>
                   {o.status === 'CREATE_ORDER' && (
                     <>
@@ -72,11 +85,22 @@ export default function OrderHistory() {
                       }}>支付</button>
                     </>
                   )}
+                  {o.status === 'PAY' && (
+                    <button onClick={async () => {
+                      await orderApi.pay(o.orderId);
+                      await refresh();
+                    }}>确认完成</button>
+                  )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+      )}
+      {orders.length > 0 && (
+        <button className="btn-refresh" onClick={refresh} style={{ marginTop: 16 }}>
+          刷新
+        </button>
       )}
     </div>
   );

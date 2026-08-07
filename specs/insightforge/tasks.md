@@ -197,6 +197,15 @@
 - [x] `tutorials/选做1–7`：多智能体/Agent 运行时/Drools 深入/分段库存/AB 评估/大屏/部署压测
 - [x] Phase 7–11 顶部加「⚠️ 选做」标注 + 跳转指针
 
+### 前端 API 全覆盖 + 种子数据丰富（2026-08-07 下午第四轮）
+- [x] 订单查询：`GET /api/order?userId={id}`（OrdersMapper.findByUserId + OrderController）
+- [x] 活动列表：`GET /api/activity`（ActivityController，动态查询替代硬编码）
+- [x] 种子数据：双产品（iPhone + AirPods）+ 双活动（双11 + 618），看板 totalActivities 1→2
+- [x] 前端 OrderHistory：从「待补充」改为调真实 API（orderApi.list）+ 取消/支付/刷新
+- [x] 前端 Activities：从硬编码单活动改为 GET /api/activity 动态加载 + 刷新
+- [x] 前端类型：新增 OrderView / ActivityView 类型
+- [x] **验收**：BUILD SUCCESS 96 测试全绿；全链路端到端：登录→查活动(2)→用户查订单(空)→秒杀→查订单(1)→取消→查订单(已取消)
+
 ### 最终交付物清单
 
 | 文件 | 说明 |

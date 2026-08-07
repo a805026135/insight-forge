@@ -34,6 +34,7 @@ export const seckillApi = {
 
 // ---- 活动状态机 ----
 export const activityApi = {
+  list: () => get<ActivityView[]>('/activity'),
   arm: (id: number) => post<ReconcileReport>(`/activity/${id}/arm`),
   live: (id: number) => post<void>(`/activity/${id}/live`),
   settle: (id: number) => post<ReconcileReport>(`/activity/${id}/settle`),
@@ -43,6 +44,7 @@ export const activityApi = {
 
 // ---- 订单 ----
 export const orderApi = {
+  list: (userId: number) => get<OrderView[]>(`/order?userId=${userId}`),
   cancel: (orderId: string) => post<void>(`/order/${orderId}/cancel`),
   pay: (orderId: string) => post<void>(`/order/${orderId}/pay`),
 };
@@ -86,6 +88,17 @@ export interface ReconcileReport {
   passed: boolean;
   activityStatus: string;
   items: ReconcileItem[];
+}
+
+/** 活动视图 —— 匹配 Activity.java (Jackson 序列化) */
+export interface ActivityView {
+  id: number;
+  name: string;
+  status: string;
+  targetGmv: number;
+  targetRoi: number;
+  startAt: string;
+  endAt: string;
 }
 
 /** DashboardSnapshot.SeckillSummary —— 匹配 nested record */
@@ -146,4 +159,15 @@ export interface GuardrailView {
   ruleCount: number;
   topRiskLevel: string;
   summary: string;
+}
+
+/** 订单视图 —— 匹配 Orders.java (Jackson 序列化) */
+export interface OrderView {
+  orderId: string;
+  userId: number;
+  activityId: number;
+  skuId: number;
+  qty: number;
+  status: string;
+  createdAt: string;
 }

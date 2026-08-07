@@ -1,6 +1,8 @@
 package com.insightforge.api.controller;
 
 import com.insightforge.common.result.ApiResult;
+import com.insightforge.persistence.entity.Activity;
+import com.insightforge.persistence.mapper.ActivityMapper;
 import com.insightforge.seckill.core.reconcile.ReconcileReport;
 import com.insightforge.seckill.core.service.ActivityService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,9 +11,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
  * 活动生命周期接入层（Phase 6）：状态机迁转 + 对账查看。
  *
+ * GET  /api/activity                 列出所有活动（给前端活动管理页）
  * POST /api/activity/{id}/arm        DRAFT → ARMED（前置 MySQL↔Redis 库存对账，不过不让上线）
  * POST /api/activity/{id}/live       ARMED → LIVE
  * POST /api/activity/{id}/settle     LIVE → SETTLING（结算对账：最终库存 = 初始 - 成功单）
@@ -23,9 +28,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class ActivityController {
 
     private final ActivityService activityService;
+    private final ActivityMapper activityMapper;
 
-    public ActivityController(ActivityService activityService) {
+    public ActivityController(ActivityService activityService, ActivityMapper activityMapper) {
         this.activityService = activityService;
+        this.activityMapper = activityMapper;
+    }
+
+    /** 列出所有活动（id 升序），给前端活动管理页用。 */
+    @GetMapping
+    public ApiResult<List<Activity>> list() {
+        return ApiResult.ok(activityMapper.selectList(null));
     }
 
     @PostMapping("/{id}/arm")
