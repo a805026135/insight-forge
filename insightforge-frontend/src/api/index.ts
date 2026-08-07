@@ -1,6 +1,7 @@
 // ============================================================
 // InsightForge 前端 API 层 —— 全部对接真实后端 REST 端点
 // 开发时 Vite 代理 /api → localhost:8080，生产由 Nginx 反代。
+// 所有类型严格匹配后端 Java record/DTO 的 Jackson 序列化结果。
 // ============================================================
 
 const BASE = '/api';
@@ -25,12 +26,9 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
 
 // ---- 秒杀 ----
 export const seckillApi = {
-  /** 用户抢购 */
   place: (req: { activityId: number; skuId: number; userId: number; qty: number }) =>
     post<string>('/seckill', req),
-  /** 查库存 */
   stock: (skuId: number) => get<StockInfo>(`/seckill/stock/${skuId}`),
-  /** 库存预热（管理员） */
   preheat: (skuId: number) => post<void>(`/seckill/admin/preheat/${skuId}`),
 };
 
@@ -64,61 +62,88 @@ export const dashboardApi = {
   },
 };
 
-// ---- 类型 ----
+// ============================================================
+// 类型定义 —— 严格匹配后端 Java record/DTO 的 Jackson 序列化
+// ============================================================
+
+/** POST /api/seckill/stock/{skuId} → ApiResult<StockInfo>.data */
 export interface StockInfo {
-  stock: number;
+  skuId: number;
   totalStock: number;
+  stock: number;
   sold: number;
 }
 
+/** 对账明细项 —— 匹配 ReconcileItem.java */
+export interface ReconcileItem {
+  dimension: string;
+  ok: boolean;
+  detail: string;
+}
+
+/** 对账报告 —— 匹配 ReconcileReport.java */
 export interface ReconcileReport {
   passed: boolean;
-  expectedStock: number;
-  actualStock: number;
-  expectedSold: number;
-  actualSold: number;
-  message: string;
+  activityStatus: string;
+  items: ReconcileItem[];
 }
 
-export interface DashboardSnapshot {
+/** DashboardSnapshot.SeckillSummary —— 匹配 nested record */
+export interface SeckillSummary {
   totalActivities: number;
+  liveActivities: number;
+  totalStock: number;
+  soldStock: number;
   totalOrders: number;
-  totalRevenue: number;
-  activeActivities: number;
-  sellThroughRate: number;
-  agentTotalRuns: number;
-  agentSuccessRate: number;
-  agentAvgLatencyMs: number;
-  guardrailsActive: number;
-  guardrailsArchived: number;
 }
 
+/** DashboardSnapshot.AgentSummary */
+export interface AgentSummary {
+  totalRuns: number;
+  successRuns: number;
+  correctFailureRuns: number;
+  failedRuns: number;
+  correctFailureRate: number; // 0~1
+  totalLatencyMsMax: number;
+  totalCostUsd: number;
+}
+
+/** DashboardSnapshot.GuardrailSummary */
+export interface GuardrailSummary {
+  policyRows: number;
+  activitiesWithPolicy: number;
+  topRiskLevel: string;
+}
+
+/** GET /api/dashboard/overview → ApiResult<DashboardSnapshot>.data */
+export interface DashboardSnapshot {
+  seckill: SeckillSummary;
+  agent: AgentSummary;
+  guardrail: GuardrailSummary;
+  generatedAt: string;
+}
+
+/** Agent 运行轨迹 —— 匹配 TraceView.java (record) */
 export interface TraceView {
   traceId: string;
   activityId: number;
   status: string;
+  failureKind: string | null;
+  correctFailure: boolean;
   startedAt: string;
+  finishedAt: string;
   totalLatencyMs: number;
+  budgetCostUsd: number;
   modelVersion: string;
-  budgetTokens: number;
-  spans: SpanView[];
+  /** 运营可读结论（如「规划成功并落库策略」「主动询问运营（正确失败）」） */
+  verdict: string;
 }
 
-export interface SpanView {
-  spanId: string;
-  role: string;
-  stepName: string;
-  status: string;
-  latencyMs: number;
-  confidence: number;
-  toolName: string;
-}
-
+/** 护栏策略视图 —— 匹配 GuardrailView.java (record) */
 export interface GuardrailView {
-  id: number;
   activityId: number;
   version: string;
-  policyJson: string;
-  createdAt: string;
-  riskLevel: string;
+  ruleCount: number;
+  topRiskLevel: string;
+  summary: string;
 }

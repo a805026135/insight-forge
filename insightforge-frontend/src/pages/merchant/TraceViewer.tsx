@@ -12,6 +12,12 @@ export default function TraceViewer() {
       .catch((e) => setErr(e.message));
   }, []);
 
+  const statusLabel = (t: TraceView) => {
+    if (t.status === 'SUCCESS') return '成功';
+    if (t.status === 'CORRECT_FAILURE') return '正确失败';
+    return '失败';
+  };
+
   return (
     <div className="page">
       <h2>Agent 调用轨迹</h2>
@@ -36,22 +42,23 @@ export default function TraceViewer() {
             <>
               <h4>Trace: {selected.traceId}</h4>
               <div className="detail-grid">
-                <div>状态: <span className={`status-${selected.status?.toLowerCase()}`}>{selected.status}</span></div>
+                <div>
+                  状态:{' '}
+                  <span className={`status-${selected.status?.toLowerCase()}`}>
+                    {statusLabel(selected)}
+                  </span>
+                </div>
                 <div>活动ID: {selected.activityId}</div>
                 <div>耗时: {selected.totalLatencyMs}ms</div>
-                <div>Token: {selected.budgetTokens}</div>
-                <div>模型: {selected.modelVersion}</div>
-                <div>时间: {selected.startedAt}</div>
+                <div>费用: ${selected.budgetCostUsd?.toFixed(6)}</div>
+                <div>模型版本: {selected.modelVersion}</div>
+                <div>开始时间: {selected.startedAt}</div>
+                <div>结束时间: {selected.finishedAt}</div>
+                {selected.failureKind && <div>失败类型: {selected.failureKind}</div>}
               </div>
-              <h5 style={{ marginTop: 16 }}>执行 Spans</h5>
-              {selected.spans?.map((s) => (
-                <div key={s.spanId} className="span-item">
-                  <span className="span-role">{s.role}</span>
-                  <span className="span-step">{s.stepName || s.toolName || '-'}</span>
-                  <span className="span-latency">{s.latencyMs}ms</span>
-                  <span className={`span-status span-status-${s.status?.toLowerCase()}`}>{s.status}</span>
-                </div>
-              ))}
+              <div className="verdict-box" style={{ marginTop: 16, padding: 12, background: 'var(--bg-hover)', borderRadius: 8, borderLeft: '4px solid var(--green)' }}>
+                <strong>结论：</strong>{selected.verdict}
+              </div>
             </>
           ) : (
             <p className="hint">点击左侧 Trace 查看详情</p>

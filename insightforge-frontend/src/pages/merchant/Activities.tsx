@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { activityApi, ReconcileReport } from '../../api';
+import { activityApi, ReconcileItem } from '../../api';
 
 interface ActivityInfo {
   id: number;
@@ -13,31 +13,31 @@ const ACTIVITIES: ActivityInfo[] = [
 
 export default function Activities() {
   const [list, setList] = useState<ActivityInfo[]>([]);
-  const [reconcile, setReconcile] = useState<Record<number, ReconcileReport | null>>({});
+  const [items, setItems] = useState<Record<number, ReconcileItem[]>>({});
+  const [passed, setPassed] = useState<Record<number, boolean>>({});
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
     setList(ACTIVITIES);
-    refreshStatuses();
+    refreshReconcile();
   }, []);
 
-  const refreshStatuses = async () => {
+  const refreshReconcile = async () => {
     for (const a of ACTIVITIES) {
       try {
         const r = await activityApi.reconcile(a.id);
-        setReconcile((prev) => ({ ...prev, [a.id]: r }));
-        // infer status from reconcile data
-        if (r.passed !== undefined) {
-          setList((prev) => prev.map((x) => (x.id === a.id ? { ...x } : x)));
-        }
+        setItems((prev) => ({ ...prev, [a.id]: r.items }));
+        setPassed((prev) => ({ ...prev, [a.id]: r.passed }));
       } catch {}
     }
   };
 
   const doArm = async (id: number) => {
     try {
-      await activityApi.arm(id);
+      const r = await activityApi.arm(id);
       setList((prev) => prev.map((a) => (a.id === id ? { ...a, status: 'ARMED' } : a)));
+      setItems((prev) => ({ ...prev, [id]: r.items }));
+      setPassed((prev) => ({ ...prev, [id]: r.passed }));
       setMsg('活动已上线（ARMED）');
     } catch (ex: any) { setMsg(ex.message); }
   };
@@ -52,8 +52,10 @@ export default function Activities() {
 
   const doSettle = async (id: number) => {
     try {
-      await activityApi.settle(id);
+      const r = await activityApi.settle(id);
       setList((prev) => prev.map((a) => (a.id === id ? { ...a, status: 'SETTLING' } : a)));
+      setItems((prev) => ({ ...prev, [id]: r.items }));
+      setPassed((prev) => ({ ...prev, [id]: r.passed }));
       setMsg('活动已结算');
     } catch (ex: any) { setMsg(ex.message); }
   };
@@ -77,6 +79,7 @@ export default function Activities() {
             <th>名称</th>
             <th>状态</th>
             <th>对账</th>
+            <th>明细</th>
             <th>操作</th>
           </tr>
         </thead>
@@ -87,9 +90,16 @@ export default function Activities() {
               <td>{a.name}</td>
               <td className={`status-${a.status?.toLowerCase()}`}>{a.status}</td>
               <td>
-                {reconcile[a.id] ? (
-                  reconcile[a.id]!.passed ? '✅ 通过' : '❌ 异常'
-                ) : '-'}
+                {passed[a.id] !== undefined
+                  ? (passed[a.id] ? '✅ 通过' : '❌ 异常')
+                  : '-'}
+              </td>
+              <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                {items[a.id]?.map((it) => (
+                  <div key={it.dimension}>
+                    {it.ok ? '✅' : '❌'} {it.dimension}: {it.detail}
+                  </div>
+                ))}
               </td>
               <td>
                 {a.status === 'DRAFT' && <button onClick={() => doArm(a.id)}>上线</button>}

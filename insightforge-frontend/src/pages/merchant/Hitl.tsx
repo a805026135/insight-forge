@@ -11,6 +11,12 @@ export default function Hitl() {
       .catch((e) => setErr(e.message));
   }, []);
 
+  const statusLabel = (t: TraceView) => {
+    if (t.status === 'SUCCESS') return '✅ 成功';
+    if (t.status === 'CORRECT_FAILURE') return '⚠️ 正确失败';
+    return '❌ 失败';
+  };
+
   return (
     <div className="page">
       <h2>人工审批队列</h2>
@@ -21,8 +27,8 @@ export default function Hitl() {
           <tr>
             <th>Trace ID</th>
             <th>活动</th>
-            <th>状态</th>
-            <th>延迟</th>
+            <th>结论</th>
+            <th>耗时</th>
             <th>时间</th>
             <th>审批</th>
           </tr>
@@ -32,7 +38,9 @@ export default function Hitl() {
             <tr key={t.traceId}>
               <td title={t.traceId}>{t.traceId?.slice(0, 8)}...</td>
               <td>{t.activityId}</td>
-              <td className={`status-${t.status?.toLowerCase()}`}>{t.status}</td>
+              <td title={t.verdict} style={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {t.verdict}
+              </td>
               <td>{t.totalLatencyMs}ms</td>
               <td>{t.startedAt}</td>
               <td>
