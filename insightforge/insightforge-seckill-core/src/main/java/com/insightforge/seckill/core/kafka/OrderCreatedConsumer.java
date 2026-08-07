@@ -7,6 +7,7 @@ import com.insightforge.persistence.mapper.ActivitySkuMapper;
 import com.insightforge.persistence.mapper.OrdersMapper;
 import com.insightforge.seckill.core.dto.OrderCreatedEvent;
 import com.insightforge.seckill.core.dto.SeckillRequest;
+import com.insightforge.seckill.core.state.OrderStatus;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -91,7 +92,9 @@ public class OrderCreatedConsumer {
         order.setActivityId(req.getActivityId());
         order.setSkuId(req.getSkuId());
         order.setQty(req.getQty());
-        order.setStatus("CREATED");
+        // 异步单与同步建单（SeckillService）保持同一持久初态 CREATE_ORDER，
+        // 否则 OrderStatus.from("CREATED") 会抛异常、导致异步单 cancel/pay 直接 500（REVIEW §3.1）。
+        order.setStatus(OrderStatus.CREATE_ORDER.name());
         order.setCreatedAt(LocalDateTime.now());
         try {
             ordersMapper.insert(order);

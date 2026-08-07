@@ -148,12 +148,12 @@
 ### 🔴 高（架构 / 正确性问题）
 - [x] **§1 三大支柱未集成** → **Phase 12 已修复**：`sales.tick` 有生产者（`SeckillService` 扣减后发）+ 消费者（`SalesTickConsumer`）；`StockSegmentService`/`PriceStore` 提接口并新增 Redis 实现（`confirmPending` 经 `INCRBY` 写回**同一** `stock:a:{aid}:s:{skid}`）；`RedissonLockService` 替换本地锁桩；锁键修正 `lock:` 前缀；`RuleEngineRedisKeys` 与 `RedisKeys` 逐字符对齐。验收：91 测试全绿。
 - [ ] **§2 零端到端验证** → 待做（**Phase 13**）：本机 docker-compose 起 Redis/Kafka/Redisson，跑 `integration` profile 串「建活动→arm 对账→live→用户抢购→规则引擎消费 tick→调拨→大屏」；补 `@SpringBootTest` 集成测试（`Assumptions` 守卫，沙箱跳过）。诚实边界：当前仅「键契约一致 + 契约级单测」证明链路接通，未虚报已端到端跑通。
-- [ ] **§3.1 异步订单状态不一致** → 待做（**Phase 13**）：`OrderCreatedConsumer` 写死 `"CREATED"` vs 状态机首态 `CREATE_ORDER`，导致经异步快路径创建的订单 cancel/pay 直接 500。改为用 `OrderStatus.CREATE_ORDER` 枚举常量；补回归测试。
-- [ ] **§3.2 结算对账只查 DB 且为恒等式** → 待做（**Phase 13/14**）：`ReconcileService.reconcileFinalStock` 不读 Redis、公式（`总库存−成功单` vs `stock`）恒等，发现不了 Redis↔DB 双写漂移。改为交叉核对 Redis `stock` 键与 DB `sold`。
+- [x] **§3.1 异步订单状态不一致** → **Phase 13 已修复**：`OrderCreatedConsumer` 原写死 `"CREATED"`（vs 状态机首态 `CREATE_ORDER`），导致经异步快路径创建的订单 cancel/pay 直接 `OrderStatus.from("CREATED")` 抛异常 500。改为 `OrderStatus.CREATE_ORDER.name()`（与同步建单路径一致）；新增 `OrderCreatedConsumerStatusTest` 断言异步单状态可解析。验收：全 reactor 构建全绿。
+- [x] **§3.2 结算对账只查 DB 且为恒等式** → **Phase 13 已修复**：原 `reconcileFinalStock` 用「总库存−成功单(计数)」比 DB `stock`，而 DB 内 `stock=total−sold` 与 sold 同源更新恒成立（恒等式），且不读 Redis、且计数不支持 qty>1。改为以「订单台账 `SUM(qty)`（status≠CANCEL）」为独立事实源，交叉核对 ① Redis 权威库存（抓 Redis↔DB 漂移）② DB 库存；新增 `ReconcileRedisCrossCheckTest` 证明 Redis 漂移（丢/多）被抓出、且支持 qty>1。
 
 ### 🟠 中（评估 rigor / 诚实披露）
-- [ ] **§3.3 幂等键限一单未声明** → 待做（**Phase 13**）：`buildOrderId = OF-{activityId}-{skuId}-{userId}` 隐含每用户每 SKU 限一单（秒杀限购 1 单）。在 spec/plan/API 文档显式声明为有意业务规则，或改 `OF-...-{qty}` 允许同 SKU 多单。
-- [ ] **§4 A/B 评估「自证」** → 待做（**Phase 14**）：`InMemoryBusinessMetricsSource` 硬编码种子（人工 82%/28% vs AI 95%/36%）让 AI 胜，未真实驱动规则引擎。改为从真实/模拟秒杀跑出指标，或明确标注「示例数据、非实测结论」。
+- [x] **§3.3 幂等键限一单未声明** → **Phase 13 已修复（诚实声明，不改行为）**：`buildOrderId = OF-{activityId}-{skuId}-{userId}` 不含 qty，隐含每用户每 SKU 限一单（秒杀限购 1 单）。在 `SeckillService.buildOrderId` 注释 + spec.md 幂等行 + glossary 显式声明为有意业务规则（改量重试/同 SKU 二次购买判重复单），避免评审误判。`[ ]` 若未来要支持同 SKU 多单，需把 qty 纳入 orderId——列为后续可选增强。
+- [ ] **§4 A/B 评估「自证」** → **Phase 14（诚实披露已做，真实评估待做）**：`InMemoryBusinessMetricsSource` 硬编码种子（人工 82%/28% vs AI 95%/36%）让 AI 胜，<b>这些数字不是规则引擎实跑产出</b>。本轮已在源码注释诚实声明「占位演示数据、非实测结论、不可对外宣称实测 AI 胜出」；真正驱动规则引擎在模拟秒杀流上跑出指标的真实评估仍为 Phase 14 待办，未虚报已做。
 
 ### 🟡 低（文档失真，已就地修正于本轮）
 - [x] **§5 DSL Schema 失真**：plan §4.5 / spec §13.2 写嵌套 `{trigger,condition,action,bounds,human_gate}` vs 实现扁平 `GuardrailRule(id, metric, operator, threshold, action, params)`（params 按动作携 `repriceTo/costFloor/amount`）→ 已修正为扁平结构 + 真实 `params` 键。

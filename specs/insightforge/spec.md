@@ -94,7 +94,7 @@
   - **锁超时分级 Fail-Fast（用户流量绝对优先）**：用户抢购 `tryLock(timeout=10ms)`，抢不到立即返回「拥挤，请重试」，绝不长时间排队；规则引擎调拨 `tryLock(timeout=0ms)`（尝试一次，拿不到立即放弃本次调拨），将事件重新放回 Kafka **延迟 5s 重试**。Agent 策略流量永远让位于用户流量。
   - **可靠性**：Redisson 看门狗自动续期（默认 30s，每 10s 续约）防死锁；锁等待 / 持有耗时埋点进 Prometheus，超阈值告警。
 - **削峰与限流**：Kafka 异步下单；Nginx+Lua 令牌桶 + Redis+Lua 滑动窗口 + Sentinel 多层限流；模型调用单独限流（DeepSeek 配额，仅在离线/异步路径）。
-- **幂等（exactly-once）**：订单 `orderId = hash(userId, productId, activityId)`，Redis SETNX 去重，Kafka 重投不重复下单。
+- **幂等（exactly-once）**：订单 `orderId = OF-{activityId}-{skuId}-{userId}`（确定性，非随机），Redis SETNX 去重，Kafka 重投不重复下单。<b>业务规则（显式声明）：orderId 不含 qty，故「同一用户 + 同一活动 + 同一 SKU」限下一单（秒杀常见限一单）；改量重试或对同 SKU 二次购买会被判重复单。</b>
 - **进程内并发**：单请求内 Agent DAG 无依赖节点线程池 + `CompletableFuture` 并行；Worker 多实例横向扩展。
 
 ### 3.2 部署架构

@@ -132,6 +132,13 @@
 
 **叙事修正（诚实边界，重要）**：原 spec/glossary「用户扣减与规则引擎控盘争用**同一把 Redisson 锁**」表述在字面层不完全准确——用户热路径走 **Redis Lua 原子扣减**（无显式锁、但原子不可打断），并不持有 `lock:a:...`；规则引擎控盘写在 `lock:a:...` 同名 Redisson 锁下串行化。二者真正"同一"的是 **同一份 Redis 库存键**（`stock:a:{aid}:s:{skid}`）：AI 调拨经 `INCRBY` 写回、用户经 Lua 扣减，在同一份库存上互相可见、互不丢失更新。因此「同一把锁」的精确含义是：**同一份库存键（真实相遇）+ 控制面写在同一锁键命名空间下串行化**；用户路径靠 Lua 原子性而非显式 Redisson 锁保证不冲突。热路径零 LLM、零显式锁、延迟红线不动摇。
 
-**仍属规划超前实现（未做，非本次范围）**：结算对账只查 DB 且为恒等式（不交叉核对 Redis，发现不了双写漂移）；`OrderStatus.from("CREATED")` 与状态机首态 `CREATE_ORDER` 不对齐（会让异步创建的订单 cancel/pay 直接 500）；Redisson 在用户热路径不持有；Canal/Nginx/Sentinel/Milvus/WS 未落地。这些降级/后续项已在 `tasks.md` 与 Phase 文档显式标注，未虚报。
+**Phase 13（真实缺陷修复，2026-08-07）—— 🔴/🟠 已修复（代码实证，全 reactor 构建全绿）**：
+- 🔴 **§3.1 异步订单状态不一致**：`OrderCreatedConsumer` 原写死 `"CREATED"` → 经异步快路径创建的订单在 `OrderController` cancel/pay 时 `OrderStatus.from("CREATED")` 抛异常直接 500。已改为 `OrderStatus.CREATE_ORDER.name()`（与同步建单路径一致）；新增 `OrderCreatedConsumerStatusTest` 断言异步单状态可被状态机解析。
+- 🔴 **§3.2 结算对账恒等式 / 不读 Redis**：`reconcileFinalStock` 原用「总库存 − 成功单(计数)」比 DB `stock`——而 DB 内 `stock=total−sold` 与 sold 同源更新恒成立（恒等式），且不读 Redis、且计数不支持 qty>1。已改为以「订单台账 `SUM(qty)`（status≠CANCEL）」为独立事实源，交叉核对 ① Redis 权威库存（抓 Redis↔DB 漂移）② DB 库存；新增 `ReconcileRedisCrossCheckTest` 证明 Redis 漂移（丢/多）被抓出、且支持 qty>1。
+- 🟠 **§3.3 幂等键限一单未声明**：`buildOrderId = OF-{activityId}-{skuId}-{userId}` 不含 qty，隐含每用户每 SKU 限一单（秒杀限购 1 单）。已在 `SeckillService.buildOrderId` 注释 + spec.md 幂等行 + glossary **显式声明为有意业务规则**（改量重试 / 同 SKU 二次购买判重复单），避免评审误判；不改代码行为。
+
+**🟠 §4 A/B 评估「自证」诚实披露（2026-08-07）**：`InMemoryBusinessMetricsSource` 的对比数字（人工 82%/28% vs AI 95%/36%）是<b>手工设定的演示占位值，并非规则引擎实跑产出</b>。已在源码注释诚实声明「占位演示数据、非实测结论、不可对外宣称实测 AI 胜出」；真正驱动规则引擎在模拟秒杀流上跑出指标的真实端到端评估仍为 **Phase 14 待办**，未虚报已做。
+
+**仍属规划超前实现（未做，非本次范围）**：Redisson 在用户热路径不持有（防超卖由 Redis Lua + DB 条件更新承担，Phase 3 教程的 Redisson 锁代码已被 Phase 4 替换）；Canal/Nginx/Sentinel/Milvus/WS 未落地；§2 零端到端验证（需 docker-compose 起 Redis/Kafka/Redisson 跑 `integration` profile 串完整链路）仍待 Phase 13 收尾。这些降级/后续项已在 `tasks.md` 与 Phase 文档显式标注，未虚报。
 
 **补充（2026-08-07，规划文档对齐）**：§5 列出的五处**文档失真**已就地修正——`plan.md`（技术栈/决策 #5 改 Drools 9、§4.5 改扁平 record、§6 决策表改 record 字段校验）、`spec.md`（§1.1/US-3/§4/§4.4 引述改"同一份 Redis 库存键"、§5.5 改 Drools 9 + 无 JSON Schema 路径、§6 选型改 Drools 9、§12.1/§12.2 架构图改精确机制、§13.2 DSL 样例改扁平结构）、`analysis.md`（头部版本 v0.6→v0.9、§2/§1.2/§4.4 叙事、§2 选型表、§6 开放问题）。规划文档与代码现已对齐，修复项与状态见 `tasks.md` M7+ 修复路线图。

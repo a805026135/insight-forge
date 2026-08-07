@@ -189,6 +189,11 @@ public class SeckillService {
      * 用 (activityId, skuId, userId) 确定性推导订单号。
      * 不依赖随机，保证「同一次抢购」永远得到同一个订单号 —— 全链路幂等的基础。
      * 形如 "OF-1-1-1001"，可读且绝不会因数字位数不同而碰撞。
+     *
+     * <b>业务规则（显式声明，REVIEW §3.3）</b>：orderId <b>不含 qty</b>，因此「同一用户 + 同一活动
+     * + 同一 SKU」在本项目里<b>只允许下一单</b>（秒杀常见限一单策略）。用户改数量重试、或对同一 SKU
+     * 二次合法购买，都会被判定为重复单、返回既有 orderId。这是有意的业务约束，不是 bug；
+     * 若未来要支持「同 SKU 多单 / 改量」，需在此把 qty 纳入 orderId 推导。
      */
     private String buildOrderId(SeckillRequest req) {
         return "OF-" + req.getActivityId() + "-" + req.getSkuId() + "-" + req.getUserId();

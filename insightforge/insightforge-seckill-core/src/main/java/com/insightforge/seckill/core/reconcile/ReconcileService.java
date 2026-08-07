@@ -19,8 +19,12 @@ import java.util.List;
  *  - {@link #reconcileStockConsistency(long)} ：上线前「MySQL↔Redis 库存一致性」。
  *    遍历活动的每个 SKU，比较 DB 剩余库存与 Redis 剩余库存。Redis 不可用（local profile）
  *    时跳过 Redis 比对，降级为「DB 内部合法性」校验（stock∈[0,total] 且 sold=total-stock）。
- *  - {@link #reconcileFinalStock(long)} ：结算「最终库存 = 初始 - 成功单数」。
- *    成功单 = 该 SKU 下 status != CANCEL 的订单数（下单即成功；CANCEL 已回补库存不计入）。
+ *  - {@link #reconcileFinalStock(long)} ：结算「最终库存 = 初始 - 成功下单量」。
+ *    成功下单量 = 该 SKU 下 status != CANCEL 的订单的 <b>SUM(qty)</b>（订单台账，独立事实源）。
+ *    拿到成功下单量后做<b>两类交叉核对</b>：① 与 Redis 权威库存比（LIVE 期间 Redis 是权威，
+ *    能发现 Redis↔DB 漂移）；② 与 DB 剩余库存比。两者都通过才算账平。
+ *    ——修正 REVIEW §3.2：原实现用「成功单数（计数）」比 DB stock，而 DB 里 stock=total-sold
+ *    与 sold 同源更新，恒成立（恒等式），且完全不读 Redis，发现不了双写漂移；计数也不支持 qty>1。
  *
  * 为什么对账要做成独立 Service、而不是直接塞进扣减逻辑？
  *   对账是「离线 / 管理面」操作（上线前闸门、活动结束结算、定时巡检），不是用户抢购热路径。
@@ -82,26 +86,47 @@ public class ReconcileService {
 
     /**
      * 维度二：结算对账（活动结束 SETTLING 时）。
-     * 校验「最终剩余库存 = 初始库存 - 成功下单数」，从数学上证明没有超卖 / 少卖。
+     * 以「订单台账 SUM(qty)（status != CANCEL）」为独立事实源，交叉核对：
+     *   ① Redis 权威剩余库存（LIVE 期间 Redis 是唯一真实库存底座，Lua 直写；能发现 Redis↔DB 漂移）
+     *   ② DB 剩余库存
+     * 任一不一致则该 SKU 对账失败。
+     *
+     * 为什么不直接用 DB 的 sold 字段？DB 里 stock 与 sold 每次扣减/回补<b>同事务</b>更新，
+     * 拿 sold 反推 stock 是「用自己证明自己」的恒等式（REVIEW §3.2）。订单台账由 Kafka 消费落库，
+     * 与 Redis 扣减是<b>两条独立链路</b>，用台账 SUM(qty) 反推期望库存再去比对 Redis/DB，
+     * 才能真正暴露双写漂移或丢失。
      */
     public ReconcileReport reconcileFinalStock(long activityId) {
         ReconcileReport report = new ReconcileReport();
         List<ActivitySku> skus = skuMapper.selectList(
                 new QueryWrapper<ActivitySku>().eq("activity_id", activityId));
+        RedisStockService rs = redisStockService.getIfAvailable();
 
         for (ActivitySku sku : skus) {
-            // 成功单 = 该 SKU 下「未被取消」的订单数（CANCEL 已回补库存，不算成功）
-            long successOrders = ordersMapper.selectCount(
+            // 独立事实源：订单台账里「未被取消」的订单的购买量之和（支持 qty>1）
+            List<Orders> orders = ordersMapper.selectList(
                     new QueryWrapper<Orders>()
                             .eq("activity_id", activityId)
                             .eq("sku_id", sku.getSkuId())
                             .ne("status", OrderStatus.CANCEL.name()));
+            int soldFromLedger = orders.stream().mapToInt(o -> o.getQty() == null ? 0 : o.getQty()).sum();
 
-            int expectedStock = sku.getTotalStock() - (int) successOrders;
-            boolean ok = expectedStock == sku.getStock();
-            report.add(new ReconcileItem("final-stock:" + sku.getId(), ok,
-                    String.format("total=%d, successOrders=%d, expectedStock=%d, actualStock=%d",
-                            sku.getTotalStock(), successOrders, expectedStock, sku.getStock())));
+            int expectedStock = sku.getTotalStock() - soldFromLedger;
+
+            // ① Redis 权威库存交叉核对（能发现 Redis↔DB 漂移）
+            if (rs != null) {
+                int redisStock = rs.getStock(activityId, sku.getId());
+                boolean redisOk = redisStock == expectedStock;
+                report.add(new ReconcileItem("final-redis:" + sku.getId(), redisOk,
+                        String.format("total=%d, soldFromLedger=%d, expectedStock=%d, redisStock=%d",
+                                sku.getTotalStock(), soldFromLedger, expectedStock, redisStock)));
+            }
+
+            // ② DB 剩余库存核对（Redis 不可用时这是唯一闸门；覆盖 DB 内部自洽）
+            boolean dbOk = sku.getStock() == expectedStock;
+            report.add(new ReconcileItem("final-db:" + sku.getId(), dbOk,
+                    String.format("total=%d, soldFromLedger=%d, expectedStock=%d, dbStock=%d",
+                            sku.getTotalStock(), soldFromLedger, expectedStock, sku.getStock())));
         }
         return report;
     }
