@@ -53,5 +53,12 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-json</artifactId>
         </dependency>
+
+        <!-- 测试：JUnit 5 + Mockito（集成缝单测用，如 SalesTickProducerTest 校验 topic/key 一致性） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

@@ -35,6 +35,8 @@ public class RedisStockService {
      */
     public void preheat(long activityId, long skuId, int stock) {
         redis.opsForValue().set(RedisKeys.stock(activityId, skuId), String.valueOf(stock));
+        // 集成缝：同步写入「总库存」键，供规则引擎消费者算库存水位比例（离线预热，非用户热路径）
+        redis.opsForValue().set(RedisKeys.totalStock(activityId, skuId), String.valueOf(stock));
     }
 
     /**

@@ -6,10 +6,12 @@ import com.insightforge.persistence.entity.Orders;
 import com.insightforge.persistence.mapper.ActivitySkuMapper;
 import com.insightforge.persistence.mapper.OrdersMapper;
 import com.insightforge.seckill.core.dto.OrderCreatedEvent;
+import com.insightforge.seckill.core.dto.SalesTickEvent;
 import com.insightforge.seckill.core.dto.SeckillRequest;
 import com.insightforge.seckill.core.dto.StockInfo;
 import com.insightforge.seckill.core.cache.SkuCacheService;
 import com.insightforge.seckill.core.kafka.OrderEventProducer;
+import com.insightforge.seckill.core.kafka.SalesTickProducer;
 import com.insightforge.seckill.core.redis.DeductResult;
 import com.insightforge.seckill.core.redis.RedisIdempotentService;
 import com.insightforge.seckill.core.redis.RedisStockService;
@@ -52,19 +54,23 @@ public class SeckillService {
     private final ObjectProvider<RedisIdempotentService> idempotentService;
     /** Kafka 生产者：仅非 local 存在，local 下为 null。 */
     private final ObjectProvider<OrderEventProducer> orderEventProducer;
+    /** 销售心跳生产者（集成缝：扣减成功 → sales.tick，驱动规则引擎）：仅非 local 存在。 */
+    private final ObjectProvider<SalesTickProducer> salesTickProducer;
 
     public SeckillService(ActivitySkuMapper activitySkuMapper,
                           OrdersMapper ordersMapper,
                           SkuCacheService skuCacheService,
                           ObjectProvider<RedisStockService> redisStockService,
                           ObjectProvider<RedisIdempotentService> idempotentService,
-                          ObjectProvider<OrderEventProducer> orderEventProducer) {
+                          ObjectProvider<OrderEventProducer> orderEventProducer,
+                          ObjectProvider<SalesTickProducer> salesTickProducer) {
         this.activitySkuMapper = activitySkuMapper;
         this.ordersMapper = ordersMapper;
         this.skuCacheService = skuCacheService;
         this.redisStockService = redisStockService;
         this.idempotentService = idempotentService;
         this.orderEventProducer = orderEventProducer;
+        this.salesTickProducer = salesTickProducer;
     }
 
     /**
@@ -105,6 +111,8 @@ public class SeckillService {
                 // 扣成功 → 发 Kafka 异步建单，立刻返回（削峰 + 极速响应，P99<10ms）
                 OrderEventProducer producer = orderEventProducer.getIfAvailable();
                 if (producer != null && producer.sendOrderCreated(OrderCreatedEvent.from(req, orderId))) {
+                    // 集成缝：扣减成功 → 发 sales.tick，驱动后方规则引擎（Agent 控盘与用户争用同一库存）
+                    sendSalesTick(req);
                     return ApiResult.ok(orderId);
                 }
                 // 极端兜底：Kafka 不可用（理论上 !local 必有），退回同步建单，保证不丢单
@@ -161,7 +169,20 @@ public class SeckillService {
         }
         // 库存真的变了：失效缓存，下次读取会回源到最新值（保证缓存与 DB 最终一致）
         skuCacheService.evict(sku.getId());
+        // 集成缝：同步兜底路径也发 sales.tick（与 Redis 快路径一致，保证规则引擎总能收到心跳）
+        sendSalesTick(req);
         return ApiResult.ok(orderId);
+    }
+
+    /**
+     * 集成缝：扣减成功后发一笔销售心跳（仅非 local 有 Kafka 时生效；local 下 Bean 不存在，静默跳过）。
+     * 心跳体最小（activityId/skuId/qty），剩余库存快照由规则引擎消费者直接读共享 Redis 库存键获取。
+     */
+    private void sendSalesTick(SeckillRequest req) {
+        SalesTickProducer p = salesTickProducer.getIfAvailable();
+        if (p != null) {
+            p.send(SalesTickEvent.of(req.getActivityId(), req.getSkuId(), req.getQty()));
+        }
     }
 
     /**

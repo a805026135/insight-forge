@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  */
 class StockSegmentServiceTest {
 
-    private final StockSegmentService svc = new StockSegmentService();
+    private final StockSegmentService svc = new InMemoryStockSegmentService();
 
     @Test
     void onlyAppendsNewSegment() {

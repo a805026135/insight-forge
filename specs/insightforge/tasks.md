@@ -80,7 +80,7 @@
 ## Phase 9 — 护栏规则引擎（M4，在线确定性）✅ 已落地
 - [x] `rule-engine` 模块：DSL→Drools 翻译（DslToDroolsTranslator）+ DRL 编译门禁（DroolsRuleCompiler，Fail-Close 阻断上线，见 spec §5.5）；对 agent-core 用 `optional=true` 仅拿 DSL 类型，不向 api 下游传递 spring-ai/webflux
 - [x] 消费 `sales.tick`（SalesTick fact）；条件匹配 → 输出标准化控盘指令（ControlInstruction：REPRICE/REALLOCATE/ALERT + 风险分级）
-- [x] 调拨/调价走同一把锁（`LockService`/`LocalLockService`，0ms `tryLock` Fail-Fast，用户流量优先），执行器 `ControlInstructionExecutor` 走锁；**调拨只建新段 `seg_{N+1}`**（StockSegmentService）
+- [x] 调拨/调价走锁（`LockService`/`LocalLockService` 默认内存实现，0ms `tryLock` Fail-Fast，用户流量优先；集成环境由 `RedissonLockService` 替换，见 Phase 12）；执行器 `ControlInstructionExecutor` 走锁，锁键已修正为 `lock:a:{aid}:s:{skid}`（原漏 `lock:` 前缀，与秒杀 `RedisKeys.lock` 逐字符一致）；**调拨只建新段 `seg_{N+1}`**（StockSegmentService）
 - [x] 两阶段预留：`pending` 预占；失败/超时仅删 pending，库存原样（绝不超卖）
 - [x] 预测性调拨：滑动窗口线性回归算 TTL<5min 预调拨（Phase 9 给出骨架实现与单测，生产接真实时序数据）
 - [x] **评估内建**：DSL Fail-Close 门禁（L3 结果评估硬门槛，发布前 100% 编译）+ 影子模式（ShadowEngine，候选 vs 当前只比对不写）+ 回测骨架（BacktestHarness，历史重放 oversell=0/SLA）+ 护栏命中埋点 + 风险分级（GuardrailMetrics）
@@ -117,6 +117,26 @@
 7. `EvaluationGateMain.main` 未声明 `throws Exception`（`harness.run()` 抛 Exception）→ 补声明。
 
 > 🎉 Phase 0–11 全部落地收尾。诚实边界：后端全链路实跑通过；前端大屏/Docker/Grafana/JMeter/CI 仅写就、沙箱未实跑，已全部显式标注。
+
+---
+
+## Phase 12 — 集成缝打通（M7，核心卖点落地）✅ 已落地（2026-08-07）
+
+**背景**：`REVIEW-规划审查与风险分析.md` 指出核心差异化叙事「Agent 控盘与用户抢购争用同一库存/同一把锁」在运行代码里是断的——`sales.tick` 无生产者/消费者、`LocalLockService` 本地锁与秒杀 Redis 底座隔离、`ControlInstructionExecutor` 锁键漏 `lock:` 前缀。本 Phase 把这条链路从原型变真实（用户授权范围：打通集成缝·核心）。
+
+- [x] **秒杀侧产出 tick**：`SeckillService` 在 Redis 快路径（`producer.sendOrderCreated` 成功）与 DB 同步兜底路径（`syncCreateOrder` 成功）两处，扣减成功后发 `SalesTickEvent` 到 `sales.tick`（仅非 local / 有 Kafka 时生效，Bean 用 `@Profile("!local")`，零依赖冒烟路径静默跳过）
+- [x] **规则引擎消费 tick**：新增 `SalesTickConsumer`（`@Profile("integration")`，`@KafkaListener(topics="sales.tick", groupId="rule-engine")`），听到心跳后读**同一份** Redis 库存键 `stock:a:{aid}:s:{skid}` + `total_stock:a:{aid}:s:{skid}` 拼成 Drools 事实，驱动 `RuleEngineService` 出工单 → `ControlInstructionExecutor` 执行
+- [x] **同一份库存底座**：`StockSegmentService`/`PriceStore` 提接口，新增 `RedisStockSegmentService`/`RedisPriceStore`（`@Profile("integration")`），REALLOCATE 经 `confirmPending` 用 `INCRBY` 写回**同一** `stock:a:{aid}:s:{skid}` 键（AI 调拨真的增加用户可抢库存）；`lockKey` 修正为 `RuleEngineRedisKeys.lock` = `lock:a:{aid}:s:{skid}`（修复原漏 `lock:` 前缀的错配）
+- [x] **同一把锁（控制面）**：`LocalLockService`/`InMemoryStockSegmentService`/`InMemoryPriceStore` 加 `@Profile("!integration")` 作默认内存实现；集成环境由 `RedissonLockService`（Redisson 同名锁 `lock:a:{aid}:s:{skid}`，0ms Fail-Fast）替换——AI 调拨抢不到锁立即放弃，用户流量永远优先
+- [x] **键契约对齐**：seckill-core `RedisKeys` 与 rule-engine `RuleEngineRedisKeys` 的 `stock/pendingStock/lock/price/totalStock` 字符串格式逐字符一致（新增 `totalStock` 键，预热时由 seckill 写入，供消费者算库存水位比例）
+- [x] **Profile 策略**：默认（沙箱/单测）跑内存实现，29 测试零依赖仍绿；集成环境靠 `@Profile("integration")` 切真实 Redis/Redisson/Kafka
+- [x] **回归守护（新增 7 测试）**：`RedissonLockServiceTest`(3) / `RedisStockSegmentServiceTest`(2，断言写回同一 stock 键) / `SalesTickConsumerTest`(2，断言读同一 stock 键并吞掉坏消息) / seckill-core `SalesTickProducerTest`(1，断言发往 `sales.tick` 且 key=`1:1`)
+- [x] **验收（已实跑通过）**：`mvn clean package` BUILD SUCCESS；全项目累计 **91** 测试全绿（api 35 + agent-core 26 + rule-engine 29 + seckill-core 1）；编译+测试 ~45s
+
+**诚实边界（重要，修正叙事）**：
+- 用户抢购热路径走 **Redis Lua 原子扣减**（`stock:a:{aid}:s:{skid}`，无显式锁、但原子不可打断）；规则引擎控盘写走 **Redisson 锁 `lock:a:{aid}:s:{skid}`**（0ms Fail-Fast）+ 原子 `INCRBY` 写回同一 stock 键。
+- 因此「同一把锁」的精确含义是：**同一份 Redis 库存键（真实相遇、互相可见）+ 规则引擎控制写在同一锁键命名空间下串行化**；用户路径靠 Lua 原子性保证不与 AI 调拨产生丢失更新，而非字面「双方都持有同一把 Redisson 锁」。热路径零 LLM、零显式锁、延迟红线不动摇。
+- 沙箱无 Redis/Kafka，集成环境的真实端到端联调需在本机/容器（docker-compose 起 Redis+Kafka+Redisson）跑 `integration` profile 验证；本 Phase 以「键契约一致 + 契约级单测」证明链路接通，未虚报已端到端跑通。
 
 ---
 

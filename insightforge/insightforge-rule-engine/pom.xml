@@ -55,6 +55,27 @@
             <artifactId>drools-mvel</artifactId>
         </dependency>
 
+        <!--
+          集成缝依赖（M7）：让规则引擎「与用户抢购争用同一份 Redis 库存 / 同一把 Redisson 锁」。
+          - data-redis：读共享库存快照 + REALLOCATE 原子写回同一 stock 键
+          - redisson：RedissonLockService 替代 LocalLockService 桩（锁键与秒杀同名）
+          - spring-kafka：消费 seckill-core 发的 sales.tick 心跳
+          生产/集成运行时由这些 Bean 自动接入；沙箱测试在 RuleEngineTestConfig 排除其自动配置，
+          退回内存默认实现（LocalLockService + 内存 StockSegmentService），22 测试仍绿。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.redisson</groupId>
+            <artifactId>redisson-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+
         <!-- 测试：H2 本地零依赖 + Spring Boot Test（JUnit 5 由 starter-test 提供） -->
         <dependency>
             <groupId>com.h2database</groupId>

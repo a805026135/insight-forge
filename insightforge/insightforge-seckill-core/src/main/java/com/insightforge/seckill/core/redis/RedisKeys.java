@@ -24,6 +24,11 @@ public final class RedisKeys {
         return "pending_stock:a:" + activityId + ":s:" + skuId;
     }
 
+    /** 总库存（预热时写入，与剩余库存同一份底座；规则引擎消费者据此算库存水位比例）。 */
+    public static String totalStock(long activityId, long skuId) {
+        return "total_stock:a:" + activityId + ":s:" + skuId;
+    }
+
     /** 细粒度锁：lock:a:{aid}:s:{sid}（用户 10ms / 规则引擎 0ms，见 spec §3.1） */
     public static String lock(long activityId, long skuId) {
         return "lock:a:" + activityId + ":s:" + skuId;

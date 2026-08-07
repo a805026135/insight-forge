@@ -20,9 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ControlInstructionExecutorTest {
 
     private final LocalLockService lock = new LocalLockService();
-    private final StockSegmentService seg = new StockSegmentService();
+    private final StockSegmentService seg = new InMemoryStockSegmentService();
     private final GuardrailMetrics metrics = new GuardrailMetrics();
-    private final ControlInstructionExecutor executor = new ControlInstructionExecutor(lock, seg, metrics);
+    private final ControlInstructionExecutor executor =
+            new ControlInstructionExecutor(lock, seg, metrics, new InMemoryPriceStore());
 
     @Test
     void reallocateAllocatesNewSegment() {
