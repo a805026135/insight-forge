@@ -1,78 +1,62 @@
-import { mockTraces } from '../../mock/data';
-
-const statusBadge: Record<string, string> = {
-  SUCCESS: 'badge-success',
-  CORRECT_FAILURE: 'badge-correct-fail',
-  FAILED: 'badge-fail',
-};
-
-const statusLabel: Record<string, string> = {
-  SUCCESS: '成功',
-  CORRECT_FAILURE: '正确失败',
-  FAILED: '失败',
-};
+import { useEffect, useState } from 'react';
+import { dashboardApi, TraceView } from '../../api';
 
 export default function TraceViewer() {
+  const [list, setList] = useState<TraceView[]>([]);
+  const [selected, setSelected] = useState<TraceView | null>(null);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    dashboardApi.traces(20)
+      .then(setList)
+      .catch((e) => setErr(e.message));
+  }, []);
+
   return (
-    <div>
-      <div className="page-header">
-        <h2>🔍 Agent 轨迹</h2>
-        <p>每一次 Agent 调用的完整链路追踪——做了什么、花了多久、结果如何</p>
-      </div>
-
-      <div className="metrics-grid">
-        <div className="metric-tile green">
-          <div className="label">成功率</div>
-          <div className="value">
-            {(mockTraces.filter(t => t.status === 'SUCCESS').length / mockTraces.length * 100).toFixed(0)}%
-          </div>
-          <div className="sub">{mockTraces.filter(t => t.status === 'SUCCESS').length}/{mockTraces.length}</div>
+    <div className="page">
+      <h2>Agent 调用轨迹</h2>
+      {err && <div className="error">{err}</div>}
+      <div className="trace-layout">
+        <div className="trace-list">
+          {list.length === 0 && !err && <p>暂无调用记录</p>}
+          {list.map((t) => (
+            <div
+              key={t.traceId}
+              className={`trace-item ${selected?.traceId === t.traceId ? 'selected' : ''}`}
+              onClick={() => setSelected(t)}
+            >
+              <span className={`dot dot-${t.status?.toLowerCase()}`} />
+              <span className="trace-id">{t.traceId?.slice(0, 10)}...</span>
+              <span className="trace-meta">活动{t.activityId} · {t.totalLatencyMs}ms</span>
+            </div>
+          ))}
         </div>
-        <div className="metric-tile amber">
-          <div className="label">正确失败</div>
-          <div className="value">{mockTraces.filter(t => t.status === 'CORRECT_FAILURE').length}</div>
-          <div className="sub">被 Critic 拦截，不应算作失败</div>
+        <div className="trace-detail">
+          {selected ? (
+            <>
+              <h4>Trace: {selected.traceId}</h4>
+              <div className="detail-grid">
+                <div>状态: <span className={`status-${selected.status?.toLowerCase()}`}>{selected.status}</span></div>
+                <div>活动ID: {selected.activityId}</div>
+                <div>耗时: {selected.totalLatencyMs}ms</div>
+                <div>Token: {selected.budgetTokens}</div>
+                <div>模型: {selected.modelVersion}</div>
+                <div>时间: {selected.startedAt}</div>
+              </div>
+              <h5 style={{ marginTop: 16 }}>执行 Spans</h5>
+              {selected.spans?.map((s) => (
+                <div key={s.spanId} className="span-item">
+                  <span className="span-role">{s.role}</span>
+                  <span className="span-step">{s.stepName || s.toolName || '-'}</span>
+                  <span className="span-latency">{s.latencyMs}ms</span>
+                  <span className={`span-status span-status-${s.status?.toLowerCase()}`}>{s.status}</span>
+                </div>
+              ))}
+            </>
+          ) : (
+            <p className="hint">点击左侧 Trace 查看详情</p>
+          )}
         </div>
-        <div className="metric-tile red">
-          <div className="label">真实失败</div>
-          <div className="value">{mockTraces.filter(t => t.status === 'FAILED').length}</div>
-        </div>
-        <div className="metric-tile cyan">
-          <div className="label">平均延迟</div>
-          <div className="value">{Math.round(mockTraces.reduce((a, t) => a + t.durationMs, 0) / mockTraces.length)}ms</div>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-title" style={{ marginBottom: 16 }}>调用轨迹</div>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Trace ID</th>
-              <th>Agent</th>
-              <th>步骤数</th>
-              <th>耗时</th>
-              <th>状态</th>
-              <th>时间</th>
-            </tr>
-          </thead>
-          <tbody>
-            {mockTraces.map(trace => (
-              <tr key={trace.traceId}>
-                <td style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--cyan)' }}>{trace.traceId}</td>
-                <td style={{ fontWeight: 600 }}>{trace.agent}</td>
-                <td>{trace.steps}</td>
-                <td>
-                  <span style={{ color: trace.durationMs > 500 ? 'var(--amber)' : 'var(--green)' }}>
-                    {trace.durationMs}ms
-                  </span>
-                </td>
-                <td><span className={`badge ${statusBadge[trace.status]}`}>{statusLabel[trace.status]}</span></td>
-                <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{trace.createdAt}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     </div>
   );

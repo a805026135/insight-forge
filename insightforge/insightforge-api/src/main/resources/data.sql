@@ -17,3 +17,9 @@ VALUES (1, '双11 美妆数码场', 'DRAFT', 5000000.00, 1.80, '2026-11-11 00:00
 -- skuId=1 对应 product.id=1；初始/剩余库存均 100；sold=0；version=0（Phase 2 乐观锁用）
 INSERT INTO activity_sku (id, activity_id, sku_id, seckill_price, total_stock, stock, sold, version)
 VALUES (1, 1, 1, 6299.00, 100, 100, 0, 0);
+
+-- 种子用户（使用 MERGE 防重复插入）
+MERGE INTO users (id, username, password, role, display_name) KEY (username)
+VALUES (1, 'admin',  'admin123', 'merchant', '运营管理员'),
+       (2, 'user1',  '123456',   'user',     '小明'),
+       (3, 'user2',  '123456',   'user',     '小红');

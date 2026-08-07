@@ -1,44 +1,62 @@
 import { useState } from 'react';
+import { useAuth } from '../auth/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import type { Role } from '../mock/data';
 
 export default function Login() {
-  const [role, setRole] = useState<Role | null>(null);
+  const { login } = useAuth();
   const navigate = useNavigate();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    if (!role) return;
-    navigate(role === 'user' ? '/user/seckill' : '/merchant/dashboard');
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username.trim() || !password.trim()) {
+      setErr('请输入用户名和密码');
+      return;
+    }
+    setLoading(true);
+    setErr('');
+    try {
+      const user = await login(username.trim(), password);
+      navigate(user.role === 'merchant' ? '/merchant/dashboard' : '/user/seckill');
+    } catch (ex: any) {
+      setErr(ex.message || '登录失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="login-page">
-      <div className="login-box">
-        <h1>Deal<span>Pulse</span></h1>
-        <p className="subtitle">InsightForge · 智能秒杀平台</p>
-
-        <div className="role-selector">
-          <div
-            className={`role-card ${role === 'user' ? 'selected' : ''}`}
-            onClick={() => setRole('user')}
-          >
-            <div className="icon">🛒</div>
-            <div className="label">我是买家</div>
-            <div className="desc">秒杀抢购 / 查看订单</div>
-          </div>
-          <div
-            className={`role-card ${role === 'merchant' ? 'selected' : ''}`}
-            onClick={() => setRole('merchant')}
-          >
-            <div className="icon">🏢</div>
-            <div className="label">我是商家</div>
-            <div className="desc">运营大屏 / 活动管理 / Agent 监控</div>
-          </div>
+      <div className="login-card">
+        <h1 className="brand-title">Deal Pulse</h1>
+        <p className="brand-sub">交易作战指挥中心</p>
+        <form onSubmit={handleLogin} className="login-form">
+          <input
+            type="text"
+            placeholder="用户名"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoFocus
+          />
+          <input
+            type="password"
+            placeholder="密码"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          {err && <div className="login-error">{err}</div>}
+          <button type="submit" disabled={loading}>
+            {loading ? '登录中...' : '登 录'}
+          </button>
+        </form>
+        <div className="login-hint">
+          <span>演示账号：</span>
+          <div>商家 — admin / admin123</div>
+          <div>买家 — user1 / 123456</div>
         </div>
-
-        <button onClick={handleLogin} disabled={!role}>
-          {role ? (role === 'user' ? '进入买家端' : '进入商家端') : '请选择身份'}
-        </button>
       </div>
     </div>
   );

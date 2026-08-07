@@ -1,9 +1,14 @@
 -- ============================================================
--- InsightForge 建表脚本（Phase 1）
--- 同时兼容 H2(MODE=MySQL, 本地零依赖) 与 MySQL 8（迁移后默认 profile）。
--- 仅用标准 SQL（BIGINT / VARCHAR / DECIMAL / DATETIME / INT），
--- 不使用 MySQL 专有子句（如 ENGINE=InnoDB），保证 H2 也能执行。
+-- InsightForge 建表脚本
 -- ============================================================
+
+CREATE TABLE IF NOT EXISTS users (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    username     VARCHAR(64) UNIQUE,
+    password     VARCHAR(128),
+    role         VARCHAR(16),              -- "user" or "merchant"
+    display_name VARCHAR(64)
+);
 
 CREATE TABLE IF NOT EXISTS product (
     id          BIGINT AUTO_INCREMENT PRIMARY KEY,

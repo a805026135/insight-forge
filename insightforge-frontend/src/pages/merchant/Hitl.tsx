@@ -1,70 +1,48 @@
-import { mockHitlTasks } from '../../mock/data';
-
-const severityBadge: Record<string, string> = {
-  critical: 'badge-critical',
-  high: 'badge-high',
-  medium: 'badge-medium',
-  low: 'badge-low',
-};
-
-const severityLabel: Record<string, string> = {
-  critical: '严重',
-  high: '高',
-  medium: '中',
-  low: '低',
-};
+import { useEffect, useState } from 'react';
+import { dashboardApi, TraceView } from '../../api';
 
 export default function Hitl() {
+  const [list, setList] = useState<TraceView[]>([]);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    dashboardApi.hitl()
+      .then(setList)
+      .catch((e) => setErr(e.message));
+  }, []);
+
   return (
-    <div>
-      <div className="page-header">
-        <h2>✋ 人工审批</h2>
-        <p>Agent 无法自动决策的任务，需人工介入确认。这是控制面的最后一道防线。</p>
-      </div>
-
-      <div className="metrics-grid">
-        <div className="metric-tile red">
-          <div className="label">待审批</div>
-          <div className="value">{mockHitlTasks.length}</div>
-        </div>
-        <div className="metric-tile amber">
-          <div className="label">严重/高风险</div>
-          <div className="value">{mockHitlTasks.filter(t => t.severity === 'critical' || t.severity === 'high').length}</div>
-        </div>
-        <div className="metric-tile green">
-          <div className="label">今日已处理</div>
-          <div className="value">12</div>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-title" style={{ marginBottom: 16 }}>审批队列</div>
-        {mockHitlTasks.map(task => (
-          <div key={task.id} style={{
-            background: 'var(--bg-hover)', borderRadius: 8, padding: 16, marginBottom: 12,
-            borderLeft: `3px solid ${task.severity === 'critical' ? 'var(--red)' : task.severity === 'high' ? 'var(--amber)' : 'var(--green)'}`
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-              <div>
-                <span className={`badge ${severityBadge[task.severity]}`} style={{ marginRight: 8 }}>
-                  {severityLabel[task.severity]}
-                </span>
-                <span style={{ fontWeight: 600 }}>{task.type}</span>
-              </div>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{task.createdAt}</span>
-            </div>
-            <p style={{ fontSize: 13, marginBottom: 8, color: 'var(--text-primary)' }}>{task.description}</p>
-            <div style={{ background: 'var(--bg-card)', padding: 8, borderRadius: 4, marginBottom: 12, fontSize: 12, color: 'var(--text-muted)' }}>
-              🤖 {task.agentDecision}
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" style={{ padding: '4px 16px', fontSize: 12 }}>批准</button>
-              <button className="btn btn-danger" style={{ padding: '4px 16px', fontSize: 12 }}>驳回</button>
-              <button className="btn" style={{ padding: '4px 16px', fontSize: 12 }}>修改后批准</button>
-            </div>
-          </div>
-        ))}
-      </div>
+    <div className="page">
+      <h2>人工审批队列</h2>
+      {err && <div className="error">{err}</div>}
+      {list.length === 0 && !err && <p>当前无待审批任务</p>}
+      <table className="order-table">
+        <thead>
+          <tr>
+            <th>Trace ID</th>
+            <th>活动</th>
+            <th>状态</th>
+            <th>延迟</th>
+            <th>时间</th>
+            <th>审批</th>
+          </tr>
+        </thead>
+        <tbody>
+          {list.map((t) => (
+            <tr key={t.traceId}>
+              <td title={t.traceId}>{t.traceId?.slice(0, 8)}...</td>
+              <td>{t.activityId}</td>
+              <td className={`status-${t.status?.toLowerCase()}`}>{t.status}</td>
+              <td>{t.totalLatencyMs}ms</td>
+              <td>{t.startedAt}</td>
+              <td>
+                <button onClick={() => alert('审批通过（演示：无实际操作）')}>通过</button>
+                <button className="danger" onClick={() => alert('已驳回（演示）')}>驳回</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

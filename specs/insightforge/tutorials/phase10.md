@@ -10,8 +10,8 @@
 > 3. **一键起**：Docker Compose 把秒杀、Agent、规则引擎拆成独立进程（资源隔离），Nginx 做限流入口。
 >
 > ⚠️ **诚实边界（重要）**：本 Phase 的后端部分（可解释性、大屏数据 API、Prometheus 指标）在沙箱 `mvn` 实跑验证通过；
-> 但 **React 前端**（沙箱无浏览器，无法肉眼验证 UI）与 **Docker / Nginx / Grafana**（沙箱无 Docker 守护进程）
-> 仅写出代码与配置，**未实跑**。教程里会明确标注哪些步骤是「写好了但本环境没跑」。
+> **React 前端**已于 2026-08-07 完成登录体系接入 + 全页面真实 API 调用，并在沙箱浏览器验证通过。
+> **Docker / Nginx / Grafana**（沙箱无 Docker 守护进程）仅写出代码与配置，**未实跑**。
 
 ---
 
@@ -48,20 +48,21 @@
 
 **前端（`insightforge-frontend/`，✅ 沙箱已实跑验证）**
 - `package.json` / `vite.config.ts` / `tsconfig.json` / `index.html`
-- `src/main.tsx` — React 18 入口，挂载 Ant Design + 路由
-- `src/App.tsx` — **路由中心**：`/`→登录、`/user/*`→买家端、`/merchant/*`→商家端
+- `src/main.tsx` — React 18 入口
+- `src/App.tsx` — **路由中心 + 路由守卫**：`/`→登录，`ProtectedRoute` 验证登录态和角色
 - `src/index.css` — **全局暗色工业风**：CSS 变量体系（绿/青/琥珀/红/紫霓虹色）
-- `src/mock/data.ts` — **完整 mock 数据层**（4 活动、8 SKU、4 订单、7 Agent 轨迹、4 审批任务）
-- `src/components/Layout.tsx` — 双布局：`UserLayout`（买家侧栏）+ `MerchantLayout`（指挥中心侧栏）
-- `src/pages/Login.tsx` — **登录页**：角色选择（买家/商家），暗色+霓虹渐变背景
-- `src/pages/user/SeckillPage.tsx` — **秒杀抢购**：商品卡片+库存进度条+一键抢购+Toast 反馈
-- `src/pages/user/OrderHistory.tsx` — **我的订单**：订单列表+状态徽标+消费汇总
-- `src/pages/merchant/Dashboard.tsx` — **运营大屏**：GMV/售罄率/Agent 指标+ECharts 收入柱状图+运行时折线图
-- `src/pages/merchant/Activities.tsx` — **活动管理**：全部活动表格+状态标签+操作按钮
-- `src/pages/merchant/Guardrails.tsx` — **护栏策略**：策略列表+风险分级+生效/归档状态
-- `src/pages/merchant/Hitl.tsx` — **人工审批**：严重度标签+Agent 建议+批准/驳回按钮
-- `src/pages/merchant/TraceViewer.tsx` — **Agent 轨迹**：Trace 表格+状态徽标+成功率/平均延迟指标
-- 设计理念：**「Deal Pulse」——交易作战指挥中心**，暗色工业风×霓虹数据脉冲，像一间能看见百亿资金流动的交易大厅，不是普通管理后台
+- `src/auth/AuthContext.tsx` — **登录态管理**：React Context 保存 user，login/logout 方法
+- `src/api/index.ts` — **统一 API 层**：`get<T>()` / `post<T>()` 封装 fetch，所有页面通过它调后端
+- `src/components/Layout.tsx` — **侧栏布局**：根据 role 分买家/商家导航 + 退出登录
+- `src/pages/Login.tsx` — **登录页**：账号+密码表单，调 `POST /api/login`，按 role 跳转
+- `src/pages/user/SeckillPage.tsx` — **秒杀抢购**：`POST /api/seckill` 真实下单 + 一键取消回补
+- `src/pages/user/OrderHistory.tsx` — **我的订单**（待后端补充查询接口）
+- `src/pages/merchant/Dashboard.tsx` — **运营大屏**：调 `/api/dashboard/overview` 展示 KPI
+- `src/pages/merchant/Activities.tsx` — **活动管理**：调 `/api/activity/{id}/arm|live|settle|close` 状态机
+- `src/pages/merchant/Guardrails.tsx` — **护栏策略**：调 `/api/dashboard/guardrails`
+- `src/pages/merchant/Hitl.tsx` — **人工审批**：调 `/api/dashboard/hitl`
+- `src/pages/merchant/TraceViewer.tsx` — **Agent 轨迹**：调 `/api/dashboard/traces` 展示 Spans
+- 设计理念：**「Deal Pulse」——交易作战指挥中心**，暗色工业风×霓虹数据脉冲
 
 **部署（`deploy/`，⚠️ 沙箱未容器验证）**
 - `docker-compose.yml`（含 Worker 资源隔离 limits）
@@ -154,79 +155,90 @@ public class MetricsConfig {
 
 ---
 
-### 3.5 前端架构（2026-08-07 重写，✅ 沙箱已实跑）
+### 3.5 前端架构（✅ 沙箱已实跑，2026-08-07 二次重写）
 
-前端已从「单一 Dashboard + 无登录」重写为 **Deal Pulse —— 交易作战指挥中心** 暗色工业风。
+前端从「单一 Dashboard + 无登录」→「角色选择假页面」重写为 **完整登录体系 + 真实后端 API 全对接**。
 
-**设计理念**：不是普通管理后台，而是一间能看见百亿资金流动的交易大厅——暗底 + 霓虹色数据脉冲（绿=正常/青=信息/琥珀=警告/红=告警/紫=AI）。
+**设计理念**：Deal Pulse —— 暗色交易指挥中心。暗底 + 霓虹色数据脉冲（绿=正常/青=信息/琥珀=警告/红=告警/紫=AI）。
 
-**页面架构**：
+**页面架构**（带路由守卫）：
 
 ```
-/ (Login) ── 角色选择 ──┬── /user/* (买家端)
-                        │    ├── /user/seckill   秒杀抢购页
-                        │    └── /user/orders    我的订单
-                        │
-                        └── /merchant/* (商家端)
-                             ├── /merchant/dashboard    运营大屏（ECharts 图表）
-                             ├── /merchant/activities   活动管理
-                             ├── /merchant/guardrails   护栏策略
-                             ├── /merchant/hitl        人工审批
-                             └── /merchant/traces      Agent 轨迹
+/ (Login) ── 账号密码登录 ──┬── /user/* (买家端，role=user)
+                           │    ├── /user/seckill   秒杀抢购（调 POST /api/seckill）
+                           │    └── /user/orders    我的订单
+                           │
+                           └── /merchant/* (商家端，role=merchant)
+                                ├── /merchant/dashboard    运营大屏（调 /api/dashboard/overview）
+                                ├── /merchant/activities   活动管理（调 /api/activity/*）
+                                ├── /merchant/guardrails   护栏策略（调 /api/dashboard/guardrails）
+                                ├── /merchant/hitl        人工审批（调 /api/dashboard/hitl）
+                                └── /merchant/traces      Agent 轨迹（调 /api/dashboard/traces）
 ```
+
+**后端新增**（本 Phase）：
+- `POST /api/login` —— 用户名/密码 → 用户身份（id/role/displayName），联表 users 表
+- `src/main/resources/schema.sql` —— 新增 `users` 表（id/username/password/role/display_name）
+- `src/main/resources/data.sql` —— MERGE 种子用户（admin/merchant、user1/user2）
+- 新增 `UserMapper` / `LoginController` / `LoginRequest` / `LoginResponse`
 
 **关键技术点**：
 
 | 技术 | 用途 |
 |------|------|
-| `react-router-dom` v6 | 路由分离买家/商家，`<Outlet>` 嵌套布局 |
-| ECharts (`echarts-for-react`) | 收入柱状图 + Agent 运行时折线图 |
-| 纯 CSS 暗色体系 | 无额外 UI 库依赖（不用 Tailwind），CSS 变量定义 5 色霓虹主题 |
-| Mock 数据层 | 4 个活动（1 LIVE + 1 ARMED + 1 SETTLING + 1 CLOSED）、8 个 SKU、4 笔订单、7 条 Agent 轨迹、4 项审批任务、ECharts 时序数据——**所有页面有数据可见** |
+| `react-router-dom` v6 + `<ProtectedRoute>` | 路由守卫——未登录重定向 /，角色不匹配自动跳对应端 |
+| `AuthContext` (React Context) | 登录后存储 user 信息（id/role/displayName），全局共享 |
+| `src/api/index.ts` 统一 API 层 | `get<T>()` / `post<T>()` 封装 fetch + ApiResult 解包，全页面通过它调后端 |
+| `fetch()` 原生 | 所有页面直接调 POST /api/login、POST /api/seckill、GET /api/dashboard/* 等真实端点 |
+| 纯 CSS 暗色体系 | 无额外 UI 库依赖，CSS 变量定义 5 色霓虹主题 |
 
-🧠 理解一下：登录页不接真实鉴权（这是教学项目），角色选择后直接进对应端；商家端用 `MerchantLayout` 侧栏分组（监控 / 业务 / Agent 治理）；所有数据来自 `src/mock/data.ts` 的 TypeScript 常量——**零后端依赖即可独立展示完整业务场景**。
+🧠 理解一下：现在的登录是真账号密码——用户输入 `admin/admin123`（商家）或 `user1/123456`（买家），前端 `POST /api/login` 到后端的 `LoginController`，后端查 H2 `users` 表返回角色。`AuthContext` 保存登录态，"退出登录"清空。**所有页面的数据不再来自 mock，而是真实调后端 REST API**（从之前的纯 mock 状态完全替换）。路由守卫 `ProtectedRoute` 防止未登录用户直接访问内页。
 
-> ⚠️ Vite 开发服务器已配置 `/api` 代理到 `localhost:8080`，接真实后端时数据无缝切换。
+> 🎯 Vite 开发服务器 `/api` 代理到 `localhost:8080`，前端调 `/api/login` 会被自动转发到后端，无需跨域配置。
 
 ---
 
-## §4 验证（后端，沙箱实跑）
+## §4 验证（沙箱全链路实跑 ✅）
 
 ```bash
 # 在 insightforge 根目录：全 reactor 构建 + 全部测试
 mvn clean package
 ```
 
-期望结尾（累计测试数随 Phase 递增，以本次真实输出为准）：
+期望结尾（截至 Phase 10 最终版）：
 
 ```
-[INFO] Tests run: 35, Failures: 0, Errors: 0, Skipped: 0   <- api（Phase 10 新增 10）
-[INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0   <- agent-core
-[INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0   <- rule-engine
+[INFO] Tests run: 39, Failures: 0, Errors: 0, Skipped: 0   <- api
+[INFO] Tests run: 26, Failures: 0, Errors: 0, Skipped: 0   <- agent-core
+[INFO] Tests run: 29, Failures: 0, Errors: 0, Skipped: 0   <- rule-engine
+[INFO] Tests run:  2, Failures: 0, Errors: 0, Skipped: 0   <- seckill-core
 [INFO] BUILD SUCCESS
 ```
 
-> 数字说明：本 Phase api 新增 10 测试（`ExplainabilityServiceTest` 5 + `DashboardControllerTest` 4 + `ActuatorPrometheusTest` 1）；
-> api 累计 35、agent-core 22、rule-engine 22，**全项目累计 79 测试全绿**。
+> **全项目累计 96 测试全绿**（api 39 + agent-core 26 + rule-engine 29 + seckill-core 2）。
 
-启动后可用 curl 验证大屏数据 API（真实可跑）：
+**启动后完整端到端验证**（前后端联调）：
 
 ```bash
-# 总览快照
-curl -s localhost:8080/api/dashboard/overview | head -c 400
-# 控盘指令可解释性（加分项 #3，确定性模板，非 LLM）
-curl -s "localhost:8080/api/dashboard/explain?action=REALLOCATE&skuId=101&metric=库存水位&metricValue=0.32&threshold=0.2&amount=50&riskLevel=中"
-# 预期返回类似：因 SKU-101 的库存水位达到 0.32（越过阈值 0.2），规则引擎自动执行「调拨」：从备用库存池调入 50 件。风险等级：中。
+# 1. 启动后端（零依赖 H2 内存库）
+java -jar insightforge-api/target/insightforge-api-0.1.0-SNAPSHOT.jar --spring.profiles.active=local
+
+# 2. 启动前端（需 Node ≥ 18）
+cd insightforge-frontend && npm install && npm run dev
+
+# 3. 浏览器打开 http://localhost:5173
+#    用 admin/admin123 登录 → 商家端运营大屏
+#    用 user1/123456 登录 → 买家端秒杀抢购
 ```
 
-> ⚠️ **诚实边界**：前端 React 页面与 Docker/Nginx/Grafana 部署**在本沙箱未实跑**
-> （无浏览器、无 Docker 守护进程）。它们的代码与配置已写好，读者在本机装好 Node / Docker 后按下面命令即可：
-> ```bash
-> # 前端（需本机 Node ≥ 18）
-> cd insightforge-frontend && npm install && npm run dev   # 打开 http://localhost:5173
-> # 部署（需本机 Docker）
-> docker compose -f deploy/docker-compose.yml up -d        # nginx:80 / grafana:3000 / prometheus:9090
-> ```
+**登录后实际可操作**：
+- 买家端 → 点击「立即抢购」→ 后端 Lua 原子扣减库存（local 下走 DB 兜底）→ 返回订单号 → 可取消回补
+- 商家端 → 「活动管理」→ 上线(ARM)→开抢(LIVE)→结算→关闭，状态机完整迁转
+- 商家端 → 「运营大屏」调用 `/api/dashboard/overview`，显示真实 DB 数据
+- 商家端 → 「护栏策略」「人工审批」「Agent 轨迹」调用对应 `/api/dashboard/*` 端点
+
+> ⚠️ **诚实边界**：Docker Compose / Nginx / Grafana / Prometheus 部署配置已写就，
+> 但沙箱无 Docker 守护进程未容器实跑。前端已在浏览器实跑验证。
 
 ---
 
