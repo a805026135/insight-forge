@@ -134,6 +134,8 @@
 
 ## 九、如何运行
 
+> 📘 **想一步步在本机把整套跑起来（含前端大屏 / Docker 编排 / JMeter 压测 / CI 闸门）？** 看详细指南：[`specs/insightforge/本机实跑指南.md`](specs/insightforge/本机实跑指南.md)（分 4 档递进，附验证清单与排错表）。
+
 ```bash
 # 1) 后端构建 + 全量测试（沙箱已实跑通过）
 cd insightforge
