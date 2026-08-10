@@ -95,7 +95,7 @@ class ShoppingFlowTest {
 
         // 2) 加购 iPhone（活动SKU id=1）
         JsonNode add = postJson("/api/user/cart",
-                "{\"activitySkuId\":" + sku.getId() + ",\"qty\":1}", token);
+                "{\"productId\":" + p.getId() + ",\"qty\":1}", token);
         org.junit.jupiter.api.Assertions.assertEquals(0, add.path("code").asInt(), add.toString());
 
         // 3) 购物车列表

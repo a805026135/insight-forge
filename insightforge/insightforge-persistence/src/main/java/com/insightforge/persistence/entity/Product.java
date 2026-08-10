@@ -37,4 +37,6 @@ public class Product extends BaseEntity {
     private String description;
 
     private String status;
+
+    private Integer stock;
 }

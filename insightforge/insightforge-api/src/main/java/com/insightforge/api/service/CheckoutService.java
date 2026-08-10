@@ -23,14 +23,17 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * 购物车结算服务（Phase 17）：多商品下单，原子扣减活动库存，写订单头+订单明细+收货快照。
- * 与秒杀热路径（Redis Lua）共用 activity_sku 库存表，但走 DB 原子条件更新兜底路径。
+ * 购物车结算服务（Phase 18）：支持两类商品下单
+ *  - 秒杀商品（cart.activity_sku_id 非空）：秒杀价 + 扣 activity_sku 活动库存
+ *  - 普通商品（仅 product_id）：市场价 + 扣 product 独立库存
+ * 均为 DB 原子条件更新（stock >= qty），与秒杀热路径共用防超卖语义。
  */
 @Service
 public class CheckoutService {
@@ -86,34 +89,46 @@ public class CheckoutService {
         ordersMapper.insert(order);
 
         BigDecimal total = BigDecimal.ZERO;
-        Map<Long, ActivitySku> skuMap = loadSkus(cartItems);
         Map<Long, Product> productMap = loadProducts(cartItems);
         Map<Long, Merchant> merchantMap = loadMerchants(cartItems);
+        Map<Long, ActivitySku> skuMap = loadSkus(cartItems);
 
         for (CartItem ci : cartItems) {
-            ActivitySku sku = skuMap.get(ci.getActivitySkuId());
-            if (sku == null) {
-                throw new IllegalStateException("商品已下架: activitySku=" + ci.getActivitySkuId());
+            Product p = productMap.get(ci.getProductId());
+            if (p == null) {
+                throw new IllegalStateException("商品不存在: product=" + ci.getProductId());
             }
-            int affected = activitySkuMapper.decrementStock(sku.getId(), ci.getQty());
-            if (affected == 0) {
-                throw new IllegalStateException("库存不足: " + productMap.get(sku.getSkuId()).getName());
+            ActivitySku sku = ci.getActivitySkuId() != null ? skuMap.get(ci.getActivitySkuId()) : null;
+            BigDecimal unitPrice;
+            if (sku != null) {
+                // 秒杀路径：扣活动库存
+                int affected = activitySkuMapper.decrementStock(sku.getId(), ci.getQty());
+                if (affected == 0) {
+                    throw new IllegalStateException("秒杀库存不足: " + p.getName());
+                }
+                unitPrice = sku.getSeckillPrice();
+            } else {
+                // 普通路径：扣商品独立库存
+                int affected = productMapper.decrementStock(p.getId(), ci.getQty());
+                if (affected == 0) {
+                    throw new IllegalStateException("库存不足: " + p.getName());
+                }
+                unitPrice = p.getMarketPrice();
             }
-            Product p = productMap.get(sku.getSkuId());
             Merchant m = p != null && p.getMerchantId() != null ? merchantMap.get(p.getMerchantId()) : null;
-            BigDecimal line = sku.getSeckillPrice().multiply(BigDecimal.valueOf(ci.getQty()));
+            BigDecimal line = unitPrice.multiply(BigDecimal.valueOf(ci.getQty()));
             total = total.add(line);
 
             OrderItem oi = new OrderItem();
             oi.setOrderId(orderId);
-            oi.setActivitySkuId(sku.getId());
-            oi.setProductId(p != null ? p.getId() : null);
-            oi.setProductName(p != null ? p.getName() : "未知商品");
-            oi.setProductImage(p != null ? p.getImageUrl() : "");
+            oi.setActivitySkuId(sku != null ? sku.getId() : null);
+            oi.setProductId(p.getId());
+            oi.setProductName(p.getName());
+            oi.setProductImage(p.getImageUrl());
             oi.setMerchantId(m != null ? m.getId() : null);
             oi.setMerchantName(m != null ? m.getName() : "未知商家");
             oi.setQty(ci.getQty());
-            oi.setPrice(sku.getSeckillPrice());
+            oi.setPrice(unitPrice);
             oi.setCreatedAt(LocalDateTime.now());
             orderItemMapper.insert(oi);
             cartItemMapper.deleteById(ci.getId());
@@ -125,15 +140,18 @@ public class CheckoutService {
     }
 
     private Map<Long, ActivitySku> loadSkus(List<CartItem> items) {
-        List<Long> ids = items.stream().map(CartItem::getActivitySkuId).distinct().collect(Collectors.toList());
+        List<Long> ids = items.stream().map(CartItem::getActivitySkuId)
+                .filter(java.util.Objects::nonNull).distinct().collect(Collectors.toList());
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
         return activitySkuMapper.selectBatchIds(ids).stream()
                 .collect(Collectors.toMap(ActivitySku::getId, s -> s));
     }
 
     private Map<Long, Product> loadProducts(List<CartItem> items) {
-        List<Long> ids = items.stream().map(CartItem::getActivitySkuId).distinct().collect(Collectors.toList());
-        List<ActivitySku> skus = activitySkuMapper.selectBatchIds(ids);
-        List<Long> productIds = skus.stream().map(ActivitySku::getSkuId).distinct().collect(Collectors.toList());
+        List<Long> productIds = items.stream().map(CartItem::getProductId)
+                .filter(java.util.Objects::nonNull).distinct().collect(Collectors.toList());
         if (productIds.isEmpty()) {
             return Map.of();
         }
@@ -142,14 +160,8 @@ public class CheckoutService {
     }
 
     private Map<Long, Merchant> loadMerchants(List<CartItem> items) {
-        List<Long> ids = items.stream().map(CartItem::getActivitySkuId).distinct().collect(Collectors.toList());
-        List<ActivitySku> skus = activitySkuMapper.selectBatchIds(ids);
-        List<Long> productIds = skus.stream().map(ActivitySku::getSkuId).distinct().collect(Collectors.toList());
-        if (productIds.isEmpty()) {
-            return Map.of();
-        }
-        List<Product> products = productMapper.selectBatchIds(productIds);
-        List<Long> merchantIds = products.stream().map(Product::getMerchantId)
+        Map<Long, Product> products = loadProducts(items);
+        List<Long> merchantIds = products.values().stream().map(Product::getMerchantId)
                 .filter(java.util.Objects::nonNull).distinct().collect(Collectors.toList());
         if (merchantIds.isEmpty()) {
             return Map.of();

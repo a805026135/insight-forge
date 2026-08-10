@@ -22,15 +22,27 @@ export default function ProductDetail() {
     setAdding(true);
     setMsg('');
     try {
-      if (!p.activitySkuId) {
-        setMsg('该商品暂未上架秒杀活动，无法加购。');
-        return;
-      }
-      await userApi.addCart(p.activitySkuId, qty);
+      await userApi.addCart(p.id, qty);
       setMsg('已加入购物车 ✅');
       navigate('/user/cart');
     } catch (e: any) {
       setMsg(e.message || '加购失败');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const buyNow = async () => {
+    if (!p) return;
+    setAdding(true);
+    setMsg('');
+    try {
+      await userApi.addCart(p.id, 1);
+      const cart = await userApi.cart();
+      const ids = cart.filter((i) => i.productId === p.id).map((i) => i.id);
+      navigate('/user/checkout', { state: { cartItemIds: ids } });
+    } catch (e: any) {
+      setMsg(e.message || '购买失败');
     } finally {
       setAdding(false);
     }
@@ -83,12 +95,8 @@ export default function ProductDetail() {
             <button disabled={adding} onClick={() => addCart(1)}>
               {adding ? '加入中…' : '加入购物车'}
             </button>
-            <button
-              className="btn-buy"
-              disabled={adding}
-              onClick={() => navigate('/user/seckill')}
-            >
-              去秒杀会场
+            <button className="btn-buy" disabled={adding} onClick={buyNow}>
+              立即购买
             </button>
           </div>
           {msg && <div className={`toast ${msg.includes('✅') ? 'success' : 'error'}`}>{msg}</div>}

@@ -170,12 +170,14 @@ public class UserCenterController {
         if (items.isEmpty()) {
             return ApiResult.ok(List.of());
         }
-        List<ActivitySku> skus = activitySkuMapper.selectBatchIds(
-                items.stream().map(CartItem::getActivitySkuId).distinct().collect(Collectors.toList()));
-        Map<Long, ActivitySku> skuMap = skus.stream().collect(Collectors.toMap(ActivitySku::getId, s -> s));
-        List<Long> productIds = skus.stream().map(ActivitySku::getSkuId).distinct().collect(Collectors.toList());
+        List<Long> productIds = items.stream().map(CartItem::getProductId)
+                .filter(java.util.Objects::nonNull).distinct().collect(Collectors.toList());
         Map<Long, Product> productMap = productIds.isEmpty() ? Map.of()
                 : productMapper.selectBatchIds(productIds).stream().collect(Collectors.toMap(Product::getId, p -> p));
+        List<Long> skuIds = items.stream().map(CartItem::getActivitySkuId)
+                .filter(java.util.Objects::nonNull).distinct().collect(Collectors.toList());
+        Map<Long, ActivitySku> skuMap = skuIds.isEmpty() ? Map.of()
+                : activitySkuMapper.selectBatchIds(skuIds).stream().collect(Collectors.toMap(ActivitySku::getId, s -> s));
         List<Long> merchantIds = productMap.values().stream().map(Product::getMerchantId)
                 .filter(java.util.Objects::nonNull).distinct().collect(Collectors.toList());
         Map<Long, Merchant> merchantMap = merchantIds.isEmpty() ? Map.of()
@@ -183,44 +185,53 @@ public class UserCenterController {
 
         return ApiResult.ok(items.stream().map(ci -> {
             ActivitySku sku = skuMap.get(ci.getActivitySkuId());
-            Product p = sku != null ? productMap.get(sku.getSkuId()) : null;
+            Product p = productMap.get(ci.getProductId());
             Merchant m = p != null && p.getMerchantId() != null ? merchantMap.get(p.getMerchantId()) : null;
             return new CartItemView(
-                    ci.getId(), ci.getActivitySkuId(),
-                    p != null ? p.getId() : null,
-                    p != null ? p.getName() : "未知商品",
+                    ci.getId(), ci.getActivitySkuId(), ci.getProductId(),
+                    p != null ? p.getName() : "unknown",
                     p != null ? p.getImageUrl() : "",
                     m != null ? m.getId() : null,
-                    m != null ? m.getName() : "未知商家",
-                    sku != null ? sku.getSeckillPrice() : null,
+                    m != null ? m.getName() : "unknown merchant",
+                    sku != null ? sku.getSeckillPrice() : (p != null ? p.getMarketPrice() : null),
                     p != null ? p.getMarketPrice() : null,
                     ci.getQty(),
-                    sku != null ? sku.getStock() : null,
+                    sku != null ? sku.getStock() : (p != null ? p.getStock() : null),
                     sku != null ? sku.getSold() : null,
                     p != null ? p.getStatus() : "OFF_SHELF");
         }).collect(Collectors.toList()));
     }
-
     @PostMapping("/cart")
     public ApiResult<Void> addCart(@RequestBody Map<String, Object> body) {
         long uid = AuthContextHolder.requireUserId();
-        long activitySkuId = ((Number) body.get("activitySkuId")).longValue();
+        Object productIdObj = body.get("productId") != null ? body.get("productId") : body.get("activitySkuId");
+        if (productIdObj == null) {
+            return ApiResult.fail(400, "缺少商品标识");
+        }
+        long productId = ((Number) productIdObj).longValue();
         int qty = body.get("qty") == null ? 1 : ((Number) body.get("qty")).intValue();
         if (qty <= 0 || qty > 99) {
             return ApiResult.fail(400, "数量需在 1~99 之间");
         }
-        ActivitySku sku = activitySkuMapper.selectById(activitySkuId);
-        if (sku == null) {
-            return ApiResult.fail(404, "商品不存在");
+        Product product = productMapper.selectById(productId);
+        if (product == null || !"ON_SALE".equals(product.getStatus())) {
+            return ApiResult.fail(404, "?????");
         }
+        ActivitySku sku = activitySkuMapper.selectOne(
+                new QueryWrapper<ActivitySku>().eq("sku_id", productId).orderByDesc("id").last("LIMIT 1"));
+        Long activitySkuId = sku != null ? sku.getId() : null;
         CartItem existing = cartItemMapper.selectOne(
-                new QueryWrapper<CartItem>().eq("user_id", uid).eq("activity_sku_id", activitySkuId));
+                new QueryWrapper<CartItem>().eq("user_id", uid).eq("product_id", productId));
         if (existing != null) {
             existing.setQty(Math.min(existing.getQty() + qty, 99));
+            if (existing.getActivitySkuId() == null) {
+                existing.setActivitySkuId(activitySkuId);
+            }
             cartItemMapper.updateById(existing);
         } else {
             CartItem ci = new CartItem();
             ci.setUserId(uid);
+            ci.setProductId(productId);
             ci.setActivitySkuId(activitySkuId);
             ci.setQty(qty);
             ci.setCreatedAt(LocalDateTime.now());
