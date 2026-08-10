@@ -67,6 +67,10 @@ public class MerchantAssistantService {
         String answer;
         if (actions.isEmpty()) {
             answer = generateAnswer(context, question);
+            List<AssistantAction> fromLlm = parseLlmActions(merchantId, answer, context);
+            if (!fromLlm.isEmpty()) {
+                actions = fromLlm;
+            }
         } else {
             answer = "我理解你的意图，已准备好以下操作，请确认后执行：\n"
                     + actions.stream().map(a -> "- " + a.description()).collect(Collectors.joining("\n"));
@@ -111,10 +115,6 @@ public class MerchantAssistantService {
                 return "助手正在分析经营数据，请稍后重试或换一种问法。";
             }
             String answer = resp.content() == null ? "（无回答）" : resp.content();
-            List<AssistantAction> fromLlm = parseLlmActions(answer, context);
-            if (!fromLlm.isEmpty()) {
-                return answer;
-            }
             return answer;
         }
         return deterministicAnswer(context, question);
@@ -138,7 +138,8 @@ public class MerchantAssistantService {
         // 匹配"给 X 加/补 N 件库存" / "把 X 下架" / "把 X 上架" / "给 X 调到 ¥N"
         for (Product p : products) {
             String name = p.getName();
-            if (question.contains(name)) {
+            String namePrefix = name.length() >= 6 ? name.substring(0, 6) : name;
+            if (question.contains(name) || question.contains(namePrefix)) {
                 Matcher m = Pattern.compile("(加|补|增加|调增)\\s*(\\d+)\\s*(件|库存)?").matcher(question);
                 if (m.find()) {
                     actions.add(new AssistantAction("ADD_STOCK", p.getId(), name,
@@ -165,7 +166,7 @@ public class MerchantAssistantService {
     }
 
     /** 解析 DeepSeek 回答中的动作 JSON 标记。 */
-    private List<AssistantAction> parseLlmActions(String answer, String context) {
+    private List<AssistantAction> parseLlmActions(long merchantId, String answer, String context) {
         List<AssistantAction> actions = new ArrayList<>();
         Matcher m = ACTION_JSON.matcher(answer == null ? "" : answer);
         while (m.find()) {
@@ -173,7 +174,7 @@ public class MerchantAssistantService {
                 JsonNode node = objectMapper.readTree(m.group(0));
                 Long productId = node.has("productId") ? node.get("productId").asLong() : null;
                 Product p = productId != null ? productMapper.selectById(productId) : null;
-                if (p == null) {
+                if (p == null || p.getMerchantId() == null || p.getMerchantId() != merchantId) {
                     continue;
                 }
                 String type = node.get("action").asText();
