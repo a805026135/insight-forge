@@ -7,6 +7,8 @@ import com.insightforge.agent.core.model.ChatMessage;
 import com.insightforge.agent.core.model.DeepSeekModelClient;
 import com.insightforge.agent.core.model.ModelRequest;
 import com.insightforge.agent.core.model.ModelResponse;
+import com.insightforge.agent.core.kb.KbSearchHit;
+import com.insightforge.agent.core.kb.KnowledgeBaseService;
 import com.insightforge.api.dto.AssistantAction;
 import com.insightforge.api.dto.AssistantReply;
 import com.insightforge.persistence.entity.ActivitySku;
@@ -38,6 +40,7 @@ import java.util.function.Consumer;
 public class MerchantAssistantService {
 
     private final ObjectProvider<DeepSeekModelClient> deepSeekModelClient;
+    private final ObjectProvider<KnowledgeBaseService> knowledgeBaseProvider;
     private final MerchantMapper merchantMapper;
     private final ProductMapper productMapper;
     private final ActivitySkuMapper activitySkuMapper;
@@ -48,12 +51,14 @@ public class MerchantAssistantService {
     private static final Pattern ACTION_JSON = Pattern.compile("\\{\"action\"\\s*:\\s*\"([A-Z_]+)\"[^}]*}");
 
     public MerchantAssistantService(ObjectProvider<DeepSeekModelClient> deepSeekModelClient,
+                                    ObjectProvider<KnowledgeBaseService> knowledgeBaseProvider,
                                     MerchantMapper merchantMapper,
                                     ProductMapper productMapper,
                                     ActivitySkuMapper activitySkuMapper,
                                     OrdersMapper ordersMapper,
                                     OrderItemMapper orderItemMapper) {
         this.deepSeekModelClient = deepSeekModelClient;
+        this.knowledgeBaseProvider = knowledgeBaseProvider;
         this.merchantMapper = merchantMapper;
         this.productMapper = productMapper;
         this.activitySkuMapper = activitySkuMapper;
@@ -62,7 +67,7 @@ public class MerchantAssistantService {
     }
 
     public AssistantReply ask(long merchantId, String question) {
-        String context = buildContext(merchantId);
+        String context = buildContext(merchantId, question);
         List<AssistantAction> actions = extractActions(merchantId, question);
         String answer;
         if (actions.isEmpty()) {
@@ -80,7 +85,7 @@ public class MerchantAssistantService {
 
     /** 流式回答：DeepSeek 可用时走真实 token 流，否则按确定性回答分块模拟。 */
     public void askStream(long merchantId, String question, Consumer<String> onChunk) {
-        String context = buildContext(merchantId);
+        String context = buildContext(merchantId, question);
         String text;
         DeepSeekModelClient ds = deepSeekModelClient.getIfAvailable();
         if (ds != null) {
@@ -233,7 +238,7 @@ public class MerchantAssistantService {
         return "ANALYSIS";
     }
 
-    private String buildContext(long merchantId) {
+    private String buildContext(long merchantId, String question) {
         Merchant m = merchantMapper.selectById(merchantId);
         List<Product> products = productMapper.selectList(
                 new QueryWrapper<Product>().eq("merchant_id", merchantId));
@@ -252,7 +257,7 @@ public class MerchantAssistantService {
                         p.getMarketPrice() == null ? "-" : p.getMarketPrice()))
                 .collect(Collectors.joining("；"));
 
-        return String.format("""
+        String base = String.format("""
                 【商家】%s（评分 %s，累计销量 %s，认证 %s）
                 【商品】共 %d 款：%s
                 【活动库存】参与活动 SKU %d 个，剩余库存 %d，已售 %d
@@ -264,5 +269,19 @@ public class MerchantAssistantService {
                 products.size(), productBrief,
                 skus.size(), totalStock, totalSold,
                 orderCount, allOrders, java.time.LocalDateTime.now());
+        StringBuilder sb = new StringBuilder(base);
+        KnowledgeBaseService kb = knowledgeBaseProvider.getIfAvailable();
+        if (kb != null && question != null && !question.isBlank()) {
+            List<KbSearchHit> hits = kb.search(merchantId, question, 4);
+            if (!hits.isEmpty()) {
+                sb.append("\n【知识库参考】（检索自商家知识库，可能相关）\n");
+                for (KbSearchHit h : hits) {
+                    sb.append("- 《").append(h.title()).append("》 ")
+                      .append(h.content().replace("\n", " ")).append("\n");
+                }
+                sb.append("请优先参考以上知识库资料回答，并简要说明依据来源。\n");
+            }
+        }
+        return sb.toString();
     }
 }

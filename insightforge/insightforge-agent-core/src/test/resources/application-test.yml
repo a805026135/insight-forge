@@ -29,3 +29,5 @@ insightforge:
       milvus-enabled: false
     local:
       force-invalid-plan: false
+    knowledge-base:
+      seed-on-startup: false

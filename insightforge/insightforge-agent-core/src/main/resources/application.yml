@@ -12,6 +12,20 @@ insightforge:
       api-key: ${DEEPSEEK_API_KEY:}
       base-url: https://api.deepseek.com    # DeepSeek 的 OpenAI 兼容端点
       model: deepseek-chat
+    # ---- 知识库（RAG，Phase 19）----
+    embedding:
+      provider: auto
+      api-key: ${INSIGHTFORGE_AGENT_EMBEDDING_API_KEY:}
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      model: text-embedding-v4
+      dimensions: 1024
+      local-dimensions: 512
+    knowledge-base:
+      enabled: true
+      max-chunk-chars: 400
+      overlap-chars: 50
+      top-k: 4
+      seed-on-startup: true
     # —— 本地确定性模型（离线桩，仅用于本地/测试跑通整条管线）——
     local:
       force-invalid-plan: false              # 测试开关：true 时模型故意产出「售价<成本」的不合规方案，触发 Critic 拒绝

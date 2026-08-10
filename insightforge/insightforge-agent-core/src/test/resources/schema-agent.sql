@@ -109,3 +109,31 @@ CREATE TABLE IF NOT EXISTS guardrail_policy (
     created_at   DATETIME,
     UNIQUE (activity_id, version)
 );
+
+-- Phase 19：知识库（RAG）测试副本
+CREATE TABLE IF NOT EXISTS agent_kb_document (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    doc_key     VARCHAR(128) NOT NULL,
+    title       VARCHAR(255),
+    source_type VARCHAR(32),
+    merchant_id BIGINT,
+    version     INT DEFAULT 1,
+    chunk_count INT DEFAULT 0,
+    created_at  DATETIME,
+    updated_at  DATETIME
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_agent_kb_doc_key ON agent_kb_document (doc_key);
+
+CREATE TABLE IF NOT EXISTS agent_kb_chunk (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    doc_key     VARCHAR(128) NOT NULL,
+    document_id BIGINT,
+    merchant_id BIGINT,
+    title       VARCHAR(255),
+    source_type VARCHAR(32),
+    content     TEXT,
+    embedding   TEXT,
+    dimension   INT,
+    created_at  DATETIME
+);

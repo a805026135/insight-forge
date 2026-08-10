@@ -2,6 +2,8 @@ package com.insightforge.api.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.insightforge.api.auth.AuthContextHolder;
+import com.insightforge.agent.core.kb.KnowledgeBaseService;
+import com.insightforge.agent.core.kb.KnowledgeBaseSeeder;
 import com.insightforge.api.dto.MerchantProductRequest;
 import com.insightforge.api.dto.MerchantProductView;
 import com.insightforge.api.dto.AssistantReply;
@@ -53,11 +55,15 @@ public class MerchantController {
     private final OrderItemMapper orderItemMapper;
     private final MerchantAssistantService assistantService;
     private final MerchantActionService actionService;
+    private final KnowledgeBaseService knowledgeBaseService;
+    private final KnowledgeBaseSeeder knowledgeBaseSeeder;
 
     public MerchantController(MerchantMapper merchantMapper, ProductMapper productMapper,
                               ActivitySkuMapper activitySkuMapper, OrdersMapper ordersMapper,
                               OrderItemMapper orderItemMapper, MerchantAssistantService assistantService,
-                              MerchantActionService actionService) {
+                              MerchantActionService actionService,
+                              KnowledgeBaseService knowledgeBaseService,
+                              KnowledgeBaseSeeder knowledgeBaseSeeder) {
         this.merchantMapper = merchantMapper;
         this.productMapper = productMapper;
         this.activitySkuMapper = activitySkuMapper;
@@ -65,6 +71,33 @@ public class MerchantController {
         this.orderItemMapper = orderItemMapper;
         this.assistantService = assistantService;
         this.actionService = actionService;
+        this.knowledgeBaseService = knowledgeBaseService;
+        this.knowledgeBaseSeeder = knowledgeBaseSeeder;
+    }
+
+    /** POST /api/merchant/kb/reindex 手动刷新当前商家的知识库（商品 + 历史决策） */
+    @PostMapping("/kb/reindex")
+    public ApiResult<Map<String, Object>> kbReindex() {
+        long mid = AuthContextHolder.requireMerchantId();
+        Map<String, Object> data = new HashMap<>(knowledgeBaseSeeder.reindexMerchant(mid));
+        data.put("merchantId", mid);
+        data.put("provider", knowledgeBaseService.providerName());
+        data.put("dimensions", knowledgeBaseService.providerDimensions());
+        data.put("totalChunks", knowledgeBaseService.chunkCount());
+        return ApiResult.ok(data);
+    }
+
+    /** GET /api/merchant/kb/stats 知识库状态（供前端展示/排查） */
+    @GetMapping("/kb/stats")
+    public ApiResult<Map<String, Object>> kbStats() {
+        Map<String, Object> data = new HashMap<>();
+        data.put("enabled", knowledgeBaseService.properties().isEnabled());
+        data.put("provider", knowledgeBaseService.providerName());
+        data.put("dimensions", knowledgeBaseService.providerDimensions());
+        data.put("documents", knowledgeBaseService.documentCount());
+        data.put("chunks", knowledgeBaseService.chunkCount());
+        data.put("merchantId", AuthContextHolder.requireMerchantId());
+        return ApiResult.ok(data);
     }
 
     /** GET /api/merchant/profile 当前商家店铺信息 */
