@@ -8,7 +8,13 @@ CREATE TABLE IF NOT EXISTS product (
     id          BIGINT AUTO_INCREMENT PRIMARY KEY,
     name        VARCHAR(128),
     sku         VARCHAR(128),
-    cost_price  DECIMAL(12, 2)
+    cost_price  DECIMAL(12, 2),
+    market_price DECIMAL(12, 2),
+    image_url   VARCHAR(255),
+    merchant_id BIGINT,
+    category    VARCHAR(32),
+    description VARCHAR(512),
+    status      VARCHAR(16)
 );
 
 CREATE TABLE IF NOT EXISTS activity (
@@ -29,7 +35,8 @@ CREATE TABLE IF NOT EXISTS activity_sku (
     total_stock  INT,
     stock        INT,
     sold         INT,
-    version      INT
+    version      INT,
+    merchant_id  BIGINT
 );
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -41,7 +48,12 @@ CREATE TABLE IF NOT EXISTS orders (
     qty          INT,
     price        DECIMAL(12, 2),
     status       VARCHAR(32),
-    created_at   DATETIME
+    created_at   DATETIME,
+    total_amount    DECIMAL(14, 2),
+    receiver        VARCHAR(64),
+    phone           VARCHAR(32),
+    address_snapshot VARCHAR(512),
+    shipped_at      DATETIME
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (

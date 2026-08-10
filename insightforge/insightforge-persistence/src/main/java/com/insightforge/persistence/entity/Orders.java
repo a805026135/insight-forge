@@ -47,4 +47,14 @@ public class Orders extends BaseEntity {
 
     /** 下单时间 */
     private LocalDateTime createdAt;
+
+    private BigDecimal totalAmount;
+
+    private String receiver;
+
+    private String phone;
+
+    private String addressSnapshot;
+
+    private LocalDateTime shippedAt;
 }

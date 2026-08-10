@@ -44,4 +44,6 @@ public class ActivitySku extends BaseEntity {
 
     /** 乐观锁版本号（Phase 2 启用） */
     private Integer version;
+
+    private Long merchantId;
 }

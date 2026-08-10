@@ -1,0 +1,6 @@
+-- H2 专用：V7 固定 id 插入后手动推进自增计数（MySQL 自动推进无需此文件）
+ALTER TABLE product         ALTER COLUMN id RESTART WITH 43;
+ALTER TABLE merchant        ALTER COLUMN id RESTART WITH 7;
+ALTER TABLE users           ALTER COLUMN id RESTART WITH 9;
+ALTER TABLE user_address    ALTER COLUMN id RESTART WITH 4;
+ALTER TABLE activity_sku    ALTER COLUMN id RESTART WITH 13;

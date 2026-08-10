@@ -29,4 +29,12 @@ public class Product extends BaseEntity {
 
     /** 商品图片（前端相对路径，如 /products/iphone16pro.jpg） */
     private String imageUrl;
+
+    private Long merchantId;
+
+    private String category;
+
+    private String description;
+
+    private String status;
 }
