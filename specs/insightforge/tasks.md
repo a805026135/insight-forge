@@ -315,3 +315,28 @@ JMeter 百万压测仍未实跑（本机无 JMeter）。
 ### 仍待做（诚实标注）
 - JMeter 百万压测实跑；真 DeepSeek 已在 14.2 接通（模拟评估仍用确定性 DSL，可用真 LLM 产出 DSL 后驱动模拟器）
 - Milvus / 支付链路 / Nginx+Lua 限流实跑（范围红线）
+
+---
+
+## Phase 14.4 — 上线级安全收尾 + Flyway + 评估接真实指标（2026-08-10 第三轮）✅
+
+### ① 安全收尾（面试必问三件套）
+- **JWT 密钥环境化**：`INSIGHTFORGE_AUTH_JWT_SECRET` 经 deploy/.env 注入（gitignore），
+  非 local 环境仍用开发默认密钥时启动告警；compose 透传。
+- **WebSocket 鉴权**：`/ws/dashboard` 握手校验 `?token=<JWT>` 且要求 merchant 角色，
+  Origin 收紧为 localhost；实测：无 token 403 / 买家 403 / 商家 101。
+- **actuator 收紧**：只暴露 health（无明细）+ prometheus；info/metrics/beans/env 全部 404；
+  Prometheus 抓取保持 `health="up"`。
+
+### ② Flyway 统一 Schema（消灭“三份 SQL 手同步”）
+- 新增 `db/migration/V1__init.sql` + `V2__seed.sql`（H2/MySQL 共用）、`db/h2/V3__h2_identity_restart.sql`（仅 local）；
+- 删除 api `schema.sql/data.sql`、`deploy/mysql/init/*.sql` 与 compose 的 init 挂载；
+- 已有数据库 `baseline-on-migrate=true` + `baseline-version=2`（不丢数据），全新库全量迁移。
+
+### ③ 评估报告接真实 trace 指标
+- 新增 `TraceSystemRunMetricsSource`：正确失败率/成功/崩溃/延迟/成本全部聚合 `agent_trace` 真实表；
+  种子源改为显式开关（`insightforge.eval.use-inmemory-metrics=true`）才启用。
+- CI 扩展：`eval.yml` 新增前端构建 job（npm ci + typecheck + build）与
+  `EngineDrivenAbevalTest` 显式门槛步骤。
+
+**验收**：`mvn clean package` BUILD SUCCESS，106 测试全绿；部署全套实测通过（见上）。

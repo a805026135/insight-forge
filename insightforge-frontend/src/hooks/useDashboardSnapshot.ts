@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { dashboardApi, WS_URL } from '../api/client';
+import { dashboardApi, getWsUrl } from '../api/client';
 import type { DashboardSnapshot } from '../types';
 
 /**
@@ -10,6 +10,8 @@ export function useDashboardSnapshot(pollMs = 3000) {
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
   const [live, setLive] = useState(false); // 是否走 WS 实时通道
   const wsRef = useRef<WebSocket | null>(null);
+  const snapshotRef = useRef<DashboardSnapshot | null>(null);
+  snapshotRef.current = snapshot;
 
   useEffect(() => {
     let cancelled = false;
@@ -17,7 +19,7 @@ export function useDashboardSnapshot(pollMs = 3000) {
 
     const startWs = () => {
       try {
-        const ws = new WebSocket(WS_URL);
+        const ws = new WebSocket(getWsUrl());
         wsRef.current = ws;
         ws.onmessage = (e) => {
           try {
@@ -49,7 +51,7 @@ export function useDashboardSnapshot(pollMs = 3000) {
     startWs();
     // WS 3 秒没推上来就启动轮询兜底
     const fallback = window.setTimeout(() => {
-      if (!snapshot && !cancelled) startPoll();
+      if (!snapshotRef.current && !cancelled) startPoll();
     }, 3000);
 
     return () => {
@@ -58,7 +60,7 @@ export function useDashboardSnapshot(pollMs = 3000) {
       window.clearTimeout(fallback);
       wsRef.current?.close();
     };
-  }, [pollMs, snapshot]);
+  }, [pollMs]);
 
   return { snapshot, live };
 }

@@ -13,10 +13,9 @@ spring:
   h2:
     console:
       enabled: true
-  # Phase 1：启动时自动执行 classpath 下的 schema.sql（建表）+ data.sql（种子数据）
-  sql:
-    init:
-      mode: always
+  # Phase 14.4：Flyway 统一迁移；H2 额外挂 vendor 目录修复显式 id 后的自增计数
+  flyway:
+    locations: classpath:db/migration,classpath:db/h2
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
@@ -29,10 +28,10 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        include: health,prometheus
   endpoint:
     health:
-      show-details: always
+      show-details: never
   metrics:
     export:
       prometheus:

@@ -68,6 +68,15 @@
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-crypto</artifactId>
         </dependency>
+        <!-- Phase 14.4：Flyway 统一 schema 迁移（H2/MySQL 同一份 DDL，替代手工同步三份 SQL） -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+        </dependency>
         <!-- JWT 签发/校验 -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>

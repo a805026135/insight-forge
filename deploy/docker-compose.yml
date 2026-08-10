@@ -24,9 +24,6 @@ services:
     ports: ["3306:3306"]
     volumes:
       - mysql-data:/var/lib/mysql
-      # Phase 14.1：首次建卷时初始化表结构 + 种子数据（docker-entrypoint-initdb.d 只执行一次，
-      # 重启不清库 —— 修复原 application.yml sql.init.mode=always 每次启动 DELETE 全部数据的问题）
-      - ./mysql/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -86,6 +83,8 @@ services:
       INSIGHTFORGE_AGENT_DEEPSEEK_API_KEY: ${INSIGHTFORGE_AGENT_DEEPSEEK_API_KEY:-}
       INSIGHTFORGE_AGENT_DEEPSEEK_BASE_URL: ${INSIGHTFORGE_AGENT_DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       INSIGHTFORGE_AGENT_DEEPSEEK_MODEL: ${INSIGHTFORGE_AGENT_DEEPSEEK_MODEL:-deepseek-v4-flash}
+      # Phase 14.4：JWT 签名密钥环境化（从 deploy/.env 注入，生产必须改）
+      INSIGHTFORGE_AUTH_JWT_SECRET: ${INSIGHTFORGE_AUTH_JWT_SECRET:-insightforge-demo-secret-please-override-0123456789}
     # 宿主 8080 被 Dify、8082 被 agent-task-platform 占用，改映射 18080；容器内仍是 8080
     ports: ["18080:8080"]
     deploy:

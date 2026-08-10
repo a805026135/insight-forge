@@ -4,14 +4,13 @@ server:
 spring:
   application:
     name: insightforge
-  # Phase 1：迁移到 MySQL 后，启动时自动建表 + 写入种子数据（与 local profile 共用 schema.sql/data.sql）
-  # Phase 14.1 修正：默认/集成 profile 关闭 sql.init —— data.sql 含 DELETE，每次重启会清空订单/库存。
-  # MySQL 的表结构与种子改由 docker-compose 挂载的 docker/mysql/init/*.sql 在「首次建卷」时初始化
-  # （docker-entrypoint-initdb.d 只在数据卷为空时执行一次），重启不丢数据。local profile（H2 内存库）
-  # 仍用 mode=always 每次从 schema.sql/data.sql 重建，零依赖冒烟不受影响。
-  sql:
-    init:
-      mode: never
+  # Phase 14.4：表结构与种子由 Flyway 统一管理（db/migration/*.sql），
+  # 同一份迁移同时服务 H2(local) 与 MySQL(integration)，不再手工同步三份 SQL。
+  flyway:
+    locations: classpath:db/migration
+    # 已有数据库（旧 init 脚本建的表）按 V2 基线跳过 V1/V2；全新库正常全量迁移
+    baseline-on-migrate: true
+    baseline-version: 2
   datasource:
     url: jdbc:mysql://localhost:3306/insightforge?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: insightforge
@@ -41,10 +40,12 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        # Phase 14.4 安全收尾：只暴露 health（探活）+ prometheus（内网抓取），
+        # 不再暴露 info/metrics 等含环境/Bean 细节的端点
+        include: health,prometheus
   endpoint:
     health:
-      show-details: always
+      show-details: never
   metrics:
     export:
       prometheus:

@@ -17,14 +17,19 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final DashboardWebSocketHandler handler;
+    private final WsAuthHandshakeInterceptor wsAuthHandshakeInterceptor;
 
-    public WebSocketConfig(DashboardWebSocketHandler handler) {
+    public WebSocketConfig(DashboardWebSocketHandler handler,
+                           WsAuthHandshakeInterceptor wsAuthHandshakeInterceptor) {
         this.handler = handler;
+        this.wsAuthHandshakeInterceptor = wsAuthHandshakeInterceptor;
     }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(handler, "/ws/dashboard")
-                .setAllowedOriginPatterns("*");
+                .addInterceptors(wsAuthHandshakeInterceptor)
+                // Phase 14.4：不再放开任意 Origin，只允许本地开发/部署来源
+                .setAllowedOriginPatterns("http://localhost:*", "http://127.0.0.1:*");
     }
 }

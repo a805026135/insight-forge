@@ -1,17 +1,18 @@
 package com.insightforge.agent.core.evaluation;
 
 import org.springframework.stereotype.Component;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.math.BigDecimal;
 
 /**
  * 内存确定性系统运行指标源（大白话：预置一份 Agent 运行「安全仪表盘」读数）。
  *
- * 种子是一个「健康且诚实」的分布：绝大多数成功，少量正确失败（主动拒绝不合规），
- * 极少崩溃。正确失败率 = 42 / (820+42+3) ≈ 4.86%，落在安全区间。
- * 生产环境替换为读 agent_trace 聚合（见 SystemRunMetricsSource 注释）。
+ * 仅当显式开启 insightforge.eval.use-inmemory-metrics=true 时启用（离线调试兜底）；
+ * 默认使用 {@link TraceSystemRunMetricsSource} 聚合真实 agent_trace。
  */
 @Component
+@ConditionalOnProperty(name = "insightforge.eval.use-inmemory-metrics", havingValue = "true", matchIfMissing = false)
 public class InMemorySystemRunMetricsSource implements SystemRunMetricsSource {
 
     @Override

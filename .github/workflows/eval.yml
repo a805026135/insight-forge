@@ -33,6 +33,11 @@ jobs:
         working-directory: insightforge
         run: mvn -B clean package
 
+      # Phase 14.4：显式跑「规则引擎驱动的真实 A/B 评估」门槛（替代种子自证）
+      - name: Run engine-driven A/B eval gate
+        working-directory: insightforge
+        run: mvn -B -pl insightforge-rule-engine -am test -Dtest=EngineDrivenAbevalTest -Dsurefire.failIfNoSpecifiedTests=false
+
       # 可选：单独打印评估闭环报告（使用测试 classpath 以拿到 schema-agent.sql）
       # 失败时会以非零码退出（见 EvaluationGateMain）。
       - name: Print evaluation report (optional CLI)
@@ -43,3 +48,24 @@ jobs:
           exec:java
           -Dexec.mainClass=com.insightforge.agent.core.evaluation.EvaluationGateMain
         continue-on-error: true
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: insightforge-frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: insightforge-frontend
+        run: npm ci
+
+      - name: Typecheck + build
+        working-directory: insightforge-frontend
+        run: npm run build

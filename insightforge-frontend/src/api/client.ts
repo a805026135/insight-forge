@@ -34,7 +34,11 @@ export const dashboardApi = {
   },
 };
 
-// 大屏实时推送 WebSocket 地址（开发走 Vite 代理 /ws）
-export const WS_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${
-  location.host
-}/ws/dashboard`;
+// 大屏实时推送 WebSocket 地址（开发走 Vite 代理 /ws）。
+// 登录后才有 token，因此必须在连接时现算（Phase 14.4：握手需携带 JWT）。
+export function getWsUrl(): string {
+  const token = getToken();
+  return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/dashboard${
+    token ? `?token=${encodeURIComponent(token)}` : ''
+  }`;
+}

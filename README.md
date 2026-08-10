@@ -125,6 +125,9 @@
 | **真实闭环（Docker 端到端）** | ✅ **2026-08-10 实跑通过** | mysql/redis/kafka + api + rule-engine-worker：85 人抢购 → sales.tick → REPRICE/REALLOCATE 真实执行 → 取消回补 → 结算对账三方一致 → 大屏 GMV 真实统计 |
 | **真实 A/B 评估** | ✅ 规则引擎驱动模拟市场 | 人工 82.4%/36.5% vs AI 82.4%/37.4%（毛利 +2.33%），指标由 Drools 逐心跳真实执行产出，非种子自证 |
 | **鉴权** | ✅ BCrypt + JWT | 密码哈希存储、登录签发 JWT、角色隔离（买家/商家）、秒杀以登录身份为准 |
+| **上线级安全收尾** | ✅ | JWT 密钥环境化、WS 握手鉴权（商家专属）、actuator 只暴露 health+prometheus |
+| **Flyway 统一 Schema** | ✅ | 单一迁移源（H2/MySQL 共用），删除三份手同步 SQL；已有库 baseline 不丢数据 |
+| **评估接真实 trace 指标** | ✅ | 正确失败率/延迟/成本聚合 agent_trace 真实表，种子源改为显式开关 |
 | **浏览器验收** | ✅ 真实 Chromium 实测 | 登录→大屏→秒杀→下单→订单全流程，控制台 0 报错（10 张截图留存） |
 | Prometheus + Grafana | ✅ 容器实跑 | Prometheus 抓取 `health="up"`，Grafana 面板预置（宿主 3001） |
 | 真 DeepSeek 模型 / Milvus / Redisson 真集群 | ⚠️ 桩（写就未实跑） | 沙箱无 API Key / 外网 / 集群，用确定性离线桩代替；生产换真 |

@@ -5,6 +5,8 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -26,6 +28,10 @@ import java.util.Optional;
 @Service
 public class AuthService {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+    /** 开发用默认密钥（与 application.yml 默认值一致，用于本地/测试）。 */
+    private static final String DEMO_SECRET = "insightforge-demo-secret-please-override-0123456789";
+
     private final UserMapper userMapper;
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
     private final SecretKey key;
@@ -33,10 +39,15 @@ public class AuthService {
 
     public AuthService(UserMapper userMapper,
                        @Value("${insightforge.auth.jwt-secret}") String secret,
-                       @Value("${insightforge.auth.token-ttl-hours:24}") long ttlHours) {
+                       @Value("${insightforge.auth.token-ttl-hours:24}") long ttlHours,
+                       @Value("${spring.profiles.active:}") String activeProfiles) {
         this.userMapper = userMapper;
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.ttlHours = ttlHours;
+        // 安全收尾：非 local 环境若仍用开发默认密钥，明显告警（生产应注入环境变量）
+        if (DEMO_SECRET.equals(secret) && !activeProfiles.contains("local")) {
+            log.warn("JWT 密钥仍为开发默认值！生产环境必须通过 INSIGHTFORGE_AUTH_JWT_SECRET 注入强密钥。");
+        }
     }
 
     /** 用户名+密码 → 认证通过返回 AuthUser；失败返回 empty（不区分“用户不存在/密码错”）。 */

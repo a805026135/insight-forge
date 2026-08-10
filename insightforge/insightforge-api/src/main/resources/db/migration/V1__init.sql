@@ -1,9 +1,9 @@
 -- ============================================================
--- InsightForge MySQL 表结构（docker-entrypoint-initdb.d 首次初始化执行）
--- 与 api/src/main/resources/schema.sql 保持结构一致（MySQL 方言）。
+-- InsightForge 统一 Schema（Phase 14.4：Flyway 单一迁移源）
+-- H2(本地/测试) 与 MySQL 8 共用同一份 DDL，不再手工同步 schema.sql / schema-agent.sql / mysql init。
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE users (
     id           BIGINT AUTO_INCREMENT PRIMARY KEY,
     username     VARCHAR(64) UNIQUE,
     password     VARCHAR(128),
@@ -11,14 +11,14 @@ CREATE TABLE IF NOT EXISTS users (
     display_name VARCHAR(64)
 );
 
-CREATE TABLE IF NOT EXISTS product (
+CREATE TABLE product (
     id          BIGINT AUTO_INCREMENT PRIMARY KEY,
     name        VARCHAR(128),
     sku         VARCHAR(128),
     cost_price  DECIMAL(12, 2)
 );
 
-CREATE TABLE IF NOT EXISTS activity (
+CREATE TABLE activity (
     id          BIGINT AUTO_INCREMENT PRIMARY KEY,
     name        VARCHAR(128),
     status      VARCHAR(32),
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS activity (
     end_at      DATETIME
 );
 
-CREATE TABLE IF NOT EXISTS activity_sku (
+CREATE TABLE activity_sku (
     id            BIGINT AUTO_INCREMENT PRIMARY KEY,
     activity_id   BIGINT,
     sku_id        BIGINT,
@@ -37,10 +37,10 @@ CREATE TABLE IF NOT EXISTS activity_sku (
     stock         INT,
     sold          INT,
     version       INT,
-    UNIQUE KEY uk_activity_sku (activity_id, sku_id)
+    CONSTRAINT uk_activity_sku UNIQUE (activity_id, sku_id)
 );
 
-CREATE TABLE IF NOT EXISTS orders (
+CREATE TABLE orders (
     id           BIGINT AUTO_INCREMENT PRIMARY KEY,
     order_id     VARCHAR(64) UNIQUE,
     user_id      BIGINT,
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at   DATETIME
 );
 
-CREATE TABLE IF NOT EXISTS agent_trace (
+CREATE TABLE agent_trace (
     trace_id         VARCHAR(64)  PRIMARY KEY,
     activity_id      BIGINT,
     started_at       DATETIME,
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS agent_trace (
     review_status    VARCHAR(32)
 );
 
-CREATE TABLE IF NOT EXISTS agent_span (
+CREATE TABLE agent_span (
     span_id        VARCHAR(64) PRIMARY KEY,
     trace_id       VARCHAR(64) NOT NULL,
     parent_span_id VARCHAR(64),
@@ -86,16 +86,16 @@ CREATE TABLE IF NOT EXISTS agent_span (
     artifact_ref   VARCHAR(128)
 );
 
-CREATE TABLE IF NOT EXISTS guardrail_policy (
+CREATE TABLE guardrail_policy (
     id           BIGINT AUTO_INCREMENT PRIMARY KEY,
     activity_id  BIGINT,
     version      VARCHAR(32),
     policy_json  VARCHAR(8000),
     created_at   DATETIME,
-    UNIQUE KEY uk_policy (activity_id, version)
+    CONSTRAINT uk_policy UNIQUE (activity_id, version)
 );
 
-CREATE TABLE IF NOT EXISTS audit_log (
+CREATE TABLE audit_log (
     id           BIGINT AUTO_INCREMENT PRIMARY KEY,
     activity_id  BIGINT,
     sku_id       BIGINT,
