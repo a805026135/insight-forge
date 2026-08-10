@@ -7,6 +7,7 @@ export interface SeckillSummary {
   totalStock: number;
   soldStock: number;
   totalOrders: number;
+  totalGmv: number;
 }
 
 export interface AgentSummary {

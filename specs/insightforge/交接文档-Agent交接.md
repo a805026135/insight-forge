@@ -84,7 +84,7 @@ D:/Java/                              ← Git 仓库根
 │
 └── specs/insightforge/               ← 所有文档（和代码同仓库）
     ├── plan.md                       ← 技术方案
-    ├── spec.md                       ← 详细设计规格（4.2 万行）
+    ├── spec.md                       ← 详细设计规格（约 367 行 / 42KB）
     ├── tasks.md                      ← 任务清单（全部 Phase 0–13 完成状态）
     ├── analysis.md                   ← 架构分析
     ├── glossary.md                   ← 术语速查
@@ -154,6 +154,26 @@ cd insightforge-api
 java -jar target/insightforge-api-0.1.0-SNAPSHOT.jar --spring.profiles.active=integration
 ```
 
+### 4.5 真实闭环一键部署（Phase 14.1，2026-08-10 已实跑验证）
+
+```bash
+# 仓库根目录（D:/Java 或任意 clone 位置）
+cd insightforge
+docker compose -f deploy/docker-compose.yml up -d --build
+
+# 宿主访问入口（本机演示环境端口被占用时的实际映射）：
+#   前端/Nginx   http://localhost/          （/api 反代到后端）
+#   后端直连      http://localhost:18080/api
+#   Prometheus   http://localhost:9090
+#   Grafana      http://localhost:3001     （admin/admin，看板已预置）
+```
+
+> **已实跑验证（2026-08-10，真实 Docker + MySQL 8 + Redis 7 + Kafka 3.7）**：
+> 建活动 → Agent 规划发布 DSL v1 → 预热 → 上线前对账 → LIVE → 85 人并发抢购（85/85 成功）
+> → `sales.tick` 被独立 rule-engine-worker 消费 → 规则引擎执行 **REPRICE（实时价 6299→6598.9）+
+> REALLOCATE（调拨 +50）** → 写回同一 Redis 库存键 + DB 同步 + 审计落库 → 取消订单回补
+> → 结算对账 **passed=True**（Redis/DB/台账三方一致）→ 大屏 GMV 真实统计。
+
 ---
 
 ## 五、关键设计决策（不要改！）
@@ -219,7 +239,7 @@ java -jar target/insightforge-api-0.1.0-SNAPSHOT.jar --spring.profiles.active=in
 ### ✅ 已完成（实跑验证通过）
 | 项目 | 状态 |
 |------|------|
-| 后端全链路 96 测试 | ✅ `mvn clean package` BUILD SUCCESS |
+| 后端全链路 101 测试 | ✅ `mvn clean package` BUILD SUCCESS（api 44 + agent-core 26 + rule-engine 29 + seckill-core 2） |
 | `local` profile 零依赖启动 | ✅ 8080 端口，所有 REST API 可用 |
 | 防超卖（原子条件更新 + Lua） | ✅ `SeckillNoOversellTest` 300 并发抢 100 → stock=0/订单=100 |
 | 幂等去重 | ✅ 同一用户重复请求不产生重复订单 |
@@ -229,6 +249,8 @@ java -jar target/insightforge-api-0.1.0-SNAPSHOT.jar --spring.profiles.active=in
 | Drools 规则引擎在线执行 | ✅ 29 测试全绿，确定性执行零 LLM |
 | 集成缝（键契约对齐） | ✅ seckill Redis 键与 rule-engine 逐字符一致，`sales.tick` 生产者+消费者已通 |
 | 前端（React + Vite + Antd） | ✅ 本地 5173 可跑，登录/秒杀/订单/大屏/审批 全部接真实 API |
+| **真实闭环端到端（Docker）** | ✅ 2026-08-10 实跑：建活动→Agent 规划→预热→上线→85 人抢购→规则引擎 REPRICE/REALLOCATE→取消回补→结算对账三方一致→大屏 GMV 真实统计 |
+| Prometheus + Grafana | ✅ 容器实跑，Prometheus 抓取 api 指标 `health="up"`，Grafana 面板预置 |
 | HITL 人工审批 | ✅ POST approve/reject 写入 `agent_trace.review_status` |
 | 创建活动 + AI 规划 + Span 树 | ✅ 5 个新 API 全部 E2E 验证通过 |
 | 代码推送到 Gitee | ✅ `master` 分支，latest commit `0e800df` |
@@ -250,6 +272,22 @@ java -jar target/insightforge-api-0.1.0-SNAPSHOT.jar --spring.profiles.active=in
 - Sentinel 熔断：未实现
 - WebSocket 实时推送大屏：未实现
 - Redisson 在用户热路径：实际不持有（防超卖由 Lua + DB 条件更新承担）
+
+### 🆕 Phase 14.1 已修复的关键缺陷（2026-08-10，均为「集成环境首次真跑」暴露）
+
+| 问题 | 修复 |
+|------|------|
+| `application.yml` sql.init=always + data.sql DELETE → **MySQL 每次重启清库** | 默认/集成 profile 关 sql.init；MySQL 表结构+种子改由 `docker/mysql/init/*.sql` 首次建卷初始化 |
+| compose 用 `docker` profile 但无此配置文件 → 集成 Bean 永不激活 | 全部改为 `integration` profile，api/worker 显式注入 DB 账号、Redis、Kafka 地址 |
+| rule-engine / agent-core 无 Spring Boot 启动类 → worker 镜像 `java -jar` 起不来 | 新增 `RuleEngineWorkerApplication`（非 Web）+ spring-boot repackage；移除未接线的 agent-worker |
+| 秒杀 `RedisScript` 两个 Bean 装配歧义（`redisStockService`/`RateLimitService`） | 加 `@Qualifier` |
+| Kafka 发送失败不兜底：`send()` 只入队、Kafka `TimeoutException` 未被捕获 → 丢单/500 | `send().get(2s)` + catch Exception → 降级同步建单（已实测 Kafka 抖动时全部降级成功） |
+| 取消订单只回补 DB，LIVE 期间 Redis 权威库存不回补 → 结算必漂移 | `OrderStateService.cancel` 同步回补 Redis 库存键 |
+| AI 调拨只写 Redis、不写 DB/审计 → 结算对账把调拨误判为漂移、永远过不了 | `RedisStockSegmentService.confirmPending` 同步 DB `total_stock/stock` + `audit_log` 落库 + `total_stock` 键 |
+| REPRICE 只写价表键、下单路径不读 → 调价是空转 | 订单新增 `price` 快照列；下单读 Redis 实时价；大屏新增真实 GMV；演示策略改为「畅销提价」（库存水位<50% 触发 REPRICE） |
+| 请求零校验：负 qty 可反向加库存、DRAFT 活动可抢购、活动与 SKU 可错配 | `SeckillService` 校验 qty>0/LIVE/活动-SKU 匹配；`ActivityController` 校验创建参数；补 5 个回归测试 |
+| `skuId` 语义混乱（前端传 product.id、后端按 activity_sku.id 查） | 前端改传 `activitySkuId` + 真实活动切换 |
+| 404 被全局异常处理器吞成 200 | `NoResourceFoundException` 显式返回 404 |
 
 ---
 
@@ -406,9 +444,12 @@ curl http://localhost:8080/api/dashboard/skus?activityId=1
 3. **Profile 是命脉**：所有集成缝都依赖 `@Profile("!integration")` vs `@Profile("integration")` 隔离。不要把 `integration` 的实现不小心暴露到 `local` profile。
 4. **前端 Vite proxy 配置**：`vite.config.ts` 里 `/api` 反代到 `localhost:8080`。如果后端端口改了，这里也要改。
 5. **JDK 路径**：原环境 JDK 21 路径是 `D:/devtools/jdk21/jdk-21.0.12+8`（注意含子目录，不是直接在 `jdk21/bin/java`）。换环境后修改 PATH 或 JAVA_HOME 即可。
+6. **部署端口**：本机 8080/8082/3000 被其他应用占用，compose 已把 api 映射到宿主 `18080`、Grafana 映射到 `3001`、nginx 用 `80`。换机器后按需改回默认端口。
+7. **rule-engine worker 独立成进程**：它没有自己的 application.yml，数据库账号等必须由 compose 环境变量注入（`SPRING_DATASOURCE_USERNAME/PASSWORD`），否则 MySQL 驱动默认用 root 无密码连不上。
+8. **Kafka 镜像**：`bitnami/kafka:3.7` 在部分镜像源 400，已改官方 `apache/kafka:3.7.0`（KRaft，健康检查用 `/opt/kafka/bin/kafka-topics.sh`）。
 
 ---
 
-> 编写日期：2026-08-10
-> 基于 commit `0e800df`（最新，master 分支）
+> 编写日期：2026-08-10 ｜ 更新：2026-08-10（Phase 14.1 真实闭环 + 部署修复，未提交）
+> 基于 commit `0e800df`（本文档描述基线）；Phase 14.1 改动在工作树（含交接文档本身）
 > 仓库：https://gitee.com/paper-umbrella/insight-forge.git

@@ -22,7 +22,11 @@ services:
       MYSQL_PASSWORD: insightforge
       MYSQL_ROOT_PASSWORD: root
     ports: ["3306:3306"]
-    volumes: ["mysql-data:/var/lib/mysql"]
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # Phase 14.1：首次建卷时初始化表结构 + 种子数据（docker-entrypoint-initdb.d 只执行一次，
+      # 重启不清库 —— 修复原 application.yml sql.init.mode=always 每次启动 DELETE 全部数据的问题）
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -37,59 +41,70 @@ services:
       retries: 5
 
   kafka:
-    image: bitnami/kafka:3.7
+    # Phase 14.1：改用官方 apache/kafka（bitnami 镜像在当前镜像源 400，且需额外许可证提示）
+    image: apache/kafka:3.7.0
     environment:
-      KAFKA_CFG_NODE_ID: 1
-      KAFKA_CFG_PROCESS_ROLES: controller,broker
-      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
     ports: ["9092:9092"]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      retries: 20
 
   api:
     build:
-      context: ./insightforge
+      context: ../insightforge
       dockerfile: ../deploy/Dockerfile.api
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka:
+        condition: service_started
     environment:
-      SPRING_PROFILES_ACTIVE: docker
+      SPRING_PROFILES_ACTIVE: integration
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/insightforge
+      SPRING_DATASOURCE_USERNAME: insightforge
+      SPRING_DATASOURCE_PASSWORD: insightforge
       SPRING_DATA_REDIS_HOST: redis
       SPRING_KAFKA_BOOTSTRAP-SERVERS: kafka:9092
-    ports: ["8080:8080"]
+      # Phase 14.2：LLM 离线规划（Key 从仓库根 .env 注入，.env 已被 .gitignore 排除，不入库）
+      INSIGHTFORGE_AGENT_DEEPSEEK_ENABLED: ${INSIGHTFORGE_AGENT_DEEPSEEK_ENABLED:-false}
+      INSIGHTFORGE_AGENT_DEEPSEEK_API_KEY: ${INSIGHTFORGE_AGENT_DEEPSEEK_API_KEY:-}
+      INSIGHTFORGE_AGENT_DEEPSEEK_BASE_URL: ${INSIGHTFORGE_AGENT_DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      INSIGHTFORGE_AGENT_DEEPSEEK_MODEL: ${INSIGHTFORGE_AGENT_DEEPSEEK_MODEL:-deepseek-v4-flash}
+    # 宿主 8080 被 Dify、8082 被 agent-task-platform 占用，改映射 18080；容器内仍是 8080
+    ports: ["18080:8080"]
     deploy:
       resources:
         limits: { cpus: "1.0", memory: 1g }
 
-  agent-worker:
-    build:
-      context: ./insightforge
-      dockerfile: ../deploy/Dockerfile.worker
-      args:
-        MODULE: insightforge-agent-core
-    depends_on: ["mysql", "redis"]
-    environment:
-      SPRING_PROFILES_ACTIVE: docker
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/insightforge
-    deploy:
-      resources:
-        limits: { cpus: "0.5", memory: 512m }   # 离线规划，资源占用小
-
   rule-engine-worker:
     build:
-      context: ./insightforge
+      context: ../insightforge
       dockerfile: ../deploy/Dockerfile.worker
       args:
         MODULE: insightforge-rule-engine
     depends_on: ["mysql", "redis", "kafka"]
     environment:
-      SPRING_PROFILES_ACTIVE: docker
+      SPRING_PROFILES_ACTIVE: integration
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/insightforge
+      SPRING_DATASOURCE_USERNAME: insightforge
+      SPRING_DATASOURCE_PASSWORD: insightforge
+      SPRING_DATA_REDIS_HOST: redis
       SPRING_KAFKA_BOOTSTRAP-SERVERS: kafka:9092
     deploy:
       resources:
@@ -100,7 +115,7 @@ services:
     depends_on: ["api"]
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./insightforge-frontend/dist:/usr/share/nginx/html:ro
+      - ../insightforge-frontend/dist:/usr/share/nginx/html:ro
     ports: ["80:80"]
 
   prometheus:
@@ -115,7 +130,8 @@ services:
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana
-    ports: ["3000:3000"]
+    # 宿主 3000 被其他应用占用，改映射 3001
+    ports: ["3001:3000"]
 
 volumes:
   mysql-data:

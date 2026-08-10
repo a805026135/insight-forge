@@ -5,9 +5,13 @@ spring:
   application:
     name: insightforge
   # Phase 1：迁移到 MySQL 后，启动时自动建表 + 写入种子数据（与 local profile 共用 schema.sql/data.sql）
+  # Phase 14.1 修正：默认/集成 profile 关闭 sql.init —— data.sql 含 DELETE，每次重启会清空订单/库存。
+  # MySQL 的表结构与种子改由 docker-compose 挂载的 docker/mysql/init/*.sql 在「首次建卷」时初始化
+  # （docker-entrypoint-initdb.d 只在数据卷为空时执行一次），重启不丢数据。local profile（H2 内存库）
+  # 仍用 mode=always 每次从 schema.sql/data.sql 重建，零依赖冒烟不受影响。
   sql:
     init:
-      mode: always
+      mode: never
   datasource:
     url: jdbc:mysql://localhost:3306/insightforge?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: insightforge
@@ -49,3 +53,21 @@ management:
 logging:
   level:
     com.insightforge: INFO
+
+# ============================================================
+# LLM 接入（Phase 14.2）：Agent 离线规划走真 DeepSeek。
+# 默认关闭（本地/测试仍用确定性桩）；部署时通过环境变量开启：
+#   INSIGHTFORGE_AGENT_DEEPSEEK_ENABLED=true
+#   INSIGHTFORGE_AGENT_DEEPSEEK_API_KEY=<你的 Key>（不要写进仓库）
+#   INSIGHTFORGE_AGENT_DEEPSEEK_MODEL=deepseek-v4-flash
+# LLM 只在控制面离线规划出现，永不进秒杀热路径。
+# ============================================================
+insightforge:
+  agent:
+    deepseek:
+      enabled: ${INSIGHTFORGE_AGENT_DEEPSEEK_ENABLED:false}
+      api-key: ${INSIGHTFORGE_AGENT_DEEPSEEK_API_KEY:}
+      base-url: ${INSIGHTFORGE_AGENT_DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      model: ${INSIGHTFORGE_AGENT_DEEPSEEK_MODEL:deepseek-chat}
+    # trace 里的 model_version 跟随实际模型名（未配置时保持本地桩名）
+    model-version: ${insightforge.agent.deepseek.model:local-det-1.0}

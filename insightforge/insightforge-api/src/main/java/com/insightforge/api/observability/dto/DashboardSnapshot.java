@@ -26,7 +26,9 @@ public record DashboardSnapshot(
             long liveActivities,
             long totalStock,
             long soldStock,
-            long totalOrders
+            long totalOrders,
+            /** 真实 GMV（成交价快照 × 数量，status≠CANCEL；REPRICE 生效后可看到变化） */
+            java.math.BigDecimal totalGmv
     ) {
     }
 

@@ -1,6 +1,7 @@
 package com.insightforge.seckill.core.redis;
 
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
@@ -34,7 +35,7 @@ public class RateLimitService {
     private final ConcurrentHashMap<String, ArrayDeque<Long>> memWindows = new ConcurrentHashMap<>();
 
     public RateLimitService(ObjectProvider<StringRedisTemplate> redisProvider,
-                            ObjectProvider<RedisScript<Long>> slidingScriptProvider) {
+                            @Qualifier("rateLimitSlidingScript") ObjectProvider<RedisScript<Long>> slidingScriptProvider) {
         this.redisProvider = redisProvider;
         this.slidingScriptProvider = slidingScriptProvider;
     }

@@ -21,12 +21,15 @@ public class GuardrailPolicyAgent {
     public GuardrailPolicy assemble(PlanningContext ctx, Map<Role, Artifact> artifacts) {
         List<GuardrailRule> rules = new ArrayList<>();
 
-        // 定价产物 → REPRICE 规则（价格 Gap 过大就调价，调价不得低于成本由 DslCompiler 把关）
+        // 定价产物 → REPRICE 规则（Phase 14.1 演示策略：库存水位低于 50% 视为「畅销」即提价，
+        // 调价不得低于成本由 DslCompiler 把关）。用 STOCK_RATIO 做触发条件是为了在真实闭环里
+        // 让 REPRICE 能被 SalesTickConsumer 计算出的 ratio 驱动——PRICE_GAP 需要价差信号源，
+        // 当前消费者未聚合该信号，保持诚实：该变体规则由 ratio 驱动、语义为「畅销提价」。
         Map<String, Object> pm = LocalRoleAgent.asMap(artifacts.get(Role.PRICER));
         BigDecimal repriceTo = bd(pm, "repriceTo");
         BigDecimal costFloor = bd(pm, "costFloor");
         rules.add(new GuardrailRule("r_price",
-                Metric.PRICE_GAP, Operator.GT, new BigDecimal("0.15"),
+                Metric.STOCK_RATIO, Operator.LT, new BigDecimal("0.5"),
                 Action.REPRICE, Map.of("repriceTo", repriceTo, "costFloor", costFloor)));
 
         // 预热产物 → REALLOCATE 规则（库存比例过低就调拨，调拨只建新段由 Phase 9 热路径保证）

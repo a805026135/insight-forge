@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.io.Serializable;
 
 /**
@@ -36,14 +37,18 @@ public class OrderCreatedEvent implements Serializable {
     /** 购买数量 */
     private Integer qty;
 
+    /** 成交单价快照（REPRICE 生效后，新订单以实时价成交，供 GMV 统计） */
+    private BigDecimal price;
+
     /** 便捷工厂：从抢购请求 + 订单号组装一条事件 */
-    public static OrderCreatedEvent from(SeckillRequest req, String orderId) {
+    public static OrderCreatedEvent from(SeckillRequest req, String orderId, BigDecimal price) {
         OrderCreatedEvent e = new OrderCreatedEvent();
         e.setOrderId(orderId);
         e.setUserId(req.getUserId());
         e.setActivityId(req.getActivityId());
         e.setSkuId(req.getSkuId());
         e.setQty(req.getQty());
+        e.setPrice(price);
         return e;
     }
 }

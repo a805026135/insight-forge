@@ -35,7 +35,9 @@ CREATE TABLE IF NOT EXISTS activity_sku (
     total_stock  INT,
     stock        INT,
     sold         INT,
-    version      INT
+    version      INT,
+    -- 同一活动下同一 SKU 只允许一行（创建活动时防止重复挂载同一商品）
+    UNIQUE (activity_id, sku_id)
 );
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -48,7 +50,23 @@ CREATE TABLE IF NOT EXISTS orders (
     activity_id  BIGINT,
     sku_id       BIGINT,
     qty          INT,
+    -- Phase 14.1：成交单价快照（下单瞬间的实时价，REPRICE 生效后新订单带新价）
+    price        DECIMAL(12, 2),
     status       VARCHAR(32),
+    created_at   DATETIME
+);
+
+-- ============================================================
+-- 控盘动作审计（Phase 14.1）：AI 调拨/调价等写库存动作的持久化真相，
+-- 结算对账与复盘都依赖它，避免「AI 改了 Redis 库存但 DB 无记录」的漂移。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS audit_log (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    activity_id  BIGINT,
+    sku_id       BIGINT,          -- activity_sku.id
+    action_type  VARCHAR(32),     -- REALLOCATE / REPRICE
+    amount       INT,             -- 调拨数量（REPRICE 时为 0）
+    detail       VARCHAR(512),    -- 人话摘要（含 trace 归因可选）
     created_at   DATETIME
 );
 

@@ -29,6 +29,11 @@ public final class RedisKeys {
         return "total_stock:a:" + activityId + ":s:" + skuId;
     }
 
+    /** 实时价（REPRICE 写回，秒杀下单/展示读取；与 rule-engine RuleEngineRedisKeys.price 逐字符一致） */
+    public static String price(long activityId, long skuId) {
+        return "price:a:" + activityId + ":s:" + skuId;
+    }
+
     /** 细粒度锁：lock:a:{aid}:s:{sid}（用户 10ms / 规则引擎 0ms，见 spec §3.1） */
     public static String lock(long activityId, long skuId) {
         return "lock:a:" + activityId + ":s:" + skuId;

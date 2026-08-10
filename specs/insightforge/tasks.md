@@ -235,3 +235,46 @@
 | `specs/insightforge/tutorials/00-学习路线.md` | 学习路线总览 |
 | `specs/insightforge/tutorials/phase0–11.md` | 食谱式手把手教程 |
 | `specs/insightforge/tutorials/选做1–7.md` | 选做进阶章 |
+
+---
+
+## Phase 14.1 — 真实闭环部署（2026-08-10，Docker 端到端实跑验证）✅
+
+**背景**：上一轮「待迁移」清单里的①（docker-compose 起 Redis/Kafka/Redisson 跑 integration 全链路）在本机真实 Docker 环境完成，
+并顺手修复了集成环境首次真跑暴露的一批缺陷（详见下方表格）。诚实边界：仍用确定性本地 Agent 桩（非真 LLM）、
+JMeter 百万压测仍未实跑（本机无 JMeter）。
+
+### 已实跑验证（端到端闭环）
+
+1. `docker compose -f deploy/docker-compose.yml up -d --build`（mysql/redis/kafka/api/rule-engine-worker/nginx/prometheus/grafana）
+2. 建活动 → `POST /api/agent/plan` 发布 DSL v1 → 预热 → `arm`（上线前对账通过）→ `live`
+3. 85 人并发抢购：**85/85 成功**（Redis Lua 原子扣减 + Kafka 异步建单，order.created 消费者落库 85 单）
+4. rule-engine-worker 独立进程消费 `sales.tick`，日志实证：`命中2条工单 -> REPRICE=ok;ALERT=ok`
+5. 控盘动作真实落库：Redis 实时价 6299→6598.9；REALLOCATE +50（Redis 库存 65/150）；`audit_log` 有 REALLOCATE 50 记录；
+   DB `total_stock=150, stock=65, sold=85` 与 Redis 完全一致
+6. 取消订单：DB 与 Redis 同步回补（stock 15→16 / sold 85→84）
+7. 结算对账：**passed=True**，Redis=65、DB=65、台账期望=150-85=65，三方一致
+8. 大屏：真实 GMV（成交价快照×数量）统计正确；Prometheus 抓取 `health="up"`；nginx 入口 200
+
+### 本轮修复（集成环境首次真跑暴露）
+
+| 类别 | 缺陷 | 修复 |
+|------|------|------|
+| 部署 | sql.init=always + data.sql DELETE 每次重启清 MySQL | 默认/集成 profile 关 sql.init；docker/mysql/init 首次建卷初始化 |
+| 部署 | compose `docker` profile 不存在，集成 Bean 永不激活 | 全部 `integration` + 显式 DB/Redis/Kafka env |
+| 部署 | worker 无启动类/无 Main-Class | `RuleEngineWorkerApplication`（非 Web）+ repackage |
+| 部署 | bitnami/kafka 镜像源 400 | 官方 apache/kafka:3.7.0（KRaft + 健康检查） |
+| 正确性 | 两个 RedisScript Bean 装配歧义（api 启动失败） | `@Qualifier` |
+| 正确性 | Kafka 发送失败不兜底、TimeoutException 未捕获 → 500/丢单 | `send().get(2s)` + 降级同步建单 |
+| 正确性 | 取消不回补 Redis 权威库存 | cancel 同步回补 |
+| 正确性 | AI 调拨不写 DB/审计 → 结算永远对不平 | confirmPending 同步 DB + audit_log + total_stock 键 |
+| 正确性 | REPRICE 空转（下单不读实时价） | orders.price 快照 + 下单读实时价 + 真实 GMV |
+| 正确性 | 负 qty 反向加库存、DRAFT 可抢购、SKU 错配 | 请求校验 + 5 个回归测试（全项目 101 测试全绿） |
+| 契约 | 前端 skuId 语义混乱 | 前端用 activitySkuId + 活动切换 |
+
+**验收**：`mvn clean package` BUILD SUCCESS，**101 测试全绿**（api 44 + agent-core 26 + rule-engine 29 + seckill-core 2）。
+
+### 仍待做（诚实标注）
+- JMeter 百万压测实跑（本机无 JMeter）
+- 真 DeepSeek / Milvus / 支付链路（范围红线，未做）
+- 浏览器肉眼看前端页面（可用 http://localhost 打开，脚本验证已通）

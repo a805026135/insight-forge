@@ -1,6 +1,7 @@
 package com.insightforge.agent.core.planning;
 
 import com.insightforge.agent.core.memory.Artifact;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
@@ -20,6 +21,7 @@ import java.util.Map;
  */
 @Component
 @Primary
+@ConditionalOnProperty(name = "insightforge.agent.deepseek.enabled", havingValue = "false", matchIfMissing = true)
 public class LocalRoleAgent implements RoleAgent {
 
     @Override
@@ -31,10 +33,11 @@ public class LocalRoleAgent implements RoleAgent {
                             "stockRatioThreshold", 0.2));
             case PRICER -> {
                 BigDecimal cost = ctx.costFloor();
-                // 正常：成本上浮 5% 定价；forceInvalid：故意低于成本（演示护栏拦截）
+                // 正常：成本上浮 10% 定价（演示「畅销提价」时价格变化肉眼可见）；
+                // forceInvalid：故意低于成本（演示护栏拦截）
                 BigDecimal reprice = ctx.forceInvalid
                         ? cost.subtract(BigDecimal.valueOf(500))
-                        : cost.multiply(BigDecimal.valueOf(1.05));
+                        : cost.multiply(BigDecimal.valueOf(1.10));
                 yield Artifact.of("price-" + task.activityId(),
                         "pricing", Map.of("repriceTo", reprice, "costFloor", cost));
             }

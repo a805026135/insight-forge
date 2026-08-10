@@ -1,8 +1,10 @@
 package com.insightforge.seckill.core.service;
 
 import com.insightforge.common.result.ApiResult;
+import com.insightforge.persistence.entity.Activity;
 import com.insightforge.persistence.entity.ActivitySku;
 import com.insightforge.persistence.entity.Orders;
+import com.insightforge.persistence.mapper.ActivityMapper;
 import com.insightforge.persistence.mapper.ActivitySkuMapper;
 import com.insightforge.persistence.mapper.OrdersMapper;
 import com.insightforge.seckill.core.dto.OrderCreatedEvent;
@@ -15,6 +17,7 @@ import com.insightforge.seckill.core.kafka.SalesTickProducer;
 import com.insightforge.seckill.core.redis.DeductResult;
 import com.insightforge.seckill.core.redis.RedisIdempotentService;
 import com.insightforge.seckill.core.redis.RedisStockService;
+import com.insightforge.seckill.core.state.ActivityStatus;
 import com.insightforge.seckill.core.state.OrderStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,6 +26,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -46,6 +50,7 @@ public class SeckillService {
 
     private final ActivitySkuMapper activitySkuMapper;
     private final OrdersMapper ordersMapper;
+    private final ActivityMapper activityMapper;
     /** SKU 多级缓存（Phase 5）：高频读走 L1 Caffeine + L2 Redis，避免每次打 DB。 */
     private final SkuCacheService skuCacheService;
     /** Redis 库存服务：用 ObjectProvider 拿，local profile 下为 null（不存在该 Bean）。 */
@@ -59,6 +64,7 @@ public class SeckillService {
 
     public SeckillService(ActivitySkuMapper activitySkuMapper,
                           OrdersMapper ordersMapper,
+                          ActivityMapper activityMapper,
                           SkuCacheService skuCacheService,
                           ObjectProvider<RedisStockService> redisStockService,
                           ObjectProvider<RedisIdempotentService> idempotentService,
@@ -66,6 +72,7 @@ public class SeckillService {
                           ObjectProvider<SalesTickProducer> salesTickProducer) {
         this.activitySkuMapper = activitySkuMapper;
         this.ordersMapper = ordersMapper;
+        this.activityMapper = activityMapper;
         this.skuCacheService = skuCacheService;
         this.redisStockService = redisStockService;
         this.idempotentService = idempotentService;
@@ -86,14 +93,34 @@ public class SeckillService {
      */
     @Transactional
     public ApiResult<String> seckill(SeckillRequest req) {
+        // —— Phase 14.1 请求校验（防脏数据/防利用）：qty>0、活动存在且 LIVE、活动与 SKU 匹配 ——
+        if (req.getQty() == null || req.getQty() <= 0) {
+            return ApiResult.fail(400, "购买数量不合法（必须 > 0）");
+        }
+        if (req.getActivityId() == null || req.getSkuId() == null || req.getUserId() == null) {
+            return ApiResult.fail(400, "activityId/skuId/userId 不能为空");
+        }
+        Activity activity = activityMapper.selectById(req.getActivityId());
+        if (activity == null) {
+            return ApiResult.fail(404, "活动不存在");
+        }
+        if (ActivityStatus.from(activity.getStatus()) != ActivityStatus.LIVE) {
+            return ApiResult.fail(409, "活动未开始或已结束");
+        }
+
         ActivitySku sku = skuCacheService.getSku(req.getSkuId());
         if (sku == null) {
             return ApiResult.fail(404, "商品不存在");
+        }
+        if (!req.getActivityId().equals(sku.getActivityId())) {
+            return ApiResult.fail(400, "活动与商品不匹配");
         }
 
         // 确定性订单号：同一 (activityId, skuId, userId) 永远算出同一个值，
         // 这是全链路幂等的「锚点」——重复请求拿到同一个订单号，DB 唯一约束据此去重。
         String orderId = buildOrderId(req);
+        // 成交单价快照：REPRICE 生效后读 Redis 实时价，否则用 DB 秒杀价
+        BigDecimal price = currentPrice(sku);
 
         // —— 主路径：Redis Lua 原子扣减（秒杀高并发的真正入口）——
         RedisStockService rs = redisStockService.getIfAvailable();
@@ -110,14 +137,14 @@ public class SeckillService {
             if (res == DeductResult.SUCCESS) {
                 // 扣成功 → 发 Kafka 异步建单，立刻返回（削峰 + 极速响应，P99<10ms）
                 OrderEventProducer producer = orderEventProducer.getIfAvailable();
-                if (producer != null && producer.sendOrderCreated(OrderCreatedEvent.from(req, orderId))) {
+                if (producer != null && producer.sendOrderCreated(OrderCreatedEvent.from(req, orderId, price))) {
                     // 集成缝：扣减成功 → 发 sales.tick，驱动后方规则引擎（Agent 控盘与用户争用同一库存）
                     sendSalesTick(req);
                     return ApiResult.ok(orderId);
                 }
                 // 极端兜底：Kafka 不可用（理论上 !local 必有），退回同步建单，保证不丢单
                 log.warn("Kafka 发送失败，降级同步建单：orderId={}", orderId);
-                return syncCreateOrder(req, sku, orderId);
+                return syncCreateOrder(req, sku, orderId, price);
             }
             if (res == DeductResult.SOLD_OUT) {
                 // 没扣成：释放幂等槽（本次并未真正下单），避免误占位阻塞用户后续重试
@@ -129,7 +156,7 @@ public class SeckillService {
         }
 
         // —— 兜底路径：Phase 2 的 DB 原子条件更新（local 唯一路径；Redis 异常时也走这）——
-        return syncCreateOrder(req, sku, orderId);
+        return syncCreateOrder(req, sku, orderId, price);
     }
 
     /**
@@ -141,13 +168,14 @@ public class SeckillService {
      *   此时直接返回既有订单号、**绝不**走到扣库存，从而不会多扣。
      *   仅在「插单成功」后才扣库存；若扣库存时发现已售罄（affected=0），撤销刚插的订单。
      */
-    private ApiResult<String> syncCreateOrder(SeckillRequest req, ActivitySku sku, String orderId) {
+    private ApiResult<String> syncCreateOrder(SeckillRequest req, ActivitySku sku, String orderId, BigDecimal price) {
         Orders order = new Orders();
         order.setOrderId(orderId);
         order.setUserId(req.getUserId());
         order.setActivityId(req.getActivityId());
         order.setSkuId(req.getSkuId());
         order.setQty(req.getQty());
+        order.setPrice(price);
         // 订单落库即进入状态机的第一个持久状态 CREATE_ORDER（代表「下单成功、库存已锁」）。
         // PRE_CHECK / LOCK_STOCK 是在内存里完成的前置瞬态，不落库。
         order.setStatus(OrderStatus.CREATE_ORDER.name());
@@ -172,6 +200,21 @@ public class SeckillService {
         // 集成缝：同步兜底路径也发 sales.tick（与 Redis 快路径一致，保证规则引擎总能收到心跳）
         sendSalesTick(req);
         return ApiResult.ok(orderId);
+    }
+
+    /**
+     * 成交单价快照：AI 调价（REPRICE 写回 price:a:{aid}:s:{skid}）后，新订单以实时价成交；
+     * 未调价 / local 环境回退 DB 秒杀价。这就是「AI 调价真实作用于用户支付」的落点。
+     */
+    private BigDecimal currentPrice(ActivitySku sku) {
+        RedisStockService rs = redisStockService.getIfAvailable();
+        if (rs != null) {
+            BigDecimal redisPrice = rs.readPrice(sku.getActivityId(), sku.getId());
+            if (redisPrice != null) {
+                return redisPrice;
+            }
+        }
+        return sku.getSeckillPrice();
     }
 
     /**

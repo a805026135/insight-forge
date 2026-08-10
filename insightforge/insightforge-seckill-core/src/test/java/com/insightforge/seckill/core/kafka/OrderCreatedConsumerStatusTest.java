@@ -48,7 +48,7 @@ class OrderCreatedConsumerStatusTest {
         req.setActivityId(1L);
         req.setSkuId(1L);
         req.setQty(2);
-        OrderCreatedEvent evt = OrderCreatedEvent.from(req, "OF-1-1-1001");
+        OrderCreatedEvent evt = OrderCreatedEvent.from(req, "OF-1-1-1001", java.math.BigDecimal.ONE);
 
         // 反序列化返回这条事件；建单 insert 时捕获写入的 Orders，断言其状态
         when(objectMapper.readValue(anyString(), eq(OrderCreatedEvent.class))).thenReturn(evt);

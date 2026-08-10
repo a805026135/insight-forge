@@ -3,6 +3,7 @@ package com.insightforge.seckill.core.redis;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
+import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.List;
 
@@ -66,5 +67,23 @@ public class RedisStockService {
     public int getStock(long activityId, long skuId) {
         String v = redis.opsForValue().get(RedisKeys.stock(activityId, skuId));
         return v == null ? -1 : Integer.parseInt(v);
+    }
+
+    /**
+     * 库存回补（Phase 14.1：取消订单时调用）。
+     * 仅在库存键已存在时 INCRBY（未预热的活动不凭空造库存键），
+     * 保证 LIVE 期间 Redis 权威库存与 DB 同步回补，结算对账不漂移。
+     */
+    public void increaseStockIfExists(long activityId, long skuId, int qty) {
+        String key = RedisKeys.stock(activityId, skuId);
+        if (Boolean.TRUE.equals(redis.hasKey(key))) {
+            redis.opsForValue().increment(key, qty);
+        }
+    }
+
+    /** 读取 Redis 里的实时价（REPRICE 写回键）；未调价返回 null，调用方回退 DB 秒杀价。 */
+    public BigDecimal readPrice(long activityId, long skuId) {
+        String v = redis.opsForValue().get(RedisKeys.price(activityId, skuId));
+        return v == null ? null : new BigDecimal(v);
     }
 }

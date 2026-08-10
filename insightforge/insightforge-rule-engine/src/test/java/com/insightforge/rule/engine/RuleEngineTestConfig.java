@@ -37,7 +37,7 @@ import org.springframework.context.annotation.FilterType;
         basePackages = "com.insightforge.rule.engine",
         excludeFilters = @ComponentScan.Filter(
                 type = FilterType.ASSIGNABLE_TYPE,
-                classes = RuleEngineConfig.class
+                classes = { RuleEngineConfig.class, RuleEngineWorkerApplication.class }
         )
 )
 public class RuleEngineTestConfig {

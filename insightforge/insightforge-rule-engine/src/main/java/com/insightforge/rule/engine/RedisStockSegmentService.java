@@ -4,6 +4,11 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+import com.insightforge.persistence.entity.AuditLog;
+import com.insightforge.persistence.mapper.ActivitySkuMapper;
+import com.insightforge.persistence.mapper.AuditLogMapper;
+
+import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,11 +33,18 @@ import java.util.concurrent.ConcurrentHashMap;
 public class RedisStockSegmentService implements StockSegmentService {
 
     private final StringRedisTemplate redis;
+    /** Phase 14.1：调拨确认必须同步 DB（total/stock）+ 审计，否则结算对账把 AI 调拨误判为漂移。 */
+    private final ActivitySkuMapper activitySkuMapper;
+    private final AuditLogMapper auditLogMapper;
     /** 记录本服务碰过的键，供 reset()（测试隔离）清理。 */
     private final Set<String> touched = ConcurrentHashMap.newKeySet();
 
-    public RedisStockSegmentService(StringRedisTemplate redis) {
+    public RedisStockSegmentService(StringRedisTemplate redis,
+                                    ActivitySkuMapper activitySkuMapper,
+                                    AuditLogMapper auditLogMapper) {
         this.redis = redis;
+        this.activitySkuMapper = activitySkuMapper;
+        this.auditLogMapper = auditLogMapper;
     }
 
     private String stockKey(long activityId, long skuId) {
@@ -71,6 +83,23 @@ public class RedisStockSegmentService implements StockSegmentService {
         // 确认调入：撤销 pending + 把调拨量加回真实 stock 键（AI 调拨真的增加用户可抢库存）
         redis.opsForValue().increment(pendingKey(activityId, skuId), -amount);
         redis.opsForValue().increment(stockKey(activityId, skuId), amount);
+        redis.opsForValue().increment(RuleEngineRedisKeys.totalStock(activityId, skuId), amount);
+        touched.add(RuleEngineRedisKeys.totalStock(activityId, skuId));
+
+        // Phase 14.1：同步 DB 初始/剩余库存 + 审计落库 ——
+        // 结算对账公式「total_stock − 成功单 = 剩余库存」由此把 AI 调拨纳入期望值；
+        // audit_log 是「AI 改了库存」的持久化证据，复盘/面试展示都能追溯。
+        if (amount != 0) {
+            activitySkuMapper.increaseTotalStock(skuId, amount);
+            AuditLog log = new AuditLog();
+            log.setActivityId(activityId);
+            log.setSkuId(skuId);
+            log.setActionType("REALLOCATE");
+            log.setAmount(amount);
+            log.setDetail("规则引擎确认调拨 +" + amount + "（seg 入账，AI 控盘写回同一 stock 键）");
+            log.setCreatedAt(LocalDateTime.now());
+            auditLogMapper.insert(log);
+        }
     }
 
     @Override

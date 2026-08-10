@@ -4,11 +4,14 @@
 #   docker build -f deploy/Dockerfile.worker --build-arg MODULE=insightforge-rule-engine -t if-rule-engine insightforge
 ARG MODULE=insightforge-agent-core
 FROM maven:3.9.9-eclipse-temurin-21 AS build
+# 全局 ARG 在 FROM 之后不可见，必须在此重新声明（build-arg 会覆盖默认值）
+ARG MODULE
 WORKDIR /workspace
 COPY . .
 RUN mvn -B -pl ${MODULE} -am package -DskipTests
 
-FROM eclipse-temurin:21-jre
-WORKDIR /app
-COPY --from=build /workspace/${MODULE}/target/${MODULE}-*.jar app.jar
+    FROM eclipse-temurin:21-jre
+    ARG MODULE
+    WORKDIR /app
+    COPY --from=build /workspace/${MODULE}/target/${MODULE}-*.jar app.jar
 ENTRYPOINT ["java", "-jar", "app.jar"]

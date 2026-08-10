@@ -39,7 +39,18 @@ CREATE TABLE IF NOT EXISTS orders (
     activity_id  BIGINT,
     sku_id       BIGINT,
     qty          INT,
+    price        DECIMAL(12, 2),
     status       VARCHAR(32),
+    created_at   DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    activity_id  BIGINT,
+    sku_id       BIGINT,
+    action_type  VARCHAR(32),
+    amount       INT,
+    detail       VARCHAR(512),
     created_at   DATETIME
 );
 

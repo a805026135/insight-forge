@@ -15,9 +15,10 @@ INSERT INTO product (id, name, sku, cost_price) VALUES
 (2, 'AirPods Pro 3', 'SKU-APP3', 1499.00);
 
 -- 活动
+-- 种子活动置为 LIVE（演示「正在热卖」的秒杀场）；新建活动仍从 DRAFT 开始走状态机。
 INSERT INTO activity (id, name, status, target_gmv, target_roi, start_at, end_at) VALUES
-(1, '双11 美妆数码场', 'DRAFT', 5000000.00, 1.80, '2026-11-11 00:00:00', '2026-11-11 23:59:59'),
-(2, '618 数码狂欢节', 'DRAFT', 2000000.00, 1.50, '2026-06-18 00:00:00', '2026-06-18 23:59:59');
+(1, '双11 美妆数码场', 'LIVE', 5000000.00, 1.80, '2026-11-11 00:00:00', '2026-11-11 23:59:59'),
+(2, '618 数码狂欢节', 'LIVE', 2000000.00, 1.50, '2026-06-18 00:00:00', '2026-06-18 23:59:59');
 
 -- 活动 SKU
 INSERT INTO activity_sku (id, activity_id, sku_id, seckill_price, total_stock, stock, sold, version) VALUES

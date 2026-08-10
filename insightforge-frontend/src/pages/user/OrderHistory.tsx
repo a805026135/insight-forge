@@ -57,6 +57,7 @@ export default function OrderHistory() {
               <th>订单号</th>
               <th>活动</th>
               <th>SKU</th>
+              <th>单价</th>
               <th>数量</th>
               <th>状态</th>
               <th>时间</th>
@@ -69,6 +70,7 @@ export default function OrderHistory() {
                 <td title={o.orderId}>{o.orderId.slice(0, 12)}…</td>
                 <td>{o.activityId}</td>
                 <td>{o.skuId}</td>
+                <td>{o.price != null ? `¥${o.price}` : '—'}</td>
                 <td>{o.qty}</td>
                 <td className={`status-${o.status?.toLowerCase()}`}>{statusLabel(o.status)}</td>
                 <td>{o.createdAt?.replace('T', ' ').slice(0, 19)}</td>

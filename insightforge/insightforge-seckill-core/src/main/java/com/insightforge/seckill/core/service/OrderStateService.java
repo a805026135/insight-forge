@@ -7,7 +7,9 @@ import com.insightforge.persistence.entity.Orders;
 import com.insightforge.persistence.mapper.ActivitySkuMapper;
 import com.insightforge.persistence.mapper.OrdersMapper;
 import com.insightforge.seckill.core.cache.SkuCacheService;
+import com.insightforge.seckill.core.redis.RedisStockService;
 import com.insightforge.seckill.core.state.OrderStatus;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,13 +29,17 @@ public class OrderStateService {
     private final OrdersMapper ordersMapper;
     private final ActivitySkuMapper skuMapper;
     private final SkuCacheService skuCacheService;
+    /** LIVE 期间 Redis 是权威库存，取消必须同步回补（local 下为 null，跳过）。 */
+    private final ObjectProvider<RedisStockService> redisStockService;
 
     public OrderStateService(OrdersMapper ordersMapper,
                              ActivitySkuMapper skuMapper,
-                             SkuCacheService skuCacheService) {
+                             SkuCacheService skuCacheService,
+                             ObjectProvider<RedisStockService> redisStockService) {
         this.ordersMapper = ordersMapper;
         this.skuMapper = skuMapper;
         this.skuCacheService = skuCacheService;
+        this.redisStockService = redisStockService;
     }
 
     /**
@@ -64,6 +70,12 @@ public class OrderStateService {
         int aff = skuMapper.incrementStock(sku.getId(), order.getQty());
         if (aff == 0) {
             return ApiResult.fail(409, "库存回补失败（sold 不足，可能已回补）");
+        }
+        // Phase 14.1：DB 回补成功后，同步回补 Redis 权威库存（仅键存在时），
+        // 否则用户取消的库存 LIVE 期间买不到，且结算对账必然 Redis↔DB 漂移。
+        RedisStockService rs = redisStockService.getIfAvailable();
+        if (rs != null) {
+            rs.increaseStockIfExists(order.getActivityId(), sku.getId(), order.getQty());
         }
         order.setStatus(OrderStatus.CANCEL.name());
         ordersMapper.updateById(order);

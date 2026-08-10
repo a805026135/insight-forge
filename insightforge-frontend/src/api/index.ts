@@ -119,6 +119,8 @@ export interface SeckillSummary {
   totalStock: number;
   soldStock: number;
   totalOrders: number;
+  /** 真实 GMV（成交价×数量，status≠CANCEL） */
+  totalGmv: number;
 }
 
 /** DashboardSnapshot.AgentSummary */
@@ -181,6 +183,8 @@ export interface OrderView {
   activityId: number;
   skuId: number;
   qty: number;
+  /** 成交单价快照（REPRICE 生效后新订单带新价） */
+  price: number | null;
   status: string;
   createdAt: string;
 }

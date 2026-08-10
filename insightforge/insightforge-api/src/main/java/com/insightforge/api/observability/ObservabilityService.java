@@ -15,11 +15,14 @@ import com.insightforge.persistence.mapper.AgentSpanMapper;
 import com.insightforge.persistence.mapper.GuardrailPolicyMapper;
 import com.insightforge.persistence.mapper.OrdersMapper;
 import com.insightforge.persistence.mapper.ProductMapper;
+import com.insightforge.seckill.core.redis.RedisStockService;
+import com.insightforge.seckill.core.state.OrderStatus;
 import com.insightforge.api.observability.dto.DashboardSnapshot;
 import com.insightforge.api.observability.dto.GuardrailView;
 import com.insightforge.api.observability.dto.SpanView;
 import com.insightforge.api.observability.dto.SkuView;
 import com.insightforge.api.observability.dto.TraceView;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -53,6 +56,8 @@ public class ObservabilityService {
     private final AgentSpanMapper agentSpanMapper;
     private final GuardrailPolicyMapper guardrailPolicyMapper;
     private final ProductMapper productMapper;
+    /** REPRICE 后实时价读取（local 下为 null，回退 DB 秒杀价）。 */
+    private final ObjectProvider<RedisStockService> redisStockService;
 
     public ObservabilityService(ActivityMapper activityMapper,
                                 ActivitySkuMapper activitySkuMapper,
@@ -60,7 +65,8 @@ public class ObservabilityService {
                                 AgentTraceMapper agentTraceMapper,
                                 AgentSpanMapper agentSpanMapper,
                                 GuardrailPolicyMapper guardrailPolicyMapper,
-                                ProductMapper productMapper) {
+                                ProductMapper productMapper,
+                                ObjectProvider<RedisStockService> redisStockService) {
         this.activityMapper = activityMapper;
         this.activitySkuMapper = activitySkuMapper;
         this.ordersMapper = ordersMapper;
@@ -68,6 +74,7 @@ public class ObservabilityService {
         this.agentSpanMapper = agentSpanMapper;
         this.guardrailPolicyMapper = guardrailPolicyMapper;
         this.productMapper = productMapper;
+        this.redisStockService = redisStockService;
     }
 
     // ============ 计数方法（同时供 Prometheus Gauge 复用，见 MetricsConfig） ============
@@ -134,6 +141,13 @@ public class ObservabilityService {
         long totalStock = sumStock();
         long soldStock = sumSold();
         long totalOrders = countOrders();
+        // 真实 GMV：成交价快照 × 数量（status≠CANCEL），REPRICE 生效后可见变化
+        BigDecimal totalGmv = ordersMapper.selectList(
+                        new QueryWrapper<Orders>().ne("status", OrderStatus.CANCEL.name()))
+                .stream()
+                .map(o -> (o.getPrice() == null ? BigDecimal.ZERO : o.getPrice())
+                        .multiply(BigDecimal.valueOf(o.getQty() == null ? 0 : o.getQty())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         long totalRuns = countTraces();
         long successRuns = countSuccessTraces();
@@ -165,7 +179,7 @@ public class ObservabilityService {
                 totalRuns, successRuns, correctFailureRuns, failedRuns,
                 correctFailureRate(), maxLatency, totalCost.doubleValue());
         DashboardSnapshot.SeckillSummary seckillSummary = new DashboardSnapshot.SeckillSummary(
-                totalActivities, liveActivities, totalStock, soldStock, totalOrders);
+                totalActivities, liveActivities, totalStock, soldStock, totalOrders, totalGmv);
 
         return new DashboardSnapshot(seckillSummary, agentSummary, guardrailSummary,
                 LocalDateTime.now().toString());
@@ -262,11 +276,20 @@ public class ObservabilityService {
                 .collect(Collectors.toMap(Product::getId, p -> p));
         return skuList.stream().map(s -> {
             Product p = productMap.get(s.getSkuId());
+            // REPRICE 生效后，前端/秒杀页显示实时价（Redis 价表优先，未调价回退 DB 秒杀价）
+            BigDecimal displayPrice = s.getSeckillPrice();
+            RedisStockService rs = redisStockService.getIfAvailable();
+            if (rs != null) {
+                BigDecimal redisPrice = rs.readPrice(s.getActivityId(), s.getId());
+                if (redisPrice != null) {
+                    displayPrice = redisPrice;
+                }
+            }
             return new SkuView(
                     s.getSkuId(), s.getId(), s.getActivityId(),
                     p != null ? p.getName() : "未知商品",
                     p != null ? p.getSku() : "",
-                    s.getSeckillPrice(),
+                    displayPrice,
                     p != null ? p.getCostPrice() : null,
                     s.getTotalStock(), s.getStock(), s.getSold()
             );

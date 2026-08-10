@@ -21,6 +21,10 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.UUID;
 
 /**
@@ -97,20 +101,8 @@ public class MultiAgentOrchestrator {
                     new SubTask(Role.RISK, "风控", task.activityId()));
             tb.addSpan(span(traceId, Role.PLANNER, "buildDag", objectMapper.writeValueAsString(plan), SpanStatus.OK));
 
-            // —— 角色 Agent 并行产出（真实接入时各自调模型；本地用确定性桩）——
-            Map<Role, Artifact> artifacts = new LinkedHashMap<>();
-            for (SubTask st : plan) {
-                Artifact a = roleAgent.run(st, ctx);
-                if (a == null) {
-                    metrics.invalidSteps().incrementAndGet();   // L2：无效步骤率
-                    tb.addSpan(span(traceId, st.role(), "produce", "null", SpanStatus.FAIL));
-                } else {
-                    artifacts.put(st.role(), a);
-                    // 只序列化产物内容（Map），避免 Artifact.createdAt(LocalDateTime) 需 JSR310 模块
-                    tb.addSpan(span(traceId, st.role(), "produce",
-                            objectMapper.writeValueAsString(a.content()), SpanStatus.OK));
-                }
-            }
+            // —— 角色 Agent 并行产出（Phase 14.2：真 LLM 下 4 角色并发调模型，串行要 60s+）——
+            Map<Role, Artifact> artifacts = runRoleAgentsParallel(plan, ctx, traceId, tb);
 
             // —— Guardrail Policy Agent 汇编 DSL ——
             GuardrailPolicy policy = policyAgent.assemble(ctx, artifacts);
@@ -150,6 +142,40 @@ public class MultiAgentOrchestrator {
         }
         // 理论上不会到这（循环内已 return），兜底 FAILED
         return finish(startedAt, tb, AgentRunStatus.FAILED, null, false, null);
+    }
+
+    /** 4 个角色并发执行（每个子任务独立调模型），逐个收结果并记录 span。 */
+    private Map<Role, Artifact> runRoleAgentsParallel(List<SubTask> plan, PlanningContext ctx,
+                                                      String traceId, Trace.Builder tb) {
+        Map<Role, CompletableFuture<Artifact>> futures = new LinkedHashMap<>();
+        ExecutorService pool = Executors.newFixedThreadPool(Math.min(plan.size(), 4));
+        try {
+            for (SubTask st : plan) {
+                futures.put(st.role(), CompletableFuture.supplyAsync(() -> roleAgent.run(st, ctx), pool));
+            }
+            Map<Role, Artifact> artifacts = new LinkedHashMap<>();
+            for (Map.Entry<Role, CompletableFuture<Artifact>> e : futures.entrySet()) {
+                try {
+                    Artifact a = e.getValue().get(90, TimeUnit.SECONDS);
+                    if (a == null) {
+                        metrics.invalidSteps().incrementAndGet();   // L2：无效步骤率
+                        tb.addSpan(span(traceId, e.getKey(), "produce", "null", SpanStatus.FAIL));
+                    } else {
+                        artifacts.put(e.getKey(), a);
+                        // 只序列化产物内容（Map），避免 Artifact.createdAt(LocalDateTime) 需 JSR310 模块
+                        tb.addSpan(span(traceId, e.getKey(), "produce",
+                                objectMapper.writeValueAsString(a.content()), SpanStatus.OK));
+                    }
+                } catch (Exception ex) {
+                    metrics.invalidSteps().incrementAndGet();
+                    tb.addSpan(span(traceId, e.getKey(), "produce",
+                            "exception:" + ex.getMessage(), SpanStatus.FAIL));
+                }
+            }
+            return artifacts;
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     private PlanningResult finish(LocalDateTime startedAt, Trace.Builder tb,

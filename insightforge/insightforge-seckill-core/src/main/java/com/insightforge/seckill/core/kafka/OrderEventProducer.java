@@ -1,12 +1,15 @@
 package com.insightforge.seckill.core.kafka;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.insightforge.seckill.core.dto.OrderCreatedEvent;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
+
+import java.util.concurrent.TimeUnit;
 
 /**
  * 订单事件生产者（Phase 4）。
@@ -27,6 +30,8 @@ import org.springframework.stereotype.Component;
 @Profile("!local")
 public class OrderEventProducer {
 
+    private static final Logger log = LoggerFactory.getLogger(OrderEventProducer.class);
+
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
 
@@ -38,9 +43,14 @@ public class OrderEventProducer {
     /**
      * 发送「订单已扣减、待建单」事件。
      *
-     * @return true 表示消息已成功发出（broker 已 ack）；false 表示发送失败（调用方应降级同步建单）。
-     *         这里采用 fire-and-forget：不阻塞等待，保证接口极速返回；消息持久性由
-     *         acks=all + 生产者重试保证，最终一致由 Phase 6 对账兜底。
+     * @return true 表示消息已成功发出（broker 已 ack）；false 表示发送失败/超时
+     *         （调用方降级同步建单，保证不丢单）。
+     *
+     *         Phase 14.1 修正：不再 fire-and-forget。原实现 {@code kafkaTemplate.send()}
+     *         只入队就返回 true，Kafka 真不可用时会静默丢消息或抛异常——「降级同步建单」
+     *         的兜底形同虚设。这里用 {@code send().get(2s)} 等 broker ack：
+     *         - 正常路径 localhost Kafka ack 毫秒级，接口延迟影响可忽略；
+     *         - 异常/超时明确返回 false，SeckillService 落 DB 兜底，绝不丢单。
      */
     public boolean sendOrderCreated(OrderCreatedEvent event) {
         try {
@@ -48,10 +58,16 @@ public class OrderEventProducer {
             // key = orderId：同订单同分区，保序 + 便于消费端幂等
             ProducerRecord<String, String> record =
                     new ProducerRecord<>(KafkaTopicConfig.ORDER_CREATED, event.getOrderId(), payload);
-            kafkaTemplate.send(record);
+            kafkaTemplate.send(record).get(2, TimeUnit.SECONDS);
             return true;
-        } catch (JsonProcessingException e) {
-            // JSON 序列化不该失败（字段都是基础类型），真失败了只能交给调用方降级
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            // 序列化失败 / broker 不可达 / 2s 未 ack（含 Kafka 的 TimeoutException 运行时异常）：
+            // 统一交给调用方降级同步建单，绝不丢单。
+            log.warn("order.created 发送失败，降级同步建单：orderId={}, err={}",
+                    event.getOrderId(), e.getMessage());
             return false;
         }
     }

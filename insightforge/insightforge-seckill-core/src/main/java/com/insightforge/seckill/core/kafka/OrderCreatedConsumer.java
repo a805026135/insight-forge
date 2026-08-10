@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 /**
  * 订单事件消费者（Phase 4）。
@@ -73,7 +74,7 @@ public class OrderCreatedConsumer {
         req.setQty(evt.getQty());
 
         // —— 异步建单（幂等：order_id 唯一约束兜底）——
-        boolean inserted = createOrderIdempotent(req, evt.getOrderId());
+        boolean inserted = createOrderIdempotent(req, evt.getOrderId(), evt.getPrice());
 
         // —— 仅在「本次真正新建订单」时才把 DB 库存同步减掉（最终一致：Redis 已先扣，这里补齐 DB）——
         // decrementStock 是原子条件更新，多实例并发也安全，绝不为负；且仅建单成功才扣，杜绝重投多扣。
@@ -85,13 +86,14 @@ public class OrderCreatedConsumer {
     }
 
     /** 建单并吞掉「重复建单」异常（幂等核心）；返回是否真正插入了新行。 */
-    private boolean createOrderIdempotent(SeckillRequest req, String orderId) {
+    private boolean createOrderIdempotent(SeckillRequest req, String orderId, BigDecimal price) {
         Orders order = new Orders();
         order.setOrderId(orderId);
         order.setUserId(req.getUserId());
         order.setActivityId(req.getActivityId());
         order.setSkuId(req.getSkuId());
         order.setQty(req.getQty());
+        order.setPrice(price);
         // 异步单与同步建单（SeckillService）保持同一持久初态 CREATE_ORDER，
         // 否则 OrderStatus.from("CREATED") 会抛异常、导致异步单 cancel/pay 直接 500（REVIEW §3.1）。
         order.setStatus(OrderStatus.CREATE_ORDER.name());

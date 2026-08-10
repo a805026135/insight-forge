@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -37,6 +38,9 @@ public class Orders extends BaseEntity {
 
     /** 购买数量 */
     private Integer qty;
+
+    /** 成交单价快照（下单瞬间的实时价；AI 调价后新订单带新价，用于 GMV 与对账） */
+    private BigDecimal price;
 
     /** 订单状态（Phase 6 状态机） */
     private String status;

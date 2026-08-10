@@ -46,7 +46,7 @@ class DashboardControllerTest {
     @Test
     void overviewReturnsWrappedSnapshot() throws Exception {
         DashboardSnapshot snapshot = new DashboardSnapshot(
-                new DashboardSnapshot.SeckillSummary(1, 1, 100, 30, 30),
+                new DashboardSnapshot.SeckillSummary(1, 1, 100, 30, 30, new java.math.BigDecimal("189000")),
                 new DashboardSnapshot.AgentSummary(10, 8, 1, 1, 0.1, 1200, 0.02),
                 new DashboardSnapshot.GuardrailSummary(2, 1, "中"),
                 "now");

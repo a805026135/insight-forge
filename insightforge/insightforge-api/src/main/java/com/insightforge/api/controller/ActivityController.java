@@ -61,6 +61,34 @@ public class ActivityController {
      */
     @PostMapping
     public ApiResult<Activity> create(@RequestBody CreateActivityRequest req) {
+        // —— Phase 14.1 创建活动校验（防脏数据：空名/负数库存/低于成本价） ——
+        if (req.name() == null || req.name().isBlank()) {
+            return ApiResult.fail(400, "活动名称不能为空");
+        }
+        if (req.targetGmv() == null || req.targetGmv().signum() < 0) {
+            return ApiResult.fail(400, "目标 GMV 必须 >= 0");
+        }
+        if (req.skus() == null || req.skus().isEmpty()) {
+            return ApiResult.fail(400, "活动必须至少挂载一个 SKU");
+        }
+        for (CreateActivityRequest.SkuConfig cfg : req.skus()) {
+            if (cfg.totalStock() == null || cfg.totalStock() <= 0) {
+                return ApiResult.fail(400, "SKU 库存必须 > 0");
+            }
+            if (cfg.seckillPrice() == null || cfg.seckillPrice().signum() <= 0) {
+                return ApiResult.fail(400, "SKU 秒杀价必须 > 0");
+            }
+            if (cfg.costPrice() != null && cfg.costPrice().signum() > 0
+                    && cfg.seckillPrice().compareTo(cfg.costPrice()) < 0) {
+                return ApiResult.fail(400, "SKU 秒杀价不得低于成本价");
+            }
+            if (cfg.productId() == null
+                    && (cfg.productName() == null || cfg.productName().isBlank()
+                        || cfg.skuCode() == null || cfg.skuCode().isBlank())) {
+                return ApiResult.fail(400, "新建商品必须提供商品名与 SKU 编码");
+            }
+        }
+
         // 1. 创建活动
         Activity activity = new Activity();
         activity.setName(req.name());

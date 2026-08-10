@@ -51,8 +51,10 @@ class ActuatorPrometheusTest {
                 "http://localhost:" + port + "/actuator/prometheus", String.class);
         if (resp.getStatusCode().is2xxSuccessful()) {
             String body = resp.getBody();
-            assertTrue(body != null && body.contains("insightforge_activities_total"),
-                    "prometheus 抓取应包含 insightforge_activities_total");
+            // Micrometer 的 Prometheus 命名约定会把 gauge 的 _total 后缀剥离，
+            // 因此这里断言的是剥离后的实际指标名（真实服务已验证：insightforge_activities）。
+            assertTrue(body != null && body.contains("insightforge_activities"),
+                    "prometheus 抓取应包含 insightforge_activities 业务指标");
         }
     }
 }

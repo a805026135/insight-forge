@@ -43,4 +43,14 @@ public interface ActivitySkuMapper extends BaseMapper<ActivitySku> {
     @Update("UPDATE activity_sku SET stock = stock + #{qty}, sold = sold - #{qty} " +
             "WHERE id = #{id} AND sold >= #{qty}")
     int incrementStock(@Param("id") Long id, @Param("qty") int qty);
+
+    /**
+     * Phase 14.1：AI 调拨确认入账时，把「初始库存」与「剩余库存」同步增加 amount。
+     * 只有这一步做了，结算对账的「total_stock − 成功单 = 剩余库存」公式才能把 AI 调拨
+     * 纳入期望值（否则 Redis 加了货、DB 不知道，对账永远过不了）。
+     * amount ≥ 0 由调拨语义保证（DslCompiler + RedisStockSegmentService 双重校验）。
+     */
+    @Update("UPDATE activity_sku SET total_stock = total_stock + #{amount}, " +
+            "stock = stock + #{amount} WHERE id = #{id}")
+    int increaseTotalStock(@Param("id") Long id, @Param("amount") int amount);
 }

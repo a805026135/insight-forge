@@ -50,6 +50,10 @@ export default function Dashboard() {
           <div className="kpi-value">{seckill.totalOrders}</div>
           <div className="kpi-label">总订单</div>
         </div>
+        <div className="kpi-card highlight">
+          <div className="kpi-value">¥{seckill.totalGmv.toLocaleString('zh-CN')}</div>
+          <div className="kpi-label">真实 GMV（成交价快照）</div>
+        </div>
       </div>
 
       {/* ─── Agent 运行时 ─── */}
