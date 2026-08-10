@@ -2,13 +2,13 @@ import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 
 const MERCHANT_NAV = [
-  { to: '/merchant/agent', label: 'Agent ???' },
-  { to: '/merchant/products', label: '????' },
-  { to: '/merchant/inventory', label: '????' },
-  { to: '/merchant/orders', label: '????' },
-  { to: '/merchant/activities', label: '????' },
-  { to: '/merchant/hitl', label: '????' },
-  { to: '/merchant/traces', label: '????' },
+  { to: '/merchant/agent', label: 'Agent 工作台' },
+  { to: '/merchant/products', label: '商品管理' },
+  { to: '/merchant/inventory', label: '库存管理' },
+  { to: '/merchant/orders', label: '订单发货' },
+  { to: '/merchant/activities', label: '活动管理' },
+  { to: '/merchant/hitl', label: '人工审批' },
+  { to: '/merchant/traces', label: '调用轨迹' },
 ];
 
 const USER_NAV = [

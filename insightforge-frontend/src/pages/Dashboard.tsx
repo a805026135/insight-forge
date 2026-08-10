@@ -1,37 +1,39 @@
+import { useEffect, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { useDashboardSnapshot } from '../hooks/useDashboardSnapshot';
+import { merchantApi, MerchantProductView } from '../api';
 
 /**
- * 运营大屏（Phase 18 美化）：KPI 磁贴 + 图表化经营/Agent/护栏三块数据。
+ * 商家运营大屏（Phase 18 美化）：商家维度经营数据 + 图表化展示。
  */
 export default function Dashboard() {
-  const { snapshot, live } = useDashboardSnapshot();
-  const s = snapshot?.seckill;
-  const a = snapshot?.agent;
-  const g = snapshot?.guardrail;
+  const [overview, setOverview] = useState<Record<string, number | string> | null>(null);
+  const [products, setProducts] = useState<MerchantProductView[]>([]);
+  const [msg, setMsg] = useState('');
 
-  const riskColor =
-    g?.topRiskLevel === '高' ? 'var(--red)' : g?.topRiskLevel === '中' ? 'var(--amber)' : 'var(--green)';
-
-  const stockOption = {
-    tooltip: { trigger: 'axis' },
-    grid: { left: 40, right: 20, top: 30, bottom: 30 },
-    xAxis: { type: 'category', data: ['已售', '剩余'], axisLabel: { color: 'var(--text-secondary)' } },
-    yAxis: { type: 'value', axisLabel: { color: 'var(--text-muted)' }, splitLine: { lineStyle: { color: 'var(--border)' } } },
-    series: [
-      {
-        type: 'bar',
-        data: [
-          { value: s?.soldStock ?? 0, itemStyle: { color: 'var(--amber)' } },
-          { value: (s?.totalStock ?? 0) - (s?.soldStock ?? 0), itemStyle: { color: 'var(--green)' } },
-        ],
-        barWidth: 48,
-        label: { show: true, position: 'top', color: 'var(--text-secondary)' },
-      },
-    ],
+  const load = async () => {
+    try {
+      const [ov, ps] = await Promise.all([merchantApi.overview(), merchantApi.products()]);
+      setOverview(ov);
+      setProducts(ps);
+    } catch (e: any) {
+      setMsg(e.message);
+    }
   };
 
-  const agentOption = {
+  useEffect(() => {
+    load();
+    const t = window.setInterval(load, 5000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  const o = overview ?? {};
+  const onSale = products.filter((p) => p.status === 'ON_SALE').length;
+  const offShelf = products.length - onSale;
+  const totalStock = products.reduce((s, p) => s + (p.stock ?? 0), 0);
+  const sold = o.totalSold ?? 0;
+  const stockLeft = o.totalStock ?? 0;
+
+  const statusOption = {
     tooltip: { trigger: 'item' },
     legend: { bottom: 0, textStyle: { color: 'var(--text-secondary)' } },
     series: [
@@ -41,51 +43,66 @@ export default function Dashboard() {
         center: ['50%', '45%'],
         label: { color: 'var(--text-secondary)' },
         data: [
-          { value: a?.successRuns ?? 0, name: '规划成功', itemStyle: { color: 'var(--green)' } },
-          { value: a?.correctFailureRuns ?? 0, name: '正确失败', itemStyle: { color: 'var(--cyan)' } },
-          { value: a?.failedRuns ?? 0, name: '运行失败', itemStyle: { color: 'var(--red)' } },
+          { value: onSale, name: '在售', itemStyle: { color: 'var(--green)' } },
+          { value: offShelf, name: '下架', itemStyle: { color: 'var(--red)' } },
         ],
       },
     ],
   };
 
-  const gaugeOption = {
-    series: [
-      {
-        type: 'gauge',
-        startAngle: 200,
-        endAngle: -20,
-        min: 0,
-        max: 1,
-        progress: { show: true, width: 18, itemStyle: { color: 'var(--cyan)' } },
-        axisLine: { lineStyle: { width: 18, color: [[1, 'var(--border)']] } },
-        axisLabel: { color: 'var(--text-muted)', distance: 24, formatter: (v: number) => `${(v * 100).toFixed(0)}%` },
-        pointer: { show: false },
-        detail: {
-          valueAnimation: true,
-          formatter: (v: number) => `${(v * 100).toFixed(1)}%`,
-          color: 'var(--text-primary)',
-          fontSize: 26,
-        },
-        data: [{ value: a?.correctFailureRate ?? 0, name: '正确失败率' }],
-      },
-    ],
-  };
-
-  const gmvOption = {
+  const stockOption = {
     tooltip: { trigger: 'axis' },
-    grid: { left: 50, right: 20, top: 30, bottom: 30 },
-    xAxis: { type: 'category', data: ['GMV', '目标 GMV'], axisLabel: { color: 'var(--text-secondary)' } },
-    yAxis: { type: 'value', axisLabel: { color: 'var(--text-muted)', formatter: (v: number) => `${(v / 10000).toFixed(0)}万` }, splitLine: { lineStyle: { color: 'var(--border)' } } },
+    grid: { left: 40, right: 20, top: 30, bottom: 30 },
+    xAxis: { type: 'category', data: ['已售', '剩余'], axisLabel: { color: 'var(--text-secondary)' } },
+    yAxis: { type: 'value', axisLabel: { color: 'var(--text-muted)' }, splitLine: { lineStyle: { color: 'var(--border)' } } },
     series: [
       {
         type: 'bar',
+        barWidth: 48,
+        label: { show: true, position: 'top', color: 'var(--text-secondary)' },
         data: [
-          { value: s?.totalGmv ?? 0, itemStyle: { color: 'var(--purple)' } },
-          { value: (snapshot as any)?.targetGmv ?? 0, itemStyle: { color: 'var(--border-bright)' } },
+          { value: sold, itemStyle: { color: 'var(--amber)' } },
+          { value: stockLeft, itemStyle: { color: 'var(--green)' } },
         ],
-        barWidth: 44,
-        label: { show: true, position: 'top', color: 'var(--text-secondary)', formatter: (p: any) => `${(p.value / 10000).toFixed(1)}万` },
+      },
+    ],
+  };
+
+  const topOption = {
+    tooltip: { trigger: 'axis' },
+    grid: { left: 130, right: 30, top: 20, bottom: 30 },
+    xAxis: { type: 'value', axisLabel: { color: 'var(--text-muted)' }, splitLine: { lineStyle: { color: 'var(--border)' } } },
+    yAxis: {
+      type: 'category',
+      data: products.slice(0, 8).map((p) => p.name.length > 12 ? p.name.slice(0, 12) + '…' : p.name).reverse(),
+      axisLabel: { color: 'var(--text-secondary)', fontSize: 11 },
+    },
+    series: [
+      {
+        type: 'bar',
+        itemStyle: { color: 'var(--cyan)' },
+        data: products.slice(0, 8).map((p) => p.stock ?? 0).reverse(),
+        label: { show: true, position: 'right', color: 'var(--text-secondary)' },
+      },
+    ],
+  };
+
+  const catCount = new Map<string, number>();
+  products.forEach((p) => catCount.set(p.category || '未分类', (catCount.get(p.category || '未分类') ?? 0) + 1));
+  const catOption = {
+    tooltip: { trigger: 'item' },
+    legend: { bottom: 0, textStyle: { color: 'var(--text-secondary)' } },
+    series: [
+      {
+        type: 'pie',
+        radius: ['35%', '62%'],
+        center: ['50%', '45%'],
+        label: { color: 'var(--text-secondary)' },
+        data: Array.from(catCount.entries()).map(([name, value], i) => ({
+          name,
+          value,
+          itemStyle: { color: ['var(--green)', 'var(--cyan)', 'var(--amber)', 'var(--purple)', 'var(--red)'][i % 5] },
+        })),
       },
     ],
   };
@@ -93,54 +110,50 @@ export default function Dashboard() {
   return (
     <div className="dashboard-page">
       <div className="page-head">
-        <h2>运营大屏</h2>
-        <span className={`badge ${live ? 'badge-live' : 'badge-closed'}`}>
-          {live ? '实时通道 · WebSocket 已连接' : '兜底通道 · 每 3 秒轮询'}
-        </span>
+        <h2>店铺经营大屏</h2>
+        <span className="badge badge-live">每 5 秒自动刷新</span>
       </div>
+      {msg && <div className="toast error">{msg}</div>}
 
       <div className="metrics-grid">
         <div className="metric-tile-big">
-          <div className="mt-label">进行中活动</div>
-          <div className="mt-value">{s?.liveActivities ?? 0}<span style={{ fontSize: 16, color: 'var(--text-muted)' }}> / {s?.totalActivities ?? 0}</span></div>
-          <div className="mt-sub">平台大促场次</div>
+          <div className="mt-label">在售商品</div>
+          <div className="mt-value">{onSale}<span style={{ fontSize: 16, color: 'var(--text-muted)' }}> / {products.length}</span></div>
+          <div className="mt-sub">已下架 {offShelf} 款</div>
         </div>
         <div className="metric-tile-big">
-          <div className="mt-label">累计订单</div>
-          <div className="mt-value">{s?.totalOrders ?? 0}</div>
-          <div className="mt-sub">含已取消的全部订单</div>
+          <div className="mt-label">已售件数</div>
+          <div className="mt-value">{sold}</div>
+          <div className="mt-sub">活动秒杀销量</div>
         </div>
         <div className="metric-tile-big">
-          <div className="mt-label">真实 GMV</div>
-          <div className="mt-value" style={{ color: 'var(--purple)' }}>¥{((s?.totalGmv ?? 0) / 10000).toFixed(1)}万</div>
-          <div className="mt-sub">成交价 × 数量（status≠CANCEL）</div>
+          <div className="mt-label">累计 GMV</div>
+          <div className="mt-value" style={{ color: 'var(--purple)' }}>¥{((Number(o.totalGmv) ?? 0) / 10000).toFixed(1)}万</div>
+          <div className="mt-sub">成交价 × 数量</div>
         </div>
         <div className="metric-tile-big">
-          <div className="mt-label">最高护栏风险</div>
-          <div className="mt-value" style={{ color: riskColor }}>{g?.topRiskLevel ?? '低'}</div>
-          <div className="mt-sub">{g?.activitiesWithPolicy ?? 0} 个活动已生效策略</div>
+          <div className="mt-label">库存总量</div>
+          <div className="mt-value" style={{ color: 'var(--cyan)' }}>{totalStock}</div>
+          <div className="mt-sub">商品独立库存 + 活动库存 {stockLeft}</div>
         </div>
       </div>
 
       <div className="chart-grid">
         <div className="chart-card">
-          <h4>秒杀库存水位（已售 vs 剩余）</h4>
-          <ReactECharts option={stockOption} style={{ height: 240 }} />
+          <h4>商品上下架分布</h4>
+          <ReactECharts option={statusOption} style={{ height: 220 }} />
         </div>
         <div className="chart-card">
-          <h4>Agent 运行分布</h4>
-          <ReactECharts option={agentOption} style={{ height: 240 }} />
+          <h4>销量 vs 剩余库存</h4>
+          <ReactECharts option={stockOption} style={{ height: 220 }} />
         </div>
         <div className="chart-card">
-          <h4>Agent 正确失败率（红线指标）</h4>
-          <ReactECharts option={gaugeOption} style={{ height: 240 }} />
-          <div className="mt-sub" style={{ textAlign: 'center' }}>
-            规划运行 {a?.totalRuns ?? 0} 次 · 正确失败 {a?.correctFailureRuns ?? 0} 次 · 失败 {a?.failedRuns ?? 0} 次
-          </div>
+          <h4>商品库存 Top（普通库存）</h4>
+          <ReactECharts option={topOption} style={{ height: 260 }} />
         </div>
         <div className="chart-card">
-          <h4>GMV 达成（真实 vs 目标）</h4>
-          <ReactECharts option={gmvOption} style={{ height: 240 }} />
+          <h4>商品分类分布</h4>
+          <ReactECharts option={catOption} style={{ height: 220 }} />
         </div>
       </div>
     </div>
