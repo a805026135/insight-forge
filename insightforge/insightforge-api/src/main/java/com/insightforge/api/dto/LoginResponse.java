@@ -1,9 +1,10 @@
 package com.insightforge.api.dto;
 
+import com.insightforge.api.auth.AuthUser;
 import lombok.Data;
 
 /**
- * 登录响应——返回用户身份信息，前端据此控制菜单与路由。
+ * 登录响应——返回用户身份信息 + JWT Token，前端据此控制菜单/路由并携带鉴权头。
  * role = "user" 对应买家端，"merchant" 对应商家端。
  */
 @Data
@@ -12,13 +13,15 @@ public class LoginResponse {
     private String username;
     private String role;
     private String displayName;
+    /** JWT（后续请求放 Authorization: Bearer <token>） */
+    private String token;
 
-    public static LoginResponse from(com.insightforge.persistence.entity.User u) {
+    public static LoginResponse from(AuthUser u) {
         LoginResponse r = new LoginResponse();
-        r.setId(u.getId());
-        r.setUsername(u.getUsername());
-        r.setRole(u.getRole());
-        r.setDisplayName(u.getDisplayName());
+        r.setId(u.id());
+        r.setUsername(u.username());
+        r.setRole(u.role());
+        r.setDisplayName(u.displayName());
         return r;
     }
 }

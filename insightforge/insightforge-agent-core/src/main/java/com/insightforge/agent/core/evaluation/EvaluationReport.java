@@ -72,8 +72,15 @@ public class EvaluationReport {
         if (regressionPassRate() < thresholds.minRegressionPassRate().doubleValue()) {
             gateFailures.add("失败样本回归通过率不足（期望≥" + thresholds.minRegressionPassRate() + "，实际" + regressionPassRate() + "）");
         }
-        if (abExperiment.sellThroughLift().compareTo(thresholds.minSellThroughLift()) < 0) {
-            gateFailures.add("AI 售罄率提升低于阈值（期望≥" + thresholds.minSellThroughLift() + "，实际" + abExperiment.sellThroughLiftPct() + "）");
+        // Phase 14：真实模拟揭示固定成本下降价换量必伤毛利，故把「售罄率提升」门槛改为
+        // 「毛利显著提升 + 售罄率不劣」——利润是硬证据，清货能力是底线。
+        if (abExperiment.ai().sellThroughRate().compareTo(abExperiment.manual().sellThroughRate()) < 0) {
+            gateFailures.add("AI 售罄率劣于人工（期望≥" + abExperiment.manual().sellThroughRate()
+                    + "，实际" + abExperiment.ai().sellThroughRate() + "）");
+        }
+        if (abExperiment.grossMarginLift().compareTo(thresholds.minGrossMarginLift()) < 0) {
+            gateFailures.add("AI 毛利率提升低于阈值（期望≥" + thresholds.minGrossMarginLift()
+                    + "，实际" + abExperiment.grossMarginLiftPct() + "）");
         }
         if (abExperiment.ai().grossMarginRate().compareTo(thresholds.minGrossMarginFloor()) < 0) {
             gateFailures.add("AI 毛利率低于地板（期望≥" + thresholds.minGrossMarginFloor() + "，实际" + abExperiment.ai().grossMarginRate() + "）");

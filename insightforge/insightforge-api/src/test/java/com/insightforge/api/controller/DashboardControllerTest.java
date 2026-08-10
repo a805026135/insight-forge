@@ -6,6 +6,8 @@ import com.insightforge.api.observability.ObservabilityService;
 import com.insightforge.api.observability.dto.DashboardSnapshot;
 import com.insightforge.api.observability.dto.TraceView;
 import com.insightforge.common.result.ApiResult;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -16,6 +18,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
+import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -43,6 +47,24 @@ class DashboardControllerTest {
     @MockBean
     private ExplainabilityService explainabilityService;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    /** Phase 14.3：鉴权后所有 /api/dashboard 请求需携带商家 token。 */
+    private String adminToken;
+
+    @BeforeEach
+    void loginAsAdmin() throws Exception {
+        var res = mockMvc.perform(post("/api/login")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"username\":\"admin\",\"password\":\"admin123\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        adminToken = objectMapper.readTree(
+                        res.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8))
+                .path("data").path("token").asText();
+    }
+
     @Test
     void overviewReturnsWrappedSnapshot() throws Exception {
         DashboardSnapshot snapshot = new DashboardSnapshot(
@@ -53,6 +75,9 @@ class DashboardControllerTest {
         when(observabilityService.buildSnapshot()).thenReturn(snapshot);
 
         mockMvc.perform(get("/api/dashboard/overview"))
+                .andExpect(status().isUnauthorized());   // 无 token → 401
+        mockMvc.perform(get("/api/dashboard/overview")
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.seckill.totalStock").value(100))
@@ -65,7 +90,8 @@ class DashboardControllerTest {
                 100L, null, "local", "规划成功并落库策略", null);
         when(observabilityService.recentTraces(20)).thenReturn(List.of(v));
 
-        mockMvc.perform(get("/api/dashboard/traces?limit=20"))
+        mockMvc.perform(get("/api/dashboard/traces?limit=20")
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data[0].traceId").value("t1"))
@@ -80,6 +106,7 @@ class DashboardControllerTest {
                 .thenReturn("因 SKU-101 的库存水位达到 0.32（越过阈值 0.2），规则引擎自动执行「调拨」：从备用库存池调入 50 件。风险等级：中。");
 
         mockMvc.perform(get("/api/dashboard/explain")
+                        .header("Authorization", "Bearer " + adminToken)
                         .param("activityId", "1")
                         .param("action", "REALLOCATE")
                         .param("skuId", "101")
@@ -96,7 +123,9 @@ class DashboardControllerTest {
     @Test
     void guardrailsDelegatesToService() throws Exception {
         when(observabilityService.guardrails(1L)).thenReturn(List.of());
-        mockMvc.perform(get("/api/dashboard/guardrails").param("activityId", "1"))
+        mockMvc.perform(get("/api/dashboard/guardrails")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .param("activityId", "1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0));
     }

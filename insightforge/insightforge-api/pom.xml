@@ -63,6 +63,29 @@
             <artifactId>h2</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!-- Phase 14.3 鉴权：BCrypt 密码哈希（仅用 crypto 模块，不引入整套 Spring Security 过滤器链） -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+        <!-- JWT 签发/校验 -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.12.6</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
         <!-- Phase 3 验证用：内嵌 Redis（无需 Docker，测试里一键起一个真 redis-server 进程）。
              仅在测试 classpath，不进生产。测试用 Assumptions 守护：若沙箱无法启动则自动跳过，
              保证构建在零依赖环境也能绿灯通过；读者本机可一键 `mvn test` 复现 Lua 原子证明。 -->

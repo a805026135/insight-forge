@@ -1,6 +1,7 @@
 package com.insightforge.api.controller;
 
 import com.insightforge.common.result.ApiResult;
+import com.insightforge.api.auth.AuthContextHolder;
 import com.insightforge.seckill.core.dto.SeckillRequest;
 import com.insightforge.seckill.core.dto.StockInfo;
 import com.insightforge.seckill.core.redis.RateLimitService;
@@ -38,6 +39,8 @@ public class SeckillController {
 
     @PostMapping
     public ApiResult<String> seckill(@RequestBody SeckillRequest req) {
+        // Phase 14.3：以登录身份为准，禁止伪造他人 userId（前端传来的 userId 被覆盖）
+        req.setUserId(AuthContextHolder.requireUserId());
         // Phase 5：接入层限流——按 (用户, 活动) 维度滑动窗口，属于"保护数据面的闸机"。
         // 放在 Controller 边缘，先于业务扣减执行；local profile 下自动退化成 JVM 内存版限流。
         String limitKey = "u:" + req.getUserId() + ":a:" + req.getActivityId();

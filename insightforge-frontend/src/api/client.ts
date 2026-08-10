@@ -1,10 +1,14 @@
 import type { ApiResult, DashboardSnapshot, GuardrailView, TraceView } from '../types';
+import { getToken } from '../auth/token';
 
 // 后端基础路径：开发时由 Vite 代理 /api → localhost:8080；生产由 Nginx 反代。
 const BASE = '/api';
 
 async function get<T>(path: string): Promise<T> {
-  const resp = await fetch(`${BASE}${path}`);
+  const token = getToken();
+  const resp = await fetch(`${BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
   if (!resp.ok) {
     throw new Error(`GET ${path} failed: ${resp.status}`);
   }

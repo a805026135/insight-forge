@@ -2,17 +2,18 @@ package com.insightforge.api.controller;
 
 import com.insightforge.api.dto.LoginRequest;
 import com.insightforge.api.dto.LoginResponse;
+import com.insightforge.api.auth.AuthService;
+import com.insightforge.api.auth.AuthUser;
 import com.insightforge.common.result.ApiResult;
-import com.insightforge.persistence.mapper.UserMapper;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 登录入口（local 开发简化版：明文密码比对，不引入 Spring Security）。
+ * 登录入口（Phase 14.3：BCrypt 密码校验 + JWT 签发）。
  *
- * POST /api/login  用户名+密码 → 用户身份（id/role/displayName）
+ * POST /api/login  用户名+密码 → 用户身份（id/role/displayName）+ JWT
  *
  * 前端根据返回的 role 字段分流：role="user" 走买家端，"merchant" 走商家端。
  */
@@ -20,10 +21,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class LoginController {
 
-    private final UserMapper userMapper;
+    private final AuthService authService;
 
-    public LoginController(UserMapper userMapper) {
-        this.userMapper = userMapper;
+    public LoginController(AuthService authService) {
+        this.authService = authService;
     }
 
     @PostMapping("/login")
@@ -35,14 +36,14 @@ public class LoginController {
             return ApiResult.fail(400, "密码不能为空");
         }
 
-        var user = userMapper.findByUsername(req.getUsername());
-        if (user == null) {
-            return ApiResult.fail(401, "用户名或密码错误");
-        }
-        if (!req.getPassword().equals(user.getPassword())) {
+        var authUser = authService.authenticate(req.getUsername(), req.getPassword());
+        if (authUser.isEmpty()) {
             return ApiResult.fail(401, "用户名或密码错误");
         }
 
-        return ApiResult.ok(LoginResponse.from(user));
+        AuthUser user = authUser.get();
+        LoginResponse resp = LoginResponse.from(user);
+        resp.setToken(authService.issueToken(user));
+        return ApiResult.ok(resp);
     }
 }

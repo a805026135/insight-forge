@@ -15,7 +15,8 @@ INSERT IGNORE INTO activity_sku (id, activity_id, sku_id, seckill_price, total_s
 (1, 1, 1, 6299.00, 100, 100, 0, 0),
 (2, 2, 2, 1399.00, 50,  50,  0, 0);
 
+-- Phase 14.3：密码为 BCrypt 哈希（admin123 / 123456），不再明文存储
 INSERT IGNORE INTO users (id, username, password, role, display_name) VALUES
-(1, 'admin',  'admin123', 'merchant', '运营管理员'),
-(2, 'user1',  '123456',   'user',     '小明'),
-(3, 'user2',  '123456',   'user',     '小红');
+(1, 'admin',  '$2a$10$5QoKofP4k.xqYBmIVqvMSOhBnh1XPNMPVxq1UMqe2fWeRs3VCC6X.', 'merchant', '运营管理员'),
+(2, 'user1',  '$2a$10$Q/1GuYq2bi22.yXIN9o0d.cqD64Lbt2/f492dBsU24UFRI8Siywaa', 'user',     '小明'),
+(3, 'user2',  '$2a$10$Q/1GuYq2bi22.yXIN9o0d.cqD64Lbt2/f492dBsU24UFRI8Siywaa', 'user',     '小红');

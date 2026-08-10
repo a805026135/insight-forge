@@ -251,6 +251,9 @@ docker compose -f deploy/docker-compose.yml up -d --build
 | 前端（React + Vite + Antd） | ✅ 本地 5173 可跑，登录/秒杀/订单/大屏/审批 全部接真实 API |
 | **真实闭环端到端（Docker）** | ✅ 2026-08-10 实跑：建活动→Agent 规划→预热→上线→85 人抢购→规则引擎 REPRICE/REALLOCATE→取消回补→结算对账三方一致→大屏 GMV 真实统计 |
 | Prometheus + Grafana | ✅ 容器实跑，Prometheus 抓取 api 指标 `health="up"`，Grafana 面板预置 |
+| **真实 A/B 评估** | ✅ 规则引擎驱动模拟市场：人工 82.4%/36.5% vs AI 82.4%/37.4%（毛利 +2.33%），非种子自证 |
+| **鉴权（BCrypt + JWT）** | ✅ 密码哈希、登录签发 JWT、角色隔离、秒杀以登录身份为准（AuthFlowTest 4 用例） |
+| **浏览器验收** | ✅ 真实 Chromium 全流程 0 报错（截图在项目外 .tools/browser-check/shots/） |
 | HITL 人工审批 | ✅ POST approve/reject 写入 `agent_trace.review_status` |
 | 创建活动 + AI 规划 + Span 树 | ✅ 5 个新 API 全部 E2E 验证通过 |
 | 代码推送到 Gitee | ✅ `master` 分支，latest commit `0e800df` |

@@ -1,6 +1,7 @@
 package com.insightforge.api.controller;
 
 import com.insightforge.common.result.ApiResult;
+import com.insightforge.api.auth.AuthContextHolder;
 import com.insightforge.persistence.entity.Orders;
 import com.insightforge.persistence.mapper.OrdersMapper;
 import com.insightforge.seckill.core.service.OrderStateService;
@@ -35,7 +36,11 @@ public class OrderController {
     /** 按用户 id 查订单列表（最近下单的排前面），给前端「我的订单」页用。 */
     @GetMapping
     public ApiResult<List<Orders>> listByUser(@RequestParam("userId") Long userId) {
-        return ApiResult.ok(ordersMapper.findByUserId(userId));
+        long uid = AuthContextHolder.requireUserId();
+        if (userId != null && userId != uid) {
+            return ApiResult.fail(403, "无权查看他人订单");
+        }
+        return ApiResult.ok(ordersMapper.findByUserId(uid));
     }
 
     @PostMapping("/{orderId}/cancel")

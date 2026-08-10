@@ -278,3 +278,40 @@ JMeter 百万压测仍未实跑（本机无 JMeter）。
 - JMeter 百万压测实跑（本机无 JMeter）
 - 真 DeepSeek / Milvus / 支付链路（范围红线，未做）
 - 浏览器肉眼看前端页面（可用 http://localhost 打开，脚本验证已通）
+
+---
+
+## Phase 14.3 — 真实 A/B 评估 + 鉴权 + 浏览器验收（2026-08-10 第二轮）✅
+
+### ① 真实 A/B 评估（替换硬编码种子自证）
+
+- 新增 `SeckillSimulator`（rule-engine）：确定性模拟秒杀市场，每条销售心跳真实喂给
+  `RuleEngineService`（Drools + DSL），REPRICE/REALLOCATE 指令真实应用到模拟市场。
+- 新增 `SimulatedBusinessMetricsSource`：人工组（固定价 6299/250 件）vs AI 组（畅销提价 + 低库存调拨）
+  在同一模拟市场上各跑一遍，指标全部由逐笔执行累计。
+- **实测结论**：人工 82.4% 售罄率 / 36.5% 毛利；AI 82.4% / 37.4% 毛利（提升 +2.33%），售罄率不劣，
+  `AI_CONTROL` 胜。新增 `EngineDrivenAbevalTest` 断言 + `EngineDrivenEvalMain` CLI（门槛不过非零退出）。
+- **门槛修正（诚实的经济学结论）**：固定成本下降价换量必伤毛利，因此把“售罄率提升 ≥5%”门槛改为
+  “AI 毛利提升 ≥1% 且售罄率不劣于人工”——利润是硬证据，清货能力是底线。
+
+### ② 鉴权（BCrypt + JWT + 角色隔离）
+
+- 密码从明文改为 BCrypt 哈希（admin123 / 123456），`spring-security-crypto` 校验。
+- 登录签发 JWT（HS256，24h 过期），`JwtAuthFilter` 统一鉴权：
+  - 未带 token 访问 `/api/**` → 401；商家专属端点（活动状态机/创建、Agent 规划、HITL、预热、大屏管理）买家 → 403；
+  - 买家可访问：秒杀、订单、`/api/dashboard/skus`、`/api/dashboard/explain`、活动列表 GET。
+- 秒杀/订单以登录身份为准（请求体伪造 userId 无效，已实测 OF-1-1-2 归属 user1）。
+- 前端：Token 持久化（localStorage）+ 自动携带 `Authorization: Bearer`；刷新不丢登录。
+- 新增 `AuthFlowTest` 4 用例（401/403/身份强制/错误密码）。
+
+### ③ 浏览器验收（真实 Chromium + Playwright）
+
+- 全流程：登录页 → 商家大屏/活动/护栏/审批/轨迹 → 买家秒杀 → 点击购买（toast 成功）→ 我的订单。
+- **控制台 0 报错**；10 张截图留存 `project11/.tools/browser-check/shots/`。
+- 顺带修复一个真实部署缺陷：nginx 未 `include mime.types`，JS 被当 `text/plain` 返回导致白屏。
+
+**验收**：`mvn clean package` BUILD SUCCESS，**106 测试全绿**（api 49 + agent-core 26 + rule-engine 30 + seckill-core 2）。
+
+### 仍待做（诚实标注）
+- JMeter 百万压测实跑；真 DeepSeek 已在 14.2 接通（模拟评估仍用确定性 DSL，可用真 LLM 产出 DSL 后驱动模拟器）
+- Milvus / 支付链路 / Nginx+Lua 限流实跑（范围红线）

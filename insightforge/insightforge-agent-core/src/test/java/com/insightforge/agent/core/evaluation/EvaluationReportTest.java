@@ -26,7 +26,7 @@ class EvaluationReportTest {
 
     @Test
     void gateFailsWhenThresholdsBroken() {
-        // 故意把「售罄率提升」门槛设成不可能的 1000%，看闸门是否拦下
+        // 故意把「毛利率提升」门槛设成不可能的 1000%，看闸门是否拦下
         EvaluationThresholds broken = new EvaluationThresholds(
                 BigDecimal.ONE, BigDecimal.ONE,
                 new BigDecimal("10.0"), new BigDecimal("0.20"), BigDecimal.ONE);
@@ -35,8 +35,8 @@ class EvaluationReportTest {
         assertFalse(report.gatePassed(), "门槛被打破时应判定不通过");
         assertTrue(report.gateFailures().stream().anyMatch(s -> s.contains("golden")),
                 "空 golden 集应触发验收率不足，实际失败原因=" + report.gateFailures());
-        assertTrue(report.gateFailures().stream().anyMatch(s -> s.contains("售罄率")),
-                "不可能的售罄率门槛应触发对应失败原因，实际失败原因=" + report.gateFailures());
+        assertTrue(report.gateFailures().stream().anyMatch(s -> s.contains("毛利率")),
+                "不可能的毛利率门槛应触发对应失败原因，实际失败原因=" + report.gateFailures());
     }
 
     @Test

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
+import { setToken, clearToken } from './token';
 
 export interface UserInfo {
   id: number;
@@ -16,7 +17,14 @@ interface AuthCtx {
 const AuthContext = createContext<AuthCtx>(null!);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<UserInfo | null>(null);
+  const [user, setUser] = useState<UserInfo | null>(() => {
+    try {
+      const raw = localStorage.getItem('insightforge_user');
+      return raw ? (JSON.parse(raw) as UserInfo) : null;
+    } catch {
+      return null;
+    }
+  });
 
   const login = useCallback(async (username: string, password: string) => {
     const resp = await fetch('/api/login', {
@@ -26,12 +34,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     const json = await resp.json();
     if (json.code !== 0) throw new Error(json.message);
-    const u = json.data as UserInfo;
+    const u = json.data as UserInfo & { token: string };
     setUser(u);
+    setToken(u.token);
+    localStorage.setItem('insightforge_user', JSON.stringify(u));
     return u;
   }, []);
 
-  const logout = useCallback(() => setUser(null), []);
+  const logout = useCallback(() => {
+    setUser(null);
+    clearToken();
+    localStorage.removeItem('insightforge_user');
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, login, logout }}>

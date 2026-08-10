@@ -4,10 +4,17 @@
 // 所有类型严格匹配后端 Java record/DTO 的 Jackson 序列化结果。
 // ============================================================
 
+import { getToken } from '../auth/token';
+
 const BASE = '/api';
 
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function get<T>(path: string): Promise<T> {
-  const resp = await fetch(`${BASE}${path}`);
+  const resp = await fetch(`${BASE}${path}`, { headers: authHeaders() });
   const json = await resp.json();
   if (json.code !== 0) throw new Error(json.message || `GET ${path} failed: ${resp.status}`);
   return json.data;
@@ -16,7 +23,7 @@ async function get<T>(path: string): Promise<T> {
 async function post<T>(path: string, body?: unknown): Promise<T> {
   const resp = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: body ? JSON.stringify(body) : undefined,
   });
   const json = await resp.json();
