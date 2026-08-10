@@ -1,7 +1,9 @@
 package com.insightforge.api.auth;
 
 import com.insightforge.persistence.mapper.UserMapper;
+import com.insightforge.persistence.mapper.MerchantMapper;
 import com.insightforge.persistence.entity.User;
+import com.insightforge.persistence.entity.Merchant;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -34,15 +36,18 @@ public class AuthService {
     private static final String DEMO_SECRET = "insightforge-demo-secret-please-override-0123456789";
 
     private final UserMapper userMapper;
+    private final MerchantMapper merchantMapper;
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
     private final SecretKey key;
     private final long ttlHours;
 
     public AuthService(UserMapper userMapper,
+                       MerchantMapper merchantMapper,
                        @Value("${insightforge.auth.jwt-secret}") String secret,
                        @Value("${insightforge.auth.token-ttl-hours:24}") long ttlHours,
                        @Value("${spring.profiles.active:}") String activeProfiles) {
         this.userMapper = userMapper;
+        this.merchantMapper = merchantMapper;
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.ttlHours = ttlHours;
         // 安全收尾：非 local 环境若仍用开发默认密钥，明显告警（生产应注入环境变量）
@@ -57,7 +62,21 @@ public class AuthService {
         if (user == null || user.getPassword() == null || !encoder.matches(rawPassword, user.getPassword())) {
             return Optional.empty();
         }
-        return Optional.of(AuthUser.from(user));
+        return Optional.of(bindMerchant(user));
+    }
+
+    /** 鐢ㄦ埛涓?merchant 琛ㄧ殑 user_id 鍏宠仈锛屾壘鍒板晢瀹惰韩浠藉悗鍐欏叆 AuthUser */
+    private AuthUser bindMerchant(User user) {
+        Long merchantId = null;
+        if (user != null && ("merchant".equals(user.getRole()) || "admin".equals(user.getRole()))) {
+            var m = merchantMapper.selectOne(
+                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<Merchant>()
+                            .eq("user_id", user.getId()));
+            if (m != null) {
+                merchantId = m.getId();
+            }
+        }
+        return new AuthUser(user.getId(), user.getUsername(), user.getRole(), user.getDisplayName(), merchantId);
     }
 
     /**
@@ -93,6 +112,7 @@ public class AuthService {
                 .claim("username", user.username())
                 .claim("role", user.role())
                 .claim("displayName", user.displayName())
+                .claim("merchantId", user.merchantId() == null ? 0L : user.merchantId())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(ttlHours, ChronoUnit.HOURS)))
                 .signWith(key)
@@ -108,7 +128,9 @@ public class AuthService {
                     Long.parseLong(claims.getSubject()),
                     claims.get("username", String.class),
                     claims.get("role", String.class),
-                    claims.get("displayName", String.class)));
+                    claims.get("displayName", String.class),
+                    claims.get("merchantId", Long.class) != null && claims.get("merchantId", Long.class) > 0
+                            ? claims.get("merchantId", Long.class) : null));
         } catch (Exception e) {
             return Optional.empty();
         }

@@ -31,6 +31,14 @@ public final class AuthContextHolder {
         return user.id();
     }
 
+    public static long requireMerchantId() {
+        AuthUser user = CURRENT.get();
+        if (user == null || user.merchantId() == null) {
+            throw new IllegalStateException("no merchant bound");
+        }
+        return user.merchantId();
+    }
+
     public static void clear() {
         CURRENT.remove();
     }

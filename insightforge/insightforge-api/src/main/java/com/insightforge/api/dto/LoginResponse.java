@@ -13,6 +13,7 @@ public class LoginResponse {
     private String username;
     private String role;
     private String displayName;
+    private Long merchantId;
     /** JWT（后续请求放 Authorization: Bearer <token>） */
     private String token;
 
@@ -22,6 +23,7 @@ public class LoginResponse {
         r.setUsername(u.username());
         r.setRole(u.role());
         r.setDisplayName(u.displayName());
+        r.setMerchantId(u.merchantId());
         return r;
     }
 }
