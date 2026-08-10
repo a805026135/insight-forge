@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 /** 用户端商品详情视图：商品 + 商家 + 当前活动秒杀价。 */
 public record ProductDetailView(
         Long id,
+        Long activitySkuId,
         String name,
         String sku,
         BigDecimal marketPrice,

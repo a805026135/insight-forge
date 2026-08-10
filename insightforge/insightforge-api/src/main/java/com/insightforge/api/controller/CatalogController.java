@@ -124,7 +124,9 @@ public class CatalogController {
 
     private ProductDetailView toView(Product p, Merchant m, ActivitySku sku) {
         return new ProductDetailView(
-                p.getId(), p.getName(), p.getSku(), p.getMarketPrice(),
+                p.getId(),
+                sku != null ? sku.getId() : null,
+                p.getName(), p.getSku(), p.getMarketPrice(),
                 sku != null ? sku.getSeckillPrice() : null,
                 p.getImageUrl(), p.getCategory(), p.getDescription(), p.getStatus(),
                 p.getMerchantId(),

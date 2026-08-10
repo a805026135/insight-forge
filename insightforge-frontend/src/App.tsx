@@ -7,13 +7,20 @@ import {
 } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import Login from './pages/Login';
+import HomePage from './pages/user/HomePage';
 import SeckillPage from './pages/user/SeckillPage';
+import ProductDetail from './pages/user/ProductDetail';
+import CartPage from './pages/user/CartPage';
+import CheckoutPage from './pages/user/CheckoutPage';
+import ProfilePage from './pages/user/ProfilePage';
 import OrderHistory from './pages/user/OrderHistory';
 import Dashboard from './pages/merchant/Dashboard';
 import Activities from './pages/merchant/Activities';
 import Guardrails from './pages/merchant/Guardrails';
 import Hitl from './pages/merchant/Hitl';
 import TraceViewer from './pages/merchant/TraceViewer';
+import AgentWorkbench from './pages/merchant/AgentWorkbench';
+import MerchantProducts from './pages/merchant/MerchantProducts';
 import Layout from './components/Layout';
 
 function ProtectedRoute({ children, allowRole }: { children: React.ReactNode; allowRole?: string }) {
@@ -59,8 +66,14 @@ export default function App() {
               </ProtectedRoute>
             }
           >
+            <Route index element={<HomePage />} />
+            <Route path="home" element={<HomePage />} />
             <Route path="seckill" element={<SeckillPage />} />
+            <Route path="product/:id" element={<ProductDetail />} />
+            <Route path="cart" element={<CartPage />} />
+            <Route path="checkout" element={<CheckoutPage />} />
             <Route path="orders" element={<OrderHistory />} />
+            <Route path="profile" element={<ProfilePage />} />
           </Route>
           <Route
             path="/merchant/*"
@@ -71,6 +84,8 @@ export default function App() {
             }
           >
             <Route path="dashboard" element={<Dashboard />} />
+            <Route path="agent" element={<AgentWorkbench />} />
+            <Route path="products" element={<MerchantProducts />} />
             <Route path="activities" element={<Activities />} />
             <Route path="guardrails" element={<Guardrails />} />
             <Route path="hitl" element={<Hitl />} />

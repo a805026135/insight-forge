@@ -2,16 +2,19 @@ import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 
 const MERCHANT_NAV = [
-  { to: '/merchant/dashboard', label: '运营大屏' },
-  { to: '/merchant/activities', label: '活动管理' },
-  { to: '/merchant/guardrails', label: '护栏策略' },
-  { to: '/merchant/hitl', label: '人工审批' },
-  { to: '/merchant/traces', label: '调用轨迹' },
+  { to: '/merchant/agent', label: 'Agent ???' },
+  { to: '/merchant/products', label: '????' },
+  { to: '/merchant/activities', label: '????' },
+  { to: '/merchant/hitl', label: '????' },
+  { to: '/merchant/traces', label: '????' },
 ];
 
 const USER_NAV = [
-  { to: '/user/seckill', label: '秒杀抢购' },
-  { to: '/user/orders', label: '我的订单' },
+  { to: '/user/home', label: '??' },
+  { to: '/user/seckill', label: '????' },
+  { to: '/user/cart', label: '???' },
+  { to: '/user/orders', label: '????' },
+  { to: '/user/profile', label: '????' },
 ];
 
 export default function Layout() {
@@ -30,7 +33,7 @@ export default function Layout() {
   return (
     <div className="app-layout">
       <aside className="sidebar">
-        <Link to={isMerchant ? '/merchant/dashboard' : '/user/seckill'} className="sidebar-brand">
+        <Link to={isMerchant ? '/merchant/dashboard' : '/user/home'} className="sidebar-brand">
           Deal Pulse
         </Link>
         <nav className="sidebar-nav">

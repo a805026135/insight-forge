@@ -31,6 +31,27 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   return json.data;
 }
 
+async function put<T>(path: string, body?: unknown): Promise<T> {
+  const resp = await fetch(`${BASE}${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await resp.json();
+  if (json.code !== 0) throw new Error(json.message || `PUT ${path} failed: ${resp.status}`);
+  return json.data;
+}
+
+async function del<T>(path: string): Promise<T> {
+  const resp = await fetch(`${BASE}${path}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  const json = await resp.json();
+  if (json.code !== 0) throw new Error(json.message || `DELETE ${path} failed: ${resp.status}`);
+  return json.data;
+}
+
 // ---- 秒杀 ----
 export const seckillApi = {
   place: (req: { activityId: number; skuId: number; userId: number; qty: number }) =>
@@ -83,6 +104,53 @@ export const agentApi = {
 };
 
 // ---- 注册 ----
+
+// ---- Phase 17: ???? / ???? / ????? ----
+export const userApi = {
+  addresses: () => get<UserAddress[]>('/user/addresses'),
+  createAddress: (req: UserAddressInput) => post<UserAddress>('/user/addresses', req),
+  updateAddress: (id: number, req: Partial<UserAddressInput>) => put<UserAddress>(`/user/addresses/${id}`, req),
+  deleteAddress: (id: number) => del<void>(`/user/addresses/${id}`),
+  setDefaultAddress: (id: number) => post<UserAddress>(`/user/addresses/${id}/default`),
+  cart: () => get<CartItemView[]>('/user/cart'),
+  addCart: (activitySkuId: number, qty: number) => post<void>('/user/cart', { activitySkuId, qty }),
+  updateCartQty: (id: number, qty: number) => put<void>(`/user/cart/${id}`, { qty }),
+  removeCart: (id: number) => del<void>(`/user/cart/${id}`),
+  checkout: (addressId: number, cartItemIds: number[]) =>
+    post<string>('/user/checkout', { addressId, cartItemIds }),
+  orders: () => get<OrderDetailView[]>('/user/orders'),
+  pay: (orderId: string) => post<void>(`/user/orders/${orderId}/pay`),
+  cancel: (orderId: string) => post<void>(`/user/orders/${orderId}/cancel`),
+  confirm: (orderId: string) => post<void>(`/user/orders/${orderId}/confirm`),
+};
+
+export const catalogApi = {
+  products: (params: { category?: string; keyword?: string; merchantId?: number; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params.category) qs.set('category', params.category);
+    if (params.keyword) qs.set('keyword', params.keyword);
+    if (params.merchantId) qs.set('merchantId', String(params.merchantId));
+    if (params.limit) qs.set('limit', String(params.limit));
+    const s = qs.toString();
+    return get<ProductDetailView[]>(`/catalog/products${s ? '?' + s : ''}`);
+  },
+  detail: (id: number) => get<ProductDetailView>(`/catalog/products/${id}`),
+  categories: () => get<string[]>('/catalog/categories'),
+  merchants: () => get<MerchantView[]>('/catalog/merchants'),
+};
+
+export const merchantApi = {
+  profile: () => get<MerchantView>('/merchant/profile'),
+  overview: () => get<Record<string, number | string>>('/merchant/overview'),
+  products: () => get<MerchantProductView[]>('/merchant/products'),
+  createProduct: (req: MerchantProductInput) => post<MerchantProductView>('/merchant/products', req),
+  updateProduct: (id: number, req: Partial<MerchantProductInput>) =>
+    put<MerchantProductView>(`/merchant/products/${id}`, req),
+  toggleProduct: (id: number) => post<MerchantProductView>(`/merchant/products/${id}/toggle`),
+  deleteProduct: (id: number) => del<void>(`/merchant/products/${id}`),
+  assistant: (question: string) => post<AssistantReply>('/merchant/assistant', { question }),
+};
+
 export const authApi = {
   register: (req: { username: string; password: string; displayName?: string }) =>
     post<{ id: number; username: string; role: string; displayName: string; token: string }>(
@@ -269,4 +337,135 @@ export interface CreateActivityRequest {
     seckillPrice: number;
     totalStock: number;
   }[];
+}
+
+// ============================================================
+// Phase 17 ????
+// ============================================================
+
+export interface UserAddress {
+  id: number;
+  userId: number;
+  receiver: string;
+  phone: string;
+  province: string;
+  city: string;
+  district: string;
+  detail: string;
+  isDefault: boolean;
+  createdAt: string;
+}
+
+export interface UserAddressInput {
+  receiver: string;
+  phone: string;
+  province: string;
+  city: string;
+  district: string;
+  detail: string;
+  isDefault?: boolean;
+}
+
+export interface CartItemView {
+  id: number;
+  activitySkuId: number;
+  productId: number;
+  productName: string;
+  productImage: string;
+  merchantId: number | null;
+  merchantName: string;
+  price: number | null;
+  marketPrice: number | null;
+  qty: number;
+  stock: number | null;
+  sold: number | null;
+  status: string;
+}
+
+export interface OrderItemView {
+  activitySkuId: number;
+  productId: number;
+  productName: string;
+  productImage: string;
+  merchantId: number | null;
+  merchantName: string;
+  qty: number;
+  price: number;
+}
+
+export interface OrderDetailView {
+  orderId: string;
+  status: string;
+  totalAmount: number | null;
+  receiver: string | null;
+  phone: string | null;
+  addressSnapshot: string | null;
+  createdAt: string;
+  shippedAt: string | null;
+  items: OrderItemView[];
+}
+
+export interface ProductDetailView {
+  id: number;
+  activitySkuId: number | null;
+  name: string;
+  sku: string;
+  marketPrice: number | null;
+  seckillPrice: number | null;
+  imageUrl: string;
+  category: string;
+  description: string;
+  status: string;
+  merchantId: number | null;
+  merchantName: string;
+  merchantRating: number | null;
+  merchantSalesCount: number | null;
+  merchantVerified: boolean | null;
+  stock: number | null;
+  sold: number | null;
+}
+
+export interface MerchantView {
+  id: number;
+  userId: number;
+  name: string;
+  logo: string;
+  description: string;
+  rating: number;
+  salesCount: number;
+  verified: boolean;
+  createdAt: string;
+}
+
+export interface MerchantProductView {
+  id: number;
+  name: string;
+  sku: string;
+  costPrice: number | null;
+  marketPrice: number | null;
+  seckillPrice: number | null;
+  imageUrl: string;
+  category: string;
+  description: string;
+  status: string;
+  merchantId: number;
+  merchantName: string;
+  stock: number | null;
+  sold: number | null;
+}
+
+export interface MerchantProductInput {
+  name: string;
+  sku: string;
+  costPrice: number;
+  marketPrice: number;
+  imageUrl?: string;
+  category: string;
+  description?: string;
+}
+
+export interface AssistantReply {
+  answer: string;
+  suggestionType: string | null;
+  suggestionDetail: string | null;
 }
