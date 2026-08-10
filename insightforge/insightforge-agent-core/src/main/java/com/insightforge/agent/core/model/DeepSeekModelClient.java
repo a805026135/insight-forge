@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.function.Consumer;
 
 /**
  * 生产用模型接入：通过 Spring AI 调 DeepSeek（OpenAI 兼容协议）。
@@ -97,5 +98,31 @@ public class DeepSeekModelClient implements ModelClient {
             }
         }
         return ModelResponse.answer(text, tokenIn, tokenOut, latency);
+    }
+
+    /** 流式生成：把模型输出按增量块推给 consumer（用于商家助手打字机效果）。 */
+    public void streamGenerate(ModelRequest req, Consumer<String> consumer) {
+        List<Message> messages = new ArrayList<>();
+        for (ChatMessage m : req.messages()) {
+            switch (m.role()) {
+                case "system" -> messages.add(new SystemMessage(m.content()));
+                case "tool"   -> messages.add(new AssistantMessage(m.content()));
+                default       -> messages.add(new UserMessage(m.content()));
+            }
+        }
+        OpenAiChatOptions options = OpenAiChatOptions.builder()
+                .model(modelName)
+                .temperature(0.2)
+                .build();
+        Prompt prompt = new Prompt(messages, options);
+        chatModel.stream(prompt)
+                .doOnNext(resp -> {
+                    String chunk = resp.getResult() != null && resp.getResult().getOutput() != null
+                            ? resp.getResult().getOutput().getText() : "";
+                    if (chunk != null && !chunk.isEmpty()) {
+                        consumer.accept(chunk);
+                    }
+                })
+                .blockLast();
     }
 }

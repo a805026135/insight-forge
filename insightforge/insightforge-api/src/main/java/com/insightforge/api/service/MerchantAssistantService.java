@@ -1,10 +1,13 @@
 package com.insightforge.api.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.insightforge.agent.core.model.ChatMessage;
 import com.insightforge.agent.core.model.DeepSeekModelClient;
 import com.insightforge.agent.core.model.ModelRequest;
 import com.insightforge.agent.core.model.ModelResponse;
+import com.insightforge.api.dto.AssistantAction;
 import com.insightforge.api.dto.AssistantReply;
 import com.insightforge.persistence.entity.ActivitySku;
 import com.insightforge.persistence.entity.Merchant;
@@ -19,13 +22,17 @@ import com.insightforge.persistence.mapper.ProductMapper;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.function.Consumer;
 
 /**
- * 商家 AI 运营助手（Phase 17）：把商家维度经营数据组装成上下文，交给 ModelClient
- * （生产 = DeepSeek 真实回答；本地 = 确定性模板），返回运营建议。
- * 涉及改价/调拨等执行动作只给「建议」，由 HITL 人工确认后才落地——LLM 不进热路径。
+ * 商家 AI 运营助手（Phase 18）：分析经营数据生成建议，并识别「可执行动作」。
+ * 动作（加库存/上下架/调价）只作为建议返回，由商家在前端批准后调用执行接口落地——LLM 不直接改数据。
  */
 @Service
 public class MerchantAssistantService {
@@ -36,6 +43,9 @@ public class MerchantAssistantService {
     private final ActivitySkuMapper activitySkuMapper;
     private final OrdersMapper ordersMapper;
     private final OrderItemMapper orderItemMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private static final Pattern ACTION_JSON = Pattern.compile("\\{\"action\"\\s*:\\s*\"([A-Z_]+)\"[^}]*}");
 
     public MerchantAssistantService(ObjectProvider<DeepSeekModelClient> deepSeekModelClient,
                                     MerchantMapper merchantMapper,
@@ -53,30 +63,138 @@ public class MerchantAssistantService {
 
     public AssistantReply ask(long merchantId, String question) {
         String context = buildContext(merchantId);
-        String system = """
-                你是一名电商大促运营专家，正在为商家提供经营分析建议。
-                只基于提供的商家经营数据回答，不要编造数据。
-                如果商家询问调价/补货/文案等，给出可执行建议；涉及价格与库存调整时，
-                明确说明"需人工确认后执行"。
-                """;
+        List<AssistantAction> actions = extractActions(merchantId, question);
+        String answer;
+        if (actions.isEmpty()) {
+            answer = generateAnswer(context, question);
+        } else {
+            answer = "我理解你的意图，已准备好以下操作，请确认后执行：\n"
+                    + actions.stream().map(a -> "- " + a.description()).collect(Collectors.joining("\n"));
+        }
+        return new AssistantReply(answer, classifySuggestion(answer), answer, actions);
+    }
+
+    /** 流式回答：DeepSeek 可用时走真实 token 流，否则按确定性回答分块模拟。 */
+    public void askStream(long merchantId, String question, Consumer<String> onChunk) {
+        String context = buildContext(merchantId);
+        DeepSeekModelClient ds = deepSeekModelClient.getIfAvailable();
+        if (ds != null) {
+            ds.streamGenerate(new ModelRequest(
+                    List.of(ChatMessage.system(SYSTEM_PROMPT),
+                            ChatMessage.user(context + "\n\n商家问题：" + question)),
+                    "merchant-assistant",
+                    List.of()), onChunk);
+            return;
+        }
+        String text = deterministicAnswer(context, question);
+        // 按 4 字符分块模拟打字机效果
+        for (int i = 0; i < text.length(); i += 4) {
+            onChunk.accept(text.substring(i, Math.min(i + 4, text.length())));
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+    }
+
+    private String generateAnswer(String context, String question) {
         DeepSeekModelClient ds = deepSeekModelClient.getIfAvailable();
         if (ds != null) {
             ModelResponse resp = ds.generate(new ModelRequest(
-                    List.of(ChatMessage.system(system), ChatMessage.user(context + "\n\n商家问题：" + question)),
+                    List.of(ChatMessage.system(SYSTEM_PROMPT),
+                            ChatMessage.user(context + "\n\n商家问题：" + question)),
                     "merchant-assistant",
                     List.of()));
             if (resp.toolCall() != null) {
-                return new AssistantReply("助手正在分析经营数据，请稍后重试或换一种问法。", null, null);
+                return "助手正在分析经营数据，请稍后重试或换一种问法。";
             }
             String answer = resp.content() == null ? "（无回答）" : resp.content();
-            return new AssistantReply(answer, classifySuggestion(answer), answer);
+            List<AssistantAction> fromLlm = parseLlmActions(answer, context);
+            if (!fromLlm.isEmpty()) {
+                return answer;
+            }
+            return answer;
         }
-        return new AssistantReply(deterministicAnswer(context, question),
-                classifySuggestion(deterministicAnswer(context, question)),
-                deterministicAnswer(context, question));
+        return deterministicAnswer(context, question);
     }
 
-    /** 本地无 DeepSeek 时：基于真实经营数据生成确定性运营建议（不联网、可复现）。 */
+    private static final String SYSTEM_PROMPT = """
+            你是一名电商大促运营专家，正在为商家提供经营分析建议。
+            只基于提供的商家经营数据回答，不要编造数据。
+            如果商家要求执行操作（加库存/上下架/调价），在回答末尾输出 JSON 标记：
+            {"action":"ADD_STOCK","productId":N,"amount":N} /
+            {"action":"TOGGLE_SHELF","productId":N} /
+            {"action":"REPRICE","productId":N,"price":N}
+            同时明确说明"需人工确认后执行"。
+            """;
+
+    /** 从问题文本识别动作意图（加库存/下架/上架/调价）。 */
+    private List<AssistantAction> extractActions(long merchantId, String question) {
+        List<AssistantAction> actions = new ArrayList<>();
+        List<Product> products = productMapper.selectList(
+                new QueryWrapper<Product>().eq("merchant_id", merchantId));
+        // 匹配"给 X 加/补 N 件库存" / "把 X 下架" / "把 X 上架" / "给 X 调到 ¥N"
+        for (Product p : products) {
+            String name = p.getName();
+            if (question.contains(name)) {
+                Matcher m = Pattern.compile("(加|补|增加|调增)\\s*(\\d+)\\s*(件|库存)?").matcher(question);
+                if (m.find()) {
+                    actions.add(new AssistantAction("ADD_STOCK", p.getId(), name,
+                            Integer.parseInt(m.group(2)), null,
+                            "给「" + name + "」增加库存 " + m.group(2) + " 件"));
+                }
+                if (question.contains("下架") || question.contains("停售")) {
+                    actions.add(new AssistantAction("TOGGLE_SHELF", p.getId(), name, null, null,
+                            "将「" + name + "」下架"));
+                }
+                if (question.contains("上架") && !question.contains("下架")) {
+                    actions.add(new AssistantAction("TOGGLE_SHELF", p.getId(), name, null, null,
+                            "将「" + name + "」上架"));
+                }
+                Matcher pm = Pattern.compile("(调到|改成|降价到|定价为)\\s*(?:¥|￥)?\\s*(\\d+(?:\\.\\d+)?)").matcher(question);
+                if (pm.find()) {
+                    actions.add(new AssistantAction("REPRICE", p.getId(), name, null,
+                            new BigDecimal(pm.group(2)),
+                            "将「" + name + "」市场价调整为 ¥" + pm.group(2)));
+                }
+            }
+        }
+        return actions;
+    }
+
+    /** 解析 DeepSeek 回答中的动作 JSON 标记。 */
+    private List<AssistantAction> parseLlmActions(String answer, String context) {
+        List<AssistantAction> actions = new ArrayList<>();
+        Matcher m = ACTION_JSON.matcher(answer == null ? "" : answer);
+        while (m.find()) {
+            try {
+                JsonNode node = objectMapper.readTree(m.group(0));
+                Long productId = node.has("productId") ? node.get("productId").asLong() : null;
+                Product p = productId != null ? productMapper.selectById(productId) : null;
+                if (p == null) {
+                    continue;
+                }
+                String type = node.get("action").asText();
+                Integer amount = node.has("amount") ? node.get("amount").asInt() : null;
+                BigDecimal price = node.has("price") ? node.get("price").decimalValue() : null;
+                String desc = switch (type) {
+                    case "ADD_STOCK" -> "给「" + p.getName() + "」增加库存 " + amount + " 件";
+                    case "TOGGLE_SHELF" -> ("ON_SALE".equals(p.getStatus()) ? "将「" + p.getName() + "」下架"
+                            : "将「" + p.getName() + "」上架");
+                    case "REPRICE" -> "将「" + p.getName() + "」市场价调整为 ¥" + price;
+                    default -> "执行操作";
+                };
+                actions.add(new AssistantAction(type, p.getId(), p.getName(), amount, price, desc));
+            } catch (Exception e) {
+                // 忽略解析失败的动作
+            }
+        }
+        return actions;
+    }
+
+    /** 本地无 DeepSeek 时：基于真实经营数据生成确定性运营建议。 */
     private String deterministicAnswer(String context, String question) {
         boolean pricing = question.contains("调价") || question.contains("价格") || question.contains("降价");
         boolean restock = question.contains("库存") || question.contains("补货") || question.contains("调拨");
@@ -97,7 +215,6 @@ public class MerchantAssistantService {
         return "我看到了你的店铺经营概况（商品、活动库存、已售、订单）。请更具体地告诉我你想了解哪方面：定价、库存、文案还是销售分析？";
     }
 
-    /** 简单识别建议类型：REPRICE / RESTOCK / COPY / ANALYSIS */
     private String classifySuggestion(String answer) {
         String a = answer == null ? "" : answer.toLowerCase();
         if (a.contains("调价") || a.contains("降价") || a.contains("涨价") || a.contains("reprice")) {
@@ -126,8 +243,9 @@ public class MerchantAssistantService {
         long allOrders = ordersMapper.selectCount(new QueryWrapper<>());
 
         String productBrief = products.stream().limit(8)
-                .map(p -> String.format("%s(库存快照见活动SKU, 售价%s)",
-                        p.getName(), p.getMarketPrice() == null ? "-" : p.getMarketPrice()))
+                .map(p -> String.format("%s(库存%s, 售价%s)", p.getName(),
+                        p.getStock() == null ? "-" : p.getStock(),
+                        p.getMarketPrice() == null ? "-" : p.getMarketPrice()))
                 .collect(Collectors.joining("；"));
 
         return String.format("""

@@ -6,11 +6,16 @@ import com.insightforge.api.dto.MerchantProductRequest;
 import com.insightforge.api.dto.MerchantProductView;
 import com.insightforge.api.dto.AssistantReply;
 import com.insightforge.api.service.MerchantAssistantService;
+import com.insightforge.api.service.MerchantActionService;
 import com.insightforge.common.result.ApiResult;
 import com.insightforge.persistence.entity.ActivitySku;
 import com.insightforge.persistence.entity.OrderItem;
 import com.insightforge.persistence.entity.Merchant;
 import com.insightforge.persistence.entity.Orders;
+import com.insightforge.persistence.entity.OrderItem;
+import com.insightforge.api.dto.OrderDetailView;
+import com.insightforge.api.dto.OrderItemView;
+import com.insightforge.seckill.core.state.OrderStatus;
 import com.insightforge.persistence.entity.Product;
 import com.insightforge.persistence.mapper.ActivitySkuMapper;
 import com.insightforge.persistence.mapper.MerchantMapper;
@@ -25,6 +30,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -46,16 +52,19 @@ public class MerchantController {
     private final OrdersMapper ordersMapper;
     private final OrderItemMapper orderItemMapper;
     private final MerchantAssistantService assistantService;
+    private final MerchantActionService actionService;
 
     public MerchantController(MerchantMapper merchantMapper, ProductMapper productMapper,
                               ActivitySkuMapper activitySkuMapper, OrdersMapper ordersMapper,
-                              OrderItemMapper orderItemMapper, MerchantAssistantService assistantService) {
+                              OrderItemMapper orderItemMapper, MerchantAssistantService assistantService,
+                              MerchantActionService actionService) {
         this.merchantMapper = merchantMapper;
         this.productMapper = productMapper;
         this.activitySkuMapper = activitySkuMapper;
         this.ordersMapper = ordersMapper;
         this.orderItemMapper = orderItemMapper;
         this.assistantService = assistantService;
+        this.actionService = actionService;
     }
 
     /** GET /api/merchant/profile 当前商家店铺信息 */
@@ -106,6 +115,59 @@ public class MerchantController {
             return ApiResult.fail(400, "问题不能为空");
         }
         return ApiResult.ok(assistantService.ask(mid, question.trim()));
+    }
+
+    /** POST /api/merchant/assistant/stream 流式问答（SSE，打字机效果） */
+    @PostMapping("/assistant/stream")
+    public SseEmitter assistantStream(@RequestBody Map<String, String> body) {
+        long mid = AuthContextHolder.requireMerchantId();
+        String question = body.get("question");
+        if (question == null || question.isBlank()) {
+            SseEmitter bad = new SseEmitter();
+            try {
+                bad.send(SseEmitter.event().name("error").data("问题不能为空"));
+            } catch (Exception ignored) {
+                // ignore
+            }
+            bad.complete();
+            return bad;
+        }
+        SseEmitter emitter = new SseEmitter(120_000L);
+        Thread t = new Thread(() -> {
+            try {
+                assistantService.askStream(mid, question.trim(),
+                        chunk -> {
+                            try {
+                                emitter.send(SseEmitter.event().name("chunk").data(chunk));
+                            } catch (Exception e) {
+                                throw new RuntimeException(e);
+                            }
+                        });
+                emitter.send(SseEmitter.event().name("done").data(""));
+            } catch (Exception e) {
+                try {
+                    emitter.send(SseEmitter.event().name("error").data(e.getMessage()));
+                } catch (Exception ignored) {
+                    // ignore
+                }
+            } finally {
+                emitter.complete();
+            }
+        });
+        t.setDaemon(true);
+        t.start();
+        return emitter;
+    }
+
+    /** POST /api/merchant/actions/execute 商家批准后执行 Agent 动作 */
+    @PostMapping("/actions/execute")
+    public ApiResult<String> executeAction(@RequestBody Map<String, Object> body) {
+        long mid = AuthContextHolder.requireMerchantId();
+        String type = (String) body.get("type");
+        Long productId = body.get("productId") != null ? ((Number) body.get("productId")).longValue() : null;
+        Integer amount = body.get("amount") != null ? ((Number) body.get("amount")).intValue() : null;
+        BigDecimal price = body.get("price") != null ? new BigDecimal(body.get("price").toString()) : null;
+        return actionService.execute(mid, type, productId, amount, price);
     }
 
     /** GET /api/merchant/products 当前商家的商品列表（只读自己的） */
@@ -192,6 +254,72 @@ public class MerchantController {
         return ApiResult.ok(null);
     }
 
+    /** POST /api/merchant/inventory/{id}/adjust ?????????????? */
+    @PostMapping("/inventory/{id}/adjust")
+    public ApiResult<MerchantProductView> adjustStock(@PathVariable Long id,
+                                                     @RequestBody Map<String, Object> body) {
+        long mid = AuthContextHolder.requireMerchantId();
+        Product p = productMapper.selectById(id);
+        if (p == null || !midEquals(p.getMerchantId(), mid)) {
+            return ApiResult.fail(403, "???????");
+        }
+        int delta = body.get("delta") == null ? 0 : ((Number) body.get("delta")).intValue();
+        int cur = p.getStock() == null ? 0 : p.getStock();
+        if (cur + delta < 0) {
+            return ApiResult.fail(400, "??????");
+        }
+        p.setStock(cur + delta);
+        productMapper.updateById(p);
+        Merchant m = merchantMapper.selectById(mid);
+        return ApiResult.ok(toView(p, mid, m != null ? m.getName() : ""));
+    }
+
+    /** GET /api/merchant/orders ?????????????????? */
+    @GetMapping("/orders")
+    public ApiResult<List<OrderDetailView>> orders() {
+        long mid = AuthContextHolder.requireMerchantId();
+        List<OrderItem> myItems = orderItemMapper.selectList(
+                new QueryWrapper<OrderItem>().eq("merchant_id", mid));
+        if (myItems.isEmpty()) {
+            return ApiResult.ok(List.of());
+        }
+        List<String> orderIds = myItems.stream().map(OrderItem::getOrderId).distinct().collect(Collectors.toList());
+        List<Orders> orders = ordersMapper.selectList(
+                new QueryWrapper<Orders>().in("order_id", orderIds).orderByDesc("created_at"));
+        Map<String, List<OrderItem>> byOrder = myItems.stream()
+                .collect(Collectors.groupingBy(OrderItem::getOrderId));
+        return ApiResult.ok(orders.stream().map(o -> {
+            List<OrderItem> items = byOrder.getOrDefault(o.getOrderId(), List.of());
+            return new OrderDetailView(
+                    o.getOrderId(), o.getStatus(), o.getTotalAmount(), o.getReceiver(), o.getPhone(),
+                    o.getAddressSnapshot(), o.getCreatedAt(), o.getShippedAt(),
+                    items.stream().map(oi -> new OrderItemView(
+                            oi.getActivitySkuId(), oi.getProductId(), oi.getProductName(),
+                            oi.getProductImage(), oi.getMerchantId(), oi.getMerchantName(),
+                            oi.getQty(), oi.getPrice())).collect(Collectors.toList()));
+        }).collect(Collectors.toList()));
+    }
+
+    /** POST /api/merchant/orders/{orderId}/ship ?????PAY ? SHIPPED? */
+    @PostMapping("/orders/{orderId}/ship")
+    public ApiResult<Void> ship(@PathVariable String orderId) {
+        long mid = AuthContextHolder.requireMerchantId();
+        long cnt = orderItemMapper.selectCount(
+                new QueryWrapper<OrderItem>().eq("order_id", orderId).eq("merchant_id", mid));
+        if (cnt == 0) {
+            return ApiResult.fail(403, "???????");
+        }
+        Orders order = ordersMapper.selectOne(new QueryWrapper<Orders>().eq("order_id", orderId));
+        if (order == null) {
+            return ApiResult.fail(404, "?????");
+        }
+        OrderStatus.from(order.getStatus()).transitionTo(OrderStatus.SHIPPED);
+        order.setStatus(OrderStatus.SHIPPED.name());
+        order.setShippedAt(java.time.LocalDateTime.now());
+        ordersMapper.updateById(order);
+        return ApiResult.ok(null);
+    }
+
     private boolean midEquals(Long a, long b) {
         return a != null && a == b;
     }
@@ -200,6 +328,6 @@ public class MerchantController {
         return new MerchantProductView(
                 p.getId(), p.getName(), p.getSku(), p.getCostPrice(), p.getMarketPrice(),
                 null, p.getImageUrl(), p.getCategory(), p.getDescription(), p.getStatus(),
-                mid, merchantName, null, null);
+                mid, merchantName, p.getStock(), null);
     }
 }

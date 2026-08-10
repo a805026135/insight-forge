@@ -1229,3 +1229,231 @@ html, body, #root {
   .cart-item { flex-wrap: wrap; }
   .checkout-footer { flex-wrap: wrap; }
 }
+
+
+/* ============================================================
+   Phase 18: Light theme + markdown + agent panel styles
+   ============================================================ */
+
+/* Light theme variables (toggled via [data-theme="light"]) */
+[data-theme="light"] {
+  --bg-deep: #f5f7fa;
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #eef2f7;
+  --border: #d9e1ec;
+  --border-bright: #b8c6d8;
+  --text-primary: #1a2233;
+  --text-secondary: #4a5568;
+  --text-muted: #8a94a6;
+  --green: #00a854;
+  --green-dim: rgba(0, 168, 84, 0.12);
+  --cyan: #0088aa;
+  --cyan-dim: rgba(0, 136, 170, 0.12);
+  --amber: #b26a00;
+  --amber-dim: rgba(178, 106, 0, 0.12);
+  --red: #d9363e;
+  --red-dim: rgba(217, 54, 62, 0.12);
+  --purple: #5b3fd4;
+  --purple-dim: rgba(91, 63, 212, 0.12);
+}
+
+/* Markdown rendering inside assistant replies */
+.md-body {
+  line-height: 1.8;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.md-body h1, .md-body h2, .md-body h3 {
+  margin: 10px 0 6px;
+  font-weight: 700;
+}
+.md-body ul, .md-body ol {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+.md-body code {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: SFMono-Regular, Consolas, monospace;
+  font-size: 12.5px;
+  color: var(--cyan);
+}
+.md-body pre {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+.md-body pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text-primary);
+}
+.md-body blockquote {
+  border-left: 3px solid var(--green);
+  padding-left: 12px;
+  color: var(--text-secondary);
+  margin: 8px 0;
+}
+.md-body table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  width: 100%;
+}
+.md-body th, .md-body td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+/* Agent action approval cards */
+.action-card {
+  border: 1px solid var(--amber);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 10px 0;
+  background: var(--amber-dim);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.action-card .action-desc {
+  flex: 1;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.action-card button {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: none;
+  background: var(--amber);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.action-card button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Theme toggle button */
+.theme-toggle {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  margin-right: 8px;
+}
+.theme-toggle:hover {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+/* Charts area on dashboard */
+.chart-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+.chart-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.chart-card h4 {
+  font-size: 14px;
+  margin-bottom: 10px;
+  color: var(--text-secondary);
+}
+@media (max-width: 900px) {
+  .chart-grid { grid-template-columns: 1fr; }
+}
+
+/* Dashboard metric tiles (replace antd cards) */
+.metric-tile-big {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+}
+.metric-tile-big::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--green), var(--cyan));
+}
+.metric-tile-big .mt-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.metric-tile-big .mt-value {
+  font-size: 30px;
+  font-weight: 800;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.metric-tile-big .mt-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* Inventory & order management */
+.inv-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 13px;
+}
+.inv-table th {
+  text-align: left;
+  padding: 10px 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-bottom: 1px solid var(--border);
+}
+.inv-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+.inv-table tr:hover td { background: var(--bg-hover); }
+.inv-table input {
+  width: 70px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+}
+.inv-table button {
+  padding: 5px 12px;
+  border: 1px solid var(--border-bright);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12px;
+  margin-right: 4px;
+}
+.inv-table button:hover { border-color: var(--green); color: var(--green); }
+.inv-table button.danger:hover { border-color: var(--red); color: var(--red); }

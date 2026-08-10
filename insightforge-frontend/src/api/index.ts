@@ -64,11 +64,11 @@ export const seckillApi = {
 export const activityApi = {
   list: () => get<ActivityView[]>('/activity'),
   create: (req: CreateActivityRequest) => post<ActivityView>('/activity', req),
-  arm: (id: number) => post<ReconcileReport>(`/activity/${id}/arm`),
+  arm: (id: number) => post<ReconcileSummary>(`/activity/${id}/arm`),
   live: (id: number) => post<void>(`/activity/${id}/live`),
-  settle: (id: number) => post<ReconcileReport>(`/activity/${id}/settle`),
+  settle: (id: number) => post<ReconcileSummary>(`/activity/${id}/settle`),
   close: (id: number) => post<void>(`/activity/${id}/close`),
-  reconcile: (id: number) => get<ReconcileReport>(`/activity/${id}/reconcile`),
+  reconcile: (id: number) => get<ReconcileSummary>(`/activity/${id}/reconcile`),
 };
 
 // ---- 订单 ----
@@ -468,4 +468,20 @@ export interface AssistantReply {
   answer: string;
   suggestionType: string | null;
   suggestionDetail: string | null;
+  actions?: AssistantAction[];
+}
+
+export interface ReconcileSummary {
+  passed: boolean;
+  activityStatus: string;
+  messages: string[];
+}
+
+export interface AssistantAction {
+  type: string;
+  productId: number | null;
+  productName: string;
+  amount: number | null;
+  price: number | null;
+  description: string;
 }

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { activityApi, agentApi, ActivityView, ReconcileItem, AgentPlanResponse } from '../../api';
+import { activityApi, agentApi, ActivityView, AgentPlanResponse } from '../../api';
 
 export default function Activities() {
   const [list, setList] = useState<ActivityView[]>([]);
   const [loading, setLoading] = useState(true);
-  const [items, setItems] = useState<Record<number, ReconcileItem[]>>({});
+  const [items, setItems] = useState<Record<number, string[]>>({});
   const [passed, setPassed] = useState<Record<number, boolean>>({});
   const [msg, setMsg] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -33,7 +33,7 @@ export default function Activities() {
       for (const a of data) {
         try {
           const r = await activityApi.reconcile(a.id);
-          setItems((prev) => ({ ...prev, [a.id]: r.items }));
+          setItems((prev) => ({ ...prev, [a.id]: r.messages }));
           setPassed((prev) => ({ ...prev, [a.id]: r.passed }));
         } catch { /* DRAFT 状态无对账数据，忽略 */ }
       }
@@ -50,7 +50,7 @@ export default function Activities() {
     try {
       const r = await activityApi.arm(id);
       setList((prev) => prev.map((a) => (a.id === id ? { ...a, status: 'ARMED' } : a)));
-      setItems((prev) => ({ ...prev, [id]: r.items }));
+      setItems((prev) => ({ ...prev, [id]: r.messages }));
       setPassed((prev) => ({ ...prev, [id]: r.passed }));
       setMsg(`活动 #${id} 已上线（ARMED）`);
     } catch (ex: any) { setMsg(ex.message); }
@@ -68,7 +68,7 @@ export default function Activities() {
     try {
       const r = await activityApi.settle(id);
       setList((prev) => prev.map((a) => (a.id === id ? { ...a, status: 'SETTLING' } : a)));
-      setItems((prev) => ({ ...prev, [id]: r.items }));
+      setItems((prev) => ({ ...prev, [id]: r.messages }));
       setPassed((prev) => ({ ...prev, [id]: r.passed }));
       setMsg(`活动 #${id} 已结算`);
     } catch (ex: any) { setMsg(ex.message); }
@@ -177,9 +177,7 @@ export default function Activities() {
               </td>
               <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                 {items[a.id]?.map((it, i) => (
-                  <div key={i}>
-                    {it.ok ? '✅' : '❌'} {it.dimension}: {it.detail}
-                  </div>
+                  <div key={i}>{it}</div>
                 ))}
               </td>
               <td style={{ whiteSpace: 'nowrap' }}>

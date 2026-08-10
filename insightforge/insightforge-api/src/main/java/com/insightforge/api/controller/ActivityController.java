@@ -9,6 +9,7 @@ import com.insightforge.persistence.mapper.ActivityMapper;
 import com.insightforge.persistence.mapper.ActivitySkuMapper;
 import com.insightforge.persistence.mapper.ProductMapper;
 import com.insightforge.seckill.core.reconcile.ReconcileReport;
+import com.insightforge.api.dto.ReconcileSummary;
 import com.insightforge.seckill.core.service.ActivityService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -129,8 +130,10 @@ public class ActivityController {
     }
 
     @PostMapping("/{id}/arm")
-    public ApiResult<ReconcileReport> arm(@PathVariable long id) {
-        return activityService.arm(id);
+    public ApiResult<ReconcileSummary> arm(@PathVariable long id) {
+        var r = activityService.arm(id);
+        return r.getData() == null ? ApiResult.fail(r.getCode(), r.getMessage())
+                : ApiResult.ok(toSummary(r.getData()));
     }
 
     @PostMapping("/{id}/live")
@@ -139,8 +142,10 @@ public class ActivityController {
     }
 
     @PostMapping("/{id}/settle")
-    public ApiResult<ReconcileReport> settle(@PathVariable long id) {
-        return activityService.settle(id);
+    public ApiResult<ReconcileSummary> settle(@PathVariable long id) {
+        var r = activityService.settle(id);
+        return r.getData() == null ? ApiResult.fail(r.getCode(), r.getMessage())
+                : ApiResult.ok(toSummary(r.getData()));
     }
 
     @PostMapping("/{id}/close")
@@ -149,7 +154,26 @@ public class ActivityController {
     }
 
     @GetMapping("/{id}/reconcile")
-    public ApiResult<ReconcileReport> reconcile(@PathVariable long id) {
-        return activityService.reconcile(id);
+    public ApiResult<ReconcileSummary> reconcile(@PathVariable long id) {
+        var r = activityService.reconcile(id);
+        return r.getData() == null ? ApiResult.fail(r.getCode(), r.getMessage())
+                : ApiResult.ok(toSummary(r.getData()));
+    }
+
+    /** 把内部对账报告转成商家可读的业务摘要（隐藏 MySQL/Redis 维度）。 */
+    private ReconcileSummary toSummary(ReconcileReport r) {
+        if (r == null) {
+            return new ReconcileSummary(true, "UNKNOWN", List.of("暂无对账数据"));
+        }
+        List<String> messages = new java.util.ArrayList<>();
+        messages.add(r.isPassed() ? "对账通过：库存、销量与台账三方一致"
+                : "对账异常：存在不一致项，请人工介入");
+        r.getItems().stream()
+                .filter(it -> !it.getDimension().startsWith("mysql-redis")
+                        && !it.getDimension().startsWith("db-internal")
+                        && !it.getDimension().startsWith("final-db")
+                        && !it.getDimension().startsWith("final-redis"))
+                .forEach(it -> messages.add((it.isOk() ? "✓ " : "✗ ") + it.getDetail()));
+        return new ReconcileSummary(r.isPassed(), r.getActivityStatus(), messages);
     }
 }

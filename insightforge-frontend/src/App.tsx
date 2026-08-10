@@ -21,6 +21,8 @@ import Hitl from './pages/merchant/Hitl';
 import TraceViewer from './pages/merchant/TraceViewer';
 import AgentWorkbench from './pages/merchant/AgentWorkbench';
 import MerchantProducts from './pages/merchant/MerchantProducts';
+import MerchantInventory from './pages/merchant/MerchantInventory';
+import MerchantOrders from './pages/merchant/MerchantOrders';
 import Layout from './components/Layout';
 
 function ProtectedRoute({ children, allowRole }: { children: React.ReactNode; allowRole?: string }) {
@@ -86,6 +88,8 @@ export default function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="agent" element={<AgentWorkbench />} />
             <Route path="products" element={<MerchantProducts />} />
+            <Route path="inventory" element={<MerchantInventory />} />
+            <Route path="orders" element={<MerchantOrders />} />
             <Route path="activities" element={<Activities />} />
             <Route path="guardrails" element={<Guardrails />} />
             <Route path="hitl" element={<Hitl />} />

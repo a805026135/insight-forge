@@ -2,11 +2,13 @@ import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 
 const MERCHANT_NAV = [
-  { to: '/merchant/agent', label: 'Agent 工作台' },
-  { to: '/merchant/products', label: '商品管理' },
-  { to: '/merchant/activities', label: '活动管理' },
-  { to: '/merchant/hitl', label: '人工审批' },
-  { to: '/merchant/traces', label: '调用轨迹' },
+  { to: '/merchant/agent', label: 'Agent ???' },
+  { to: '/merchant/products', label: '????' },
+  { to: '/merchant/inventory', label: '????' },
+  { to: '/merchant/orders', label: '????' },
+  { to: '/merchant/activities', label: '????' },
+  { to: '/merchant/hitl', label: '????' },
+  { to: '/merchant/traces', label: '????' },
 ];
 
 const USER_NAV = [
@@ -52,6 +54,17 @@ export default function Layout() {
             <span className="user-name">{user?.displayName}</span>
             <span className="user-role">{isMerchant ? '商家' : '买家'}</span>
           </div>
+          <button
+            className="theme-toggle"
+            onClick={() => {
+              const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+              document.documentElement.setAttribute('data-theme', cur);
+              localStorage.setItem('if-theme', cur);
+              window.location.reload();
+            }}
+          >
+            {document.documentElement.getAttribute('data-theme') === 'dark' ? '🌙 深色' : '☀️ 浅色'}
+          </button>
           <button onClick={handleLogout} className="logout-btn">
             退出登录
           </button>
