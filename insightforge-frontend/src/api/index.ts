@@ -35,6 +35,7 @@ export const seckillApi = {
 // ---- 活动状态机 ----
 export const activityApi = {
   list: () => get<ActivityView[]>('/activity'),
+  create: (req: CreateActivityRequest) => post<ActivityView>('/activity', req),
   arm: (id: number) => post<ReconcileReport>(`/activity/${id}/arm`),
   live: (id: number) => post<void>(`/activity/${id}/live`),
   settle: (id: number) => post<ReconcileReport>(`/activity/${id}/settle`),
@@ -53,15 +54,25 @@ export const orderApi = {
 export const dashboardApi = {
   overview: () => get<DashboardSnapshot>('/dashboard/overview'),
   traces: (limit = 20) => get<TraceView[]>(`/dashboard/traces?limit=${limit}`),
+  spans: (traceId: string) => get<SpanView[]>(`/dashboard/traces/${traceId}/spans`),
   hitl: () => get<TraceView[]>('/dashboard/hitl'),
+  approve: (traceId: string) => post<void>(`/dashboard/hitl/${traceId}/approve`),
+  reject: (traceId: string) => post<void>(`/dashboard/hitl/${traceId}/reject`),
   guardrails: (activityId?: number) =>
     get<GuardrailView[]>(
       activityId ? `/dashboard/guardrails?activityId=${activityId}` : '/dashboard/guardrails',
     ),
+  skus: (activityId: number) => get<SkuView[]>(`/dashboard/skus?activityId=${activityId}`),
   explain: (params: Record<string, string>) => {
     const qs = new URLSearchParams(params).toString();
     return get<string>(`/dashboard/explain?${qs}`);
   },
+};
+
+// ---- Agent 控制面 ----
+export const agentApi = {
+  plan: (req: { activityId: number; goal: string }) =>
+    post<AgentPlanResponse>('/agent/plan', req),
 };
 
 // ============================================================
@@ -150,6 +161,8 @@ export interface TraceView {
   modelVersion: string;
   /** 运营可读结论（如「规划成功并落库策略」「主动询问运营（正确失败）」） */
   verdict: string;
+  /** HITL 审批结果：null=未复核 / APPROVED=已通过 / REJECTED=已驳回 */
+  reviewStatus: string | null;
 }
 
 /** 护栏策略视图 —— 匹配 GuardrailView.java (record) */
@@ -170,4 +183,65 @@ export interface OrderView {
   qty: number;
   status: string;
   createdAt: string;
+}
+
+/** Span 视图 —— 匹配 SpanView.java (record) */
+export interface SpanView {
+  spanId: string;
+  traceId: string;
+  parentSpanId: string | null;
+  role: string;
+  stepName: string;
+  toolName: string | null;
+  toolInput: string | null;
+  toolOutput: string | null;
+  tokenIn: number;
+  tokenOut: number;
+  latencyMs: number;
+  retryCount: number;
+  status: string;
+  confidence: number | null;
+  artifactRef: string | null;
+}
+
+/** SKU 视图 —— 匹配 SkuView.java (record) */
+export interface SkuView {
+  skuId: number;
+  activitySkuId: number;
+  activityId: number;
+  productName: string;
+  skuCode: string;
+  seckillPrice: number;
+  costPrice: number | null;
+  totalStock: number;
+  stock: number;
+  sold: number;
+}
+
+/** Agent 规划响应 —— 匹配 AgentPlanResponse.java (record) */
+export interface AgentPlanResponse {
+  traceId: string;
+  status: string;
+  failureKind: string | null;
+  correctFailure: boolean;
+  publishedVersion: string | null;
+  totalLatencyMs: number;
+  verdict: string;
+}
+
+/** 创建活动请求 —— 匹配 CreateActivityRequest.java (record) */
+export interface CreateActivityRequest {
+  name: string;
+  targetGmv: number;
+  targetRoi: number;
+  startAt: string;
+  endAt: string;
+  skus: {
+    productId: number | null;
+    productName: string;
+    skuCode: string;
+    costPrice: number;
+    seckillPrice: number;
+    totalStock: number;
+  }[];
 }

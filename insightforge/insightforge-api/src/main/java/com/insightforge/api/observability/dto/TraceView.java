@@ -22,7 +22,9 @@ public record TraceView(
         BigDecimal budgetCostUsd,
         String modelVersion,
         /** 人话 verdict，如「主动询问运营（正确失败）」 */
-        String verdict
+        String verdict,
+        /** HITL 审批结果：null=未复核 / APPROVED=已通过 / REJECTED=已驳回 */
+        String reviewStatus
 ) {
 
     /** 把数据库里的三态 + failureKind 翻译成运营能秒懂的结论。 */

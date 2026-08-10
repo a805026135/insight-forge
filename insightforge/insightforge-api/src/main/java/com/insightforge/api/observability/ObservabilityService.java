@@ -4,15 +4,21 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.insightforge.persistence.entity.Activity;
 import com.insightforge.persistence.entity.ActivitySku;
 import com.insightforge.persistence.entity.AgentTrace;
+import com.insightforge.persistence.entity.AgentSpan;
 import com.insightforge.persistence.entity.GuardrailPolicyEntity;
 import com.insightforge.persistence.entity.Orders;
+import com.insightforge.persistence.entity.Product;
 import com.insightforge.persistence.mapper.ActivityMapper;
 import com.insightforge.persistence.mapper.ActivitySkuMapper;
 import com.insightforge.persistence.mapper.AgentTraceMapper;
+import com.insightforge.persistence.mapper.AgentSpanMapper;
 import com.insightforge.persistence.mapper.GuardrailPolicyMapper;
 import com.insightforge.persistence.mapper.OrdersMapper;
+import com.insightforge.persistence.mapper.ProductMapper;
 import com.insightforge.api.observability.dto.DashboardSnapshot;
 import com.insightforge.api.observability.dto.GuardrailView;
+import com.insightforge.api.observability.dto.SpanView;
+import com.insightforge.api.observability.dto.SkuView;
 import com.insightforge.api.observability.dto.TraceView;
 import org.springframework.stereotype.Service;
 
@@ -44,18 +50,24 @@ public class ObservabilityService {
     private final ActivitySkuMapper activitySkuMapper;
     private final OrdersMapper ordersMapper;
     private final AgentTraceMapper agentTraceMapper;
+    private final AgentSpanMapper agentSpanMapper;
     private final GuardrailPolicyMapper guardrailPolicyMapper;
+    private final ProductMapper productMapper;
 
     public ObservabilityService(ActivityMapper activityMapper,
                                 ActivitySkuMapper activitySkuMapper,
                                 OrdersMapper ordersMapper,
                                 AgentTraceMapper agentTraceMapper,
-                                GuardrailPolicyMapper guardrailPolicyMapper) {
+                                AgentSpanMapper agentSpanMapper,
+                                GuardrailPolicyMapper guardrailPolicyMapper,
+                                ProductMapper productMapper) {
         this.activityMapper = activityMapper;
         this.activitySkuMapper = activitySkuMapper;
         this.ordersMapper = ordersMapper;
         this.agentTraceMapper = agentTraceMapper;
+        this.agentSpanMapper = agentSpanMapper;
         this.guardrailPolicyMapper = guardrailPolicyMapper;
+        this.productMapper = productMapper;
     }
 
     // ============ 计数方法（同时供 Prometheus Gauge 复用，见 MetricsConfig） ============
@@ -203,6 +215,64 @@ public class ObservabilityService {
         return result;
     }
 
+    // ============================ Span 树 / HITL / SKU ============================
+
+    /** 某条 trace 的全部 span（按 span_id 排序，前端可据 parentSpanId 构建树）。 */
+    public List<SpanView> spansByTrace(String traceId) {
+        List<AgentSpan> spans = agentSpanMapper.selectList(
+                new QueryWrapper<AgentSpan>().eq("trace_id", traceId).orderByAsc("span_id"));
+        return spans.stream().map(s -> new SpanView(
+                s.getSpanId(), s.getTraceId(), s.getParentSpanId(), s.getRole(),
+                s.getStepName(), s.getToolName(), s.getToolInput(), s.getToolOutput(),
+                s.getTokenIn(), s.getTokenOut(), s.getLatencyMs(), s.getRetryCount(),
+                s.getStatus(), s.getConfidence(), s.getArtifactRef()
+        )).collect(Collectors.toList());
+    }
+
+    /** HITL 审批通过：标记 trace 为 APPROVED。 */
+    public void approveTrace(String traceId) {
+        AgentTrace trace = agentTraceMapper.selectById(traceId);
+        if (trace == null) {
+            throw new IllegalArgumentException("Trace 不存在: " + traceId);
+        }
+        trace.setReviewStatus("APPROVED");
+        agentTraceMapper.updateById(trace);
+    }
+
+    /** HITL 审批驳回：标记 trace 为 REJECTED。 */
+    public void rejectTrace(String traceId) {
+        AgentTrace trace = agentTraceMapper.selectById(traceId);
+        if (trace == null) {
+            throw new IllegalArgumentException("Trace 不存在: " + traceId);
+        }
+        trace.setReviewStatus("REJECTED");
+        agentTraceMapper.updateById(trace);
+    }
+
+    /** 列出某活动下的全部 SKU（含商品名/成本价，给前端秒杀商品列表用）。 */
+    public List<SkuView> skusByActivity(Long activityId) {
+        List<ActivitySku> skuList = activitySkuMapper.selectList(
+                new QueryWrapper<ActivitySku>().eq("activity_id", activityId));
+        if (skuList.isEmpty()) {
+            return List.of();
+        }
+        // 批量查关联的 product
+        List<Long> productIds = skuList.stream().map(ActivitySku::getSkuId).distinct().collect(Collectors.toList());
+        Map<Long, Product> productMap = productMapper.selectBatchIds(productIds).stream()
+                .collect(Collectors.toMap(Product::getId, p -> p));
+        return skuList.stream().map(s -> {
+            Product p = productMap.get(s.getSkuId());
+            return new SkuView(
+                    s.getSkuId(), s.getId(), s.getActivityId(),
+                    p != null ? p.getName() : "未知商品",
+                    p != null ? p.getSku() : "",
+                    s.getSeckillPrice(),
+                    p != null ? p.getCostPrice() : null,
+                    s.getTotalStock(), s.getStock(), s.getSold()
+            );
+        }).collect(Collectors.toList());
+    }
+
     // ============================ 内部工具 ============================
 
     private TraceView toView(AgentTrace t) {
@@ -210,7 +280,8 @@ public class ObservabilityService {
                 t.getTraceId(), t.getActivityId(), t.getStatus(), t.getFailureKind(),
                 t.getCorrectFailure(), t.getStartedAt(), t.getFinishedAt(),
                 t.getTotalLatencyMs(), t.getBudgetCostUsd(), t.getModelVersion(),
-                TraceView.toVerdict(t.getStatus(), t.getFailureKind()));
+                TraceView.toVerdict(t.getStatus(), t.getFailureKind()),
+                t.getReviewStatus());
     }
 
     /** 从 policy_json 确定性推导最高风险（不依赖 DSL 类型）。 */

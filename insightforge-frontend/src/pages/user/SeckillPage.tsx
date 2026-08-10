@@ -1,42 +1,26 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
-import { seckillApi } from '../../api';
-
-interface Product {
-  skuId: number;
-  name: string;
-  price: number;
-  stock: number;
-  totalStock: number;
-  sold: number;
-}
-
-const MOCK_PRODUCTS: Omit<Product, 'stock' | 'sold'>[] = [
-  { skuId: 1, name: 'iPhone 16 秒杀款', price: 6299, totalStock: 100 },
-];
+import { seckillApi, dashboardApi, SkuView } from '../../api';
 
 export default function SeckillPage() {
   const { user } = useAuth();
-  const [products, setProducts] = useState<Product[]>([]);
+  const [skus, setSkus] = useState<SkuView[]>([]);
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState<number | null>(null);
   const [orderId, setOrderId] = useState('');
 
   useEffect(() => {
-    loadStock();
+    loadSkus();
   }, []);
 
-  const loadStock = async () => {
-    const list: Product[] = [];
-    for (const p of MOCK_PRODUCTS) {
-      try {
-        const info = await seckillApi.stock(p.skuId);
-        list.push({ ...p, stock: info.stock, sold: info.sold });
-      } catch {
-        list.push({ ...p, stock: p.totalStock, sold: 0 });
-      }
+  const loadSkus = async () => {
+    try {
+      // 从后端动态加载活动 1 的全部 SKU（含商品名/价格/库存）
+      const list = await dashboardApi.skus(1);
+      setSkus(list);
+    } catch {
+      setMsg('加载商品列表失败，请检查后端是否启动');
     }
-    setProducts(list);
   };
 
   const handleSeckill = async (skuId: number) => {
@@ -52,7 +36,7 @@ export default function SeckillPage() {
       });
       setOrderId(oid);
       setMsg(`抢购成功！订单号：${oid}`);
-      await loadStock();
+      await loadSkus();
     } catch (ex: any) {
       setMsg(ex.message || '抢购失败');
     } finally {
@@ -65,10 +49,10 @@ export default function SeckillPage() {
       <h2>限时秒杀</h2>
       <p className="welcome">欢迎，{user?.displayName}！</p>
       <div className="product-grid">
-        {products.map((p) => (
+        {skus.map((p) => (
           <div key={p.skuId} className="product-card">
-            <h3>{p.name}</h3>
-            <div className="price">¥{p.price}</div>
+            <h3>{p.productName}</h3>
+            <div className="price">¥{p.seckillPrice}</div>
             <div className="stock-bar">
               <div
                 className="stock-fill"
@@ -91,6 +75,7 @@ export default function SeckillPage() {
           </div>
         ))}
       </div>
+      {skus.length === 0 && !msg && <p className="hint">加载商品中...</p>}
       {msg && (
         <div className={`toast ${orderId ? 'success' : 'error'}`}>
           {msg}
@@ -100,7 +85,7 @@ export default function SeckillPage() {
                 await fetch(`/api/order/${orderId}/cancel`, { method: 'POST' });
                 setMsg('订单已取消，库存已回补');
                 setOrderId('');
-                await loadStock();
+                await loadSkus();
               } catch (ex: any) {
                 setMsg(`取消失败：${ex.message}`);
               }

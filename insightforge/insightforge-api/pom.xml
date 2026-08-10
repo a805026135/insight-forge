@@ -28,6 +28,12 @@
             <artifactId>insightforge-seckill-core</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- Agent 控制面：让 api 模块能直接触发 MultiAgentOrchestrator 离线规划 -->
+        <dependency>
+            <groupId>com.insightforge</groupId>
+            <artifactId>insightforge-agent-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>

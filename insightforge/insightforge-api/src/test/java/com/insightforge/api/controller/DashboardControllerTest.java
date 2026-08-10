@@ -62,7 +62,7 @@ class DashboardControllerTest {
     @Test
     void tracesReturnsList() throws Exception {
         TraceView v = new TraceView("t1", 1L, "SUCCESS", null, false, null, null,
-                100L, null, "local", "规划成功并落库策略");
+                100L, null, "local", "规划成功并落库策略", null);
         when(observabilityService.recentTraces(20)).thenReturn(List.of(v));
 
         mockMvc.perform(get("/api/dashboard/traces?limit=20"))

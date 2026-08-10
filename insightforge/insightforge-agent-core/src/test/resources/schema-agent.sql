@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS agent_trace (
     budget_tokens    INT,
     budget_cost_usd  DECIMAL(10,4),
     total_latency_ms BIGINT,
-    correct_failure  BOOLEAN
+    correct_failure  BOOLEAN,
+    review_status    VARCHAR(32)
 );
 
 CREATE TABLE IF NOT EXISTS agent_span (

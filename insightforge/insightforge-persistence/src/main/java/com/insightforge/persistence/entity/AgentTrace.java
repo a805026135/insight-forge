@@ -48,4 +48,7 @@ public class AgentTrace {
 
     /** 冗余字段，便于聚合正确失败率（设计文档 §1） */
     private Boolean correctFailure;
+
+    /** HITL 审批结果：null=未复核 / APPROVED=已通过 / REJECTED=已驳回 */
+    private String reviewStatus;
 }

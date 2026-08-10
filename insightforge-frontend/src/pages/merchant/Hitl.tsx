@@ -4,23 +4,49 @@ import { dashboardApi, TraceView } from '../../api';
 export default function Hitl() {
   const [list, setList] = useState<TraceView[]>([]);
   const [err, setErr] = useState('');
+  const [actionMsg, setActionMsg] = useState('');
 
-  useEffect(() => {
+  const refresh = () => {
     dashboardApi.hitl()
       .then(setList)
       .catch((e) => setErr(e.message));
+  };
+
+  useEffect(() => {
+    refresh();
   }, []);
 
-  const statusLabel = (t: TraceView) => {
-    if (t.status === 'SUCCESS') return '✅ 成功';
-    if (t.status === 'CORRECT_FAILURE') return '⚠️ 正确失败';
-    return '❌ 失败';
+  const handleApprove = async (traceId: string) => {
+    try {
+      await dashboardApi.approve(traceId);
+      setActionMsg(`Trace ${traceId.slice(0, 8)}... 已通过审批`);
+      refresh();
+    } catch (ex: any) {
+      setActionMsg(`审批失败：${ex.message}`);
+    }
+  };
+
+  const handleReject = async (traceId: string) => {
+    try {
+      await dashboardApi.reject(traceId);
+      setActionMsg(`Trace ${traceId.slice(0, 8)}... 已驳回`);
+      refresh();
+    } catch (ex: any) {
+      setActionMsg(`驳回失败：${ex.message}`);
+    }
+  };
+
+  const reviewLabel = (t: TraceView) => {
+    if (t.reviewStatus === 'APPROVED') return '已通过';
+    if (t.reviewStatus === 'REJECTED') return '已驳回';
+    return '待审批';
   };
 
   return (
     <div className="page">
       <h2>人工审批队列</h2>
       {err && <div className="error">{err}</div>}
+      {actionMsg && <div className="toast success">{actionMsg}</div>}
       {list.length === 0 && !err && <p>当前无待审批任务</p>}
       <table className="order-table">
         <thead>
@@ -30,7 +56,8 @@ export default function Hitl() {
             <th>结论</th>
             <th>耗时</th>
             <th>时间</th>
-            <th>审批</th>
+            <th>审批状态</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
@@ -44,8 +71,24 @@ export default function Hitl() {
               <td>{t.totalLatencyMs}ms</td>
               <td>{t.startedAt}</td>
               <td>
-                <button onClick={() => alert('审批通过（演示：无实际操作）')}>通过</button>
-                <button className="danger" onClick={() => alert('已驳回（演示）')}>驳回</button>
+                <span className={`review-badge review-${t.reviewStatus?.toLowerCase() || 'pending'}`}>
+                  {reviewLabel(t)}
+                </span>
+              </td>
+              <td>
+                <button
+                  onClick={() => handleApprove(t.traceId)}
+                  disabled={t.reviewStatus !== null}
+                >
+                  通过
+                </button>
+                <button
+                  className="danger"
+                  onClick={() => handleReject(t.traceId)}
+                  disabled={t.reviewStatus !== null}
+                >
+                  驳回
+                </button>
               </td>
             </tr>
           ))}
