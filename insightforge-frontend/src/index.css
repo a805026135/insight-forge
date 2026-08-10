@@ -774,7 +774,7 @@ html, body, #root {
   background: var(--green-dim);
 }
 
-/* ??? */
+/*  */
 .hot-section { margin-bottom: 24px; }
 .hot-section h3, .section-title { font-size: 18px; margin-bottom: 14px; }
 .hot-strip {
@@ -826,7 +826,7 @@ html, body, #root {
 }
 .hot-price { color: var(--red); font-weight: 700; }
 
-/* ??????? */
+/*  */
 .merchant-tag {
   font-size: 12px;
   color: var(--text-muted);
@@ -834,7 +834,7 @@ html, body, #root {
 }
 .product-link { text-decoration: none; color: inherit; }
 
-/* ???? */
+/*  */
 .product-detail { padding-top: 8px; }
 .detail-layout {
   display: grid;
@@ -902,7 +902,7 @@ html, body, #root {
 }
 .detail-actions .btn-buy { background: var(--amber); }
 
-/* ??? */
+/*  */
 .cart-list { display: flex; flex-direction: column; gap: 12px; }
 .cart-item {
   display: flex;
@@ -959,7 +959,7 @@ html, body, #root {
 }
 .cart-total { font-size: 22px; font-weight: 800; color: var(--red); margin-right: auto; }
 
-/* ??? */
+/*  */
 .checkout-section {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -1014,7 +1014,7 @@ html, body, #root {
   cursor: pointer;
 }
 
-/* ???? */
+/*  */
 .profile-tabs {
   display: flex;
   gap: 8px;
@@ -1123,7 +1123,7 @@ html, body, #root {
 .form-grid input:focus { border-color: var(--green); }
 .default-check { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; color: var(--text-secondary); font-size: 13px; }
 
-/* ????? */
+/*  */
 .agent-workbench .assistant-panel {
   margin-top: 20px;
   background: var(--bg-card);
@@ -1182,7 +1182,7 @@ html, body, #root {
   font-weight: 700;
 }
 
-/* ?????? */
+/*  */
 .merchant-product-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -1218,7 +1218,7 @@ html, body, #root {
 }
 .mp-actions button.danger:hover { border-color: var(--red); color: var(--red); }
 
-/* ????? */
+/*  */
 @media (max-width: 900px) {
   .detail-layout { grid-template-columns: 1fr; }
   .hero-banner { padding: 32px 20px; }

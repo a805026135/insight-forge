@@ -105,7 +105,7 @@ export const agentApi = {
 
 // ---- 注册 ----
 
-// ---- Phase 17: ???? / ???? / ????? ----
+// ---- Phase 17: 用户中心 / 商品目录 / 商家工作台 ----
 export const userApi = {
   addresses: () => get<UserAddress[]>('/user/addresses'),
   createAddress: (req: UserAddressInput) => post<UserAddress>('/user/addresses', req),
@@ -340,7 +340,7 @@ export interface CreateActivityRequest {
 }
 
 // ============================================================
-// Phase 17 ????
+// Phase 17 新增类型
 // ============================================================
 
 export interface UserAddress {

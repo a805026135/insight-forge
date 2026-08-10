@@ -2,19 +2,19 @@ import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 
 const MERCHANT_NAV = [
-  { to: '/merchant/agent', label: 'Agent ???' },
-  { to: '/merchant/products', label: '????' },
-  { to: '/merchant/activities', label: '????' },
-  { to: '/merchant/hitl', label: '????' },
-  { to: '/merchant/traces', label: '????' },
+  { to: '/merchant/agent', label: 'Agent 工作台' },
+  { to: '/merchant/products', label: '商品管理' },
+  { to: '/merchant/activities', label: '活动管理' },
+  { to: '/merchant/hitl', label: '人工审批' },
+  { to: '/merchant/traces', label: '调用轨迹' },
 ];
 
 const USER_NAV = [
-  { to: '/user/home', label: '??' },
-  { to: '/user/seckill', label: '????' },
-  { to: '/user/cart', label: '???' },
-  { to: '/user/orders', label: '????' },
-  { to: '/user/profile', label: '????' },
+  { to: '/user/home', label: '首页' },
+  { to: '/user/seckill', label: '限时秒杀' },
+  { to: '/user/cart', label: '购物车' },
+  { to: '/user/orders', label: '我的订单' },
+  { to: '/user/profile', label: '个人中心' },
 ];
 
 export default function Layout() {
