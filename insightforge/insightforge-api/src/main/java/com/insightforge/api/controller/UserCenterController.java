@@ -35,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -172,16 +173,25 @@ public class UserCenterController {
         }
         List<Long> productIds = items.stream().map(CartItem::getProductId)
                 .filter(java.util.Objects::nonNull).distinct().collect(Collectors.toList());
-        Map<Long, Product> productMap = productIds.isEmpty() ? Map.of()
-                : productMapper.selectBatchIds(productIds).stream().collect(Collectors.toMap(Product::getId, p -> p));
+        Map<Long, Product> productMap = new HashMap<>();
+        if (!productIds.isEmpty()) {
+            productMapper.selectBatchIds(productIds)
+                    .forEach(p -> productMap.put(p.getId(), p));
+        }
         List<Long> skuIds = items.stream().map(CartItem::getActivitySkuId)
                 .filter(java.util.Objects::nonNull).distinct().collect(Collectors.toList());
-        Map<Long, ActivitySku> skuMap = skuIds.isEmpty() ? Map.of()
-                : activitySkuMapper.selectBatchIds(skuIds).stream().collect(Collectors.toMap(ActivitySku::getId, s -> s));
+        Map<Long, ActivitySku> skuMap = new HashMap<>();
+        if (!skuIds.isEmpty()) {
+            activitySkuMapper.selectBatchIds(skuIds)
+                    .forEach(s -> skuMap.put(s.getId(), s));
+        }
         List<Long> merchantIds = productMap.values().stream().map(Product::getMerchantId)
                 .filter(java.util.Objects::nonNull).distinct().collect(Collectors.toList());
-        Map<Long, Merchant> merchantMap = merchantIds.isEmpty() ? Map.of()
-                : merchantMapper.selectBatchIds(merchantIds).stream().collect(Collectors.toMap(Merchant::getId, m -> m));
+        Map<Long, Merchant> merchantMap = new HashMap<>();
+        if (!merchantIds.isEmpty()) {
+            merchantMapper.selectBatchIds(merchantIds)
+                    .forEach(m -> merchantMap.put(m.getId(), m));
+        }
 
         return ApiResult.ok(items.stream().map(ci -> {
             ActivitySku sku = skuMap.get(ci.getActivitySkuId());
