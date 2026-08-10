@@ -11,6 +11,7 @@ export interface UserInfo {
 interface AuthCtx {
   user: UserInfo | null;
   login: (username: string, password: string) => Promise<UserInfo>;
+  register: (username: string, password: string, displayName?: string) => Promise<UserInfo>;
   logout: () => void;
 }
 
@@ -41,6 +42,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return u;
   }, []);
 
+  const register = useCallback(
+    async (username: string, password: string, displayName?: string) => {
+      const resp = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, displayName }),
+      });
+      const json = await resp.json();
+      if (json.code !== 0) throw new Error(json.message);
+      const u = json.data as UserInfo & { token: string };
+      setUser(u);
+      setToken(u.token);
+      localStorage.setItem('insightforge_user', JSON.stringify(u));
+      return u;
+    },
+    [],
+  );
+
   const logout = useCallback(() => {
     setUser(null);
     clearToken();
@@ -48,7 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

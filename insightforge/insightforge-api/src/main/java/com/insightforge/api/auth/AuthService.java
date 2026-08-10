@@ -1,6 +1,7 @@
 package com.insightforge.api.auth;
 
 import com.insightforge.persistence.mapper.UserMapper;
+import com.insightforge.persistence.entity.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -57,6 +58,31 @@ public class AuthService {
             return Optional.empty();
         }
         return Optional.of(AuthUser.from(user));
+    }
+
+    /**
+     * 注册（Phase 16）：BCrypt 加密入库，只开放买家身份。
+     * 业务校验失败抛 IllegalArgumentException，由 Controller 转成 400。
+     */
+    public AuthUser register(String username, String rawPassword, String displayName) {
+        String name = username == null ? "" : username.trim();
+        if (name.length() < 3 || name.length() > 32) {
+            throw new IllegalArgumentException("用户名需为 3~32 个字符");
+        }
+        if (rawPassword == null || rawPassword.length() < 6 || rawPassword.length() > 64) {
+            throw new IllegalArgumentException("密码需为 6~64 位");
+        }
+        if (userMapper.findByUsername(name) != null) {
+            throw new IllegalArgumentException("用户名已存在，请换一个");
+        }
+        User u = new User();
+        u.setUsername(name);
+        u.setPassword(encoder.encode(rawPassword));
+        u.setRole("user");
+        u.setDisplayName(displayName == null || displayName.isBlank() ? name : displayName.trim());
+        userMapper.insert(u);
+        log.info("新用户注册：{}（id={}）", name, u.getId());
+        return AuthUser.from(u);
     }
 
     /** 签发 JWT。 */

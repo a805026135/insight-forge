@@ -107,4 +107,44 @@ class AuthFlowTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(403));
     }
+
+    @Test
+    void registerCreatesBuyerAndAutoLogin() throws Exception {
+        mockMvc.perform(post("/api/register")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"username\":\"newbuyer\",\"password\":\"pass123\",\"displayName\":\"新买家\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.username").value("newbuyer"))
+                .andExpect(jsonPath("$.data.role").value("user"))
+                .andExpect(jsonPath("$.data.displayName").value("新买家"))
+                .andExpect(jsonPath("$.data.token").isNotEmpty());
+
+        // 注册后即可用新账号登录
+        String token = login("newbuyer", "pass123");
+        mockMvc.perform(get("/api/activity").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void registerRejectsDuplicateAndWeakPassword() throws Exception {
+        // 用户名已存在 → 400
+        mockMvc.perform(post("/api/register")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"username\":\"user1\",\"password\":\"pass123\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(400));
+        // 密码太短 → 400
+        mockMvc.perform(post("/api/register")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"username\":\"brandnew\",\"password\":\"123\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(400));
+        // 用户名太短 → 400
+        mockMvc.perform(post("/api/register")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"username\":\"ab\",\"password\":\"pass123\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(400));
+    }
 }

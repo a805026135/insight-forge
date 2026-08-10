@@ -2,6 +2,7 @@ package com.insightforge.api.controller;
 
 import com.insightforge.api.dto.LoginRequest;
 import com.insightforge.api.dto.LoginResponse;
+import com.insightforge.api.dto.RegisterRequest;
 import com.insightforge.api.auth.AuthService;
 import com.insightforge.api.auth.AuthUser;
 import com.insightforge.common.result.ApiResult;
@@ -45,5 +46,20 @@ public class LoginController {
         LoginResponse resp = LoginResponse.from(user);
         resp.setToken(authService.issueToken(user));
         return ApiResult.ok(resp);
+    }
+
+    /**
+     * POST /api/register  用户名 + 密码 + 昵称 → 创建买家账号并直接签发 JWT
+     */
+    @PostMapping("/register")
+    public ApiResult<LoginResponse> register(@RequestBody RegisterRequest req) {
+        try {
+            var user = authService.register(req.getUsername(), req.getPassword(), req.getDisplayName());
+            LoginResponse resp = LoginResponse.from(user);
+            resp.setToken(authService.issueToken(user));
+            return ApiResult.ok(resp);
+        } catch (IllegalArgumentException e) {
+            return ApiResult.fail(400, e.getMessage());
+        }
     }
 }

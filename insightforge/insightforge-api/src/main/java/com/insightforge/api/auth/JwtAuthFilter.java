@@ -40,7 +40,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
 
         // 公开路径
-        if ("/api/login".equals(path) || path.startsWith("/actuator") || !path.startsWith("/api/")) {
+        if ("/api/login".equals(path) || "/api/register".equals(path)
+                || path.startsWith("/actuator") || !path.startsWith("/api/")) {
             filterChain.doFilter(request, response);
             return;
         }

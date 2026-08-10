@@ -82,6 +82,15 @@ export const agentApi = {
     post<AgentPlanResponse>('/agent/plan', req),
 };
 
+// ---- 注册 ----
+export const authApi = {
+  register: (req: { username: string; password: string; displayName?: string }) =>
+    post<{ id: number; username: string; role: string; displayName: string; token: string }>(
+      '/register',
+      req,
+    ),
+};
+
 // ============================================================
 // 类型定义 —— 严格匹配后端 Java record/DTO 的 Jackson 序列化
 // ============================================================
@@ -194,6 +203,9 @@ export interface OrderView {
   price: number | null;
   status: string;
   createdAt: string;
+  productName: string;
+  productImage: string;
+  activityName: string;
 }
 
 /** Span 视图 —— 匹配 SpanView.java (record) */
@@ -222,7 +234,9 @@ export interface SkuView {
   activityId: number;
   productName: string;
   skuCode: string;
+  productImage: string;
   seckillPrice: number;
+  marketPrice: number | null;
   costPrice: number | null;
   totalStock: number;
   stock: number;

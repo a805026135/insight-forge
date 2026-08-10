@@ -289,7 +289,9 @@ public class ObservabilityService {
                     s.getSkuId(), s.getId(), s.getActivityId(),
                     p != null ? p.getName() : "未知商品",
                     p != null ? p.getSku() : "",
+                    p != null ? p.getImageUrl() : "",
                     displayPrice,
+                    p != null ? p.getMarketPrice() : null,
                     p != null ? p.getCostPrice() : null,
                     s.getTotalStock(), s.getStock(), s.getSold()
             );

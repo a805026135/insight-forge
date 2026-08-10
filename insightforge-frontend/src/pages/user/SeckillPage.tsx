@@ -11,15 +11,20 @@ export default function SeckillPage() {
   const [loading, setLoading] = useState<number | null>(null);
   const [orderId, setOrderId] = useState('');
 
+  const activeActivity = activities.find((a) => a.id === activeId);
+
   useEffect(() => {
-    activityApi.list().then((list) => {
-      setActivities(list);
-      if (list.length > 0) {
-        // 优先选正在进行的活动，否则选第一个
-        const live = list.find((a) => a.status === 'LIVE');
-        setActiveId((live ?? list[0]).id);
-      }
-    }).catch(() => setMsg('加载活动列表失败，请检查后端是否启动'));
+    activityApi
+      .list()
+      .then((list) => {
+        setActivities(list);
+        if (list.length > 0) {
+          // 优先选正在进行的活动，否则选第一个
+          const live = list.find((a) => a.status === 'LIVE');
+          setActiveId((live ?? list[0]).id);
+        }
+      })
+      .catch(() => setMsg('加载活动列表失败，请检查后端是否启动'));
   }, []);
 
   const loadSkus = async (activityId: number) => {
@@ -67,10 +72,24 @@ export default function SeckillPage() {
     }
   };
 
+  const discount = (p: SkuView) =>
+    p.marketPrice != null && p.marketPrice > 0 && p.seckillPrice < p.marketPrice
+      ? Math.round((1 - p.seckillPrice / p.marketPrice) * 100)
+      : 0;
+
   return (
     <div className="seckill-page">
-      <h2>限时秒杀</h2>
-      <p className="welcome">欢迎，{user?.displayName}！</p>
+      <div className="page-head">
+        <h2>限时秒杀</h2>
+        {activeActivity && (
+          <span
+            className={`badge ${activeActivity.status === 'LIVE' ? 'badge-live' : 'badge-closed'}`}
+          >
+            {activeActivity.status === 'LIVE' ? '热卖中' : activeActivity.status}
+          </span>
+        )}
+      </div>
+      <p className="welcome">欢迎，{user?.displayName}</p>
       {activities.length > 0 && (
         <div className="activity-switch">
           {activities.map((a) => (
@@ -79,7 +98,8 @@ export default function SeckillPage() {
               className={`activity-tab ${a.id === activeId ? 'active' : ''}`}
               onClick={() => setActiveId(a.id)}
             >
-              {a.name}（{a.status === 'LIVE' ? '热卖中' : a.status}）
+              {a.name}
+              {a.status === 'LIVE' && <span className="activity-live-dot" />}
             </button>
           ))}
         </div>
@@ -87,27 +107,55 @@ export default function SeckillPage() {
       <div className="product-grid">
         {skus.map((p) => (
           <div key={p.activitySkuId} className="product-card">
-            <h3>{p.productName}</h3>
-            <div className="price">¥{p.seckillPrice}</div>
-            <div className="stock-bar">
-              <div
-                className="stock-fill"
-                style={{ width: `${p.totalStock > 0 ? (p.stock / p.totalStock) * 100 : 0}%` }}
+            <div className="product-img-wrap">
+              <img
+                className="product-img"
+                src={p.productImage}
+                alt={p.productName}
+                loading="lazy"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.visibility = 'hidden';
+                }}
               />
+              {discount(p) > 0 && <span className="discount-badge">{discount(p)}% OFF</span>}
             </div>
-            <div className="stock-nums">
-              剩余 {p.stock} / 共 {p.totalStock}（已售 {p.sold}）
+            <div className="product-body">
+              <h3 className="product-name" title={p.productName}>
+                {p.productName}
+              </h3>
+              <div className="product-sku">{p.skuCode}</div>
+              <div className="price-row">
+                <span className="price">¥{p.seckillPrice}</span>
+                {p.marketPrice != null && p.marketPrice > p.seckillPrice && (
+                  <span className="market-price">¥{p.marketPrice}</span>
+                )}
+              </div>
+              <div className="stock-bar">
+                <div
+                  className="stock-fill"
+                  style={{
+                    width: `${p.totalStock > 0 ? (p.stock / p.totalStock) * 100 : 0}%`,
+                  }}
+                />
+              </div>
+              <div className="stock-nums">
+                已售 {p.sold} · 剩余 {p.stock} / {p.totalStock}
+              </div>
+              <button
+                onClick={() => handleSeckill(p)}
+                disabled={
+                  loading === p.activitySkuId || p.stock <= 0 || activeActivity?.status !== 'LIVE'
+                }
+              >
+                {loading === p.activitySkuId
+                  ? '抢购中...'
+                  : p.stock <= 0
+                  ? '已售罄'
+                  : activeActivity?.status === 'LIVE'
+                  ? '立即抢购'
+                  : '未开抢'}
+              </button>
             </div>
-            <button
-              onClick={() => handleSeckill(p)}
-              disabled={loading === p.activitySkuId || p.stock <= 0}
-            >
-              {loading === p.activitySkuId
-                ? '抢购中...'
-                : p.stock <= 0
-                ? '已售罄'
-                : '立即抢购'}
-            </button>
           </div>
         ))}
       </div>
@@ -115,9 +163,7 @@ export default function SeckillPage() {
       {msg && (
         <div className={`toast ${orderId ? 'success' : 'error'}`}>
           {msg}
-          {orderId && (
-            <button className="cancel-btn" onClick={handleCancel}>取消订单</button>
-          )}
+          {orderId && <button className="cancel-btn" onClick={handleCancel}>取消订单</button>}
         </div>
       )}
     </div>

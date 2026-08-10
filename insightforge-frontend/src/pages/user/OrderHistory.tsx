@@ -39,9 +39,9 @@ export default function OrderHistory() {
   return (
     <div className="order-page">
       <h2>我的订单</h2>
-      <p className="welcome">欢迎，{user?.displayName}！</p>
+      <p className="welcome">欢迎，{user?.displayName}</p>
 
-      {loading && <p className="info-msg">加载中…</p>}
+      {loading && <p className="info-msg">加载中...</p>}
       {error && <p className="error-msg">{error}</p>}
 
       {!loading && !error && orders.length === 0 && (
@@ -51,53 +51,79 @@ export default function OrderHistory() {
       )}
 
       {orders.length > 0 && (
-        <table className="order-table">
-          <thead>
-            <tr>
-              <th>订单号</th>
-              <th>活动</th>
-              <th>SKU</th>
-              <th>单价</th>
-              <th>数量</th>
-              <th>状态</th>
-              <th>时间</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((o) => (
-              <tr key={o.orderId}>
-                <td title={o.orderId}>{o.orderId.slice(0, 12)}…</td>
-                <td>{o.activityId}</td>
-                <td>{o.skuId}</td>
-                <td>{o.price != null ? `¥${o.price}` : '—'}</td>
-                <td>{o.qty}</td>
-                <td className={`status-${o.status?.toLowerCase()}`}>{statusLabel(o.status)}</td>
-                <td>{o.createdAt?.replace('T', ' ').slice(0, 19)}</td>
-                <td>
-                  {o.status === 'CREATE_ORDER' && (
-                    <>
-                      <button onClick={async () => {
-                        await orderApi.cancel(o.orderId);
-                        await refresh();
-                      }}>取消</button>
-                      <button onClick={async () => {
-                        await orderApi.pay(o.orderId);
-                        await refresh();
-                      }}>支付</button>
-                    </>
-                  )}
-                  {o.status === 'PAY' && (
-                    <button onClick={async () => {
-                      await orderApi.pay(o.orderId);
-                      await refresh();
-                    }}>确认完成</button>
-                  )}
-                </td>
+        <div className="order-table-wrap">
+          <table className="order-table">
+            <thead>
+              <tr>
+                <th>商品</th>
+                <th>活动</th>
+                <th>单价</th>
+                <th>数量</th>
+                <th>状态</th>
+                <th>时间</th>
+                <th>操作</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {orders.map((o) => (
+                <tr key={o.orderId}>
+                  <td className="order-product">
+                    <img
+                      className="order-thumb"
+                      src={o.productImage}
+                      alt=""
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.visibility = 'hidden';
+                      }}
+                    />
+                    <div>
+                      <div className="order-product-name">{o.productName}</div>
+                      <div className="order-product-sku">#{o.orderId.slice(-6)}</div>
+                    </div>
+                  </td>
+                  <td>{o.activityName}</td>
+                  <td>{o.price != null ? `¥${o.price}` : '—'}</td>
+                  <td>{o.qty}</td>
+                  <td className={`status-${o.status?.toLowerCase()}`}>{statusLabel(o.status)}</td>
+                  <td>{o.createdAt?.replace('T', ' ').slice(0, 19)}</td>
+                  <td>
+                    {o.status === 'CREATE_ORDER' && (
+                      <>
+                        <button
+                          className="danger"
+                          onClick={async () => {
+                            await orderApi.cancel(o.orderId);
+                            await refresh();
+                          }}
+                        >
+                          取消
+                        </button>
+                        <button
+                          onClick={async () => {
+                            await orderApi.pay(o.orderId);
+                            await refresh();
+                          }}
+                        >
+                          支付
+                        </button>
+                      </>
+                    )}
+                    {o.status === 'PAY' && (
+                      <button
+                        onClick={async () => {
+                          await orderApi.pay(o.orderId);
+                          await refresh();
+                        }}
+                      >
+                        确认完成
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {orders.length > 0 && (
         <button className="btn-refresh" onClick={refresh} style={{ marginTop: 16 }}>

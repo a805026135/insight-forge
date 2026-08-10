@@ -23,4 +23,10 @@ public class Product extends BaseEntity {
 
     /** 成本价（元），用于后续 Agent 定价时判断「价 < 成本」等违规 */
     private BigDecimal costPrice;
+
+    /** 市场价/原价（元），买家端展示「原价划线 + 秒杀价」用 */
+    private BigDecimal marketPrice;
+
+    /** 商品图片（前端相对路径，如 /products/iphone16pro.jpg） */
+    private String imageUrl;
 }
