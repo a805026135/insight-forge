@@ -7,7 +7,11 @@ import com.insightforge.agent.core.runtime.AgentTask;
 import com.insightforge.api.dto.AgentPlanRequest;
 import com.insightforge.api.dto.AgentPlanResponse;
 import com.insightforge.api.observability.dto.TraceView;
+import com.insightforge.api.auth.AuthContextHolder;
+import com.insightforge.persistence.entity.ActivitySku;
+import com.insightforge.persistence.mapper.ActivitySkuMapper;
 import com.insightforge.common.result.ApiResult;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -31,9 +35,11 @@ import java.util.Map;
 public class AgentController {
 
     private final MultiAgentOrchestrator orchestrator;
+    private final ActivitySkuMapper activitySkuMapper;
 
-    public AgentController(MultiAgentOrchestrator orchestrator) {
+    public AgentController(MultiAgentOrchestrator orchestrator, ActivitySkuMapper activitySkuMapper) {
         this.orchestrator = orchestrator;
+        this.activitySkuMapper = activitySkuMapper;
     }
 
     /**
@@ -43,6 +49,16 @@ public class AgentController {
      */
     @PostMapping("/plan")
     public ApiResult<AgentPlanResponse> plan(@RequestBody AgentPlanRequest req) {
+        // Phase 17 商家隔离：商家只能规划自己参与的活动（活动下存在属于该商家的 SKU）
+        var user = AuthContextHolder.get();
+        if (user != null && user.isMerchant() && user.merchantId() != null) {
+            long count = activitySkuMapper.selectCount(new QueryWrapper<ActivitySku>()
+                    .eq("activity_id", req.activityId())
+                    .eq("merchant_id", user.merchantId()));
+            if (count == 0) {
+                return ApiResult.fail(403, "无权规划未参与的活動");
+            }
+        }
         AgentTask task = new AgentTask(req.activityId(), req.goal(), Map.of());
         PlanningResult result = orchestrator.plan(task);
 

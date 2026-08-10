@@ -4,10 +4,18 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.insightforge.api.auth.AuthContextHolder;
 import com.insightforge.api.dto.MerchantProductRequest;
 import com.insightforge.api.dto.MerchantProductView;
+import com.insightforge.api.dto.AssistantReply;
+import com.insightforge.api.service.MerchantAssistantService;
 import com.insightforge.common.result.ApiResult;
+import com.insightforge.persistence.entity.ActivitySku;
+import com.insightforge.persistence.entity.OrderItem;
 import com.insightforge.persistence.entity.Merchant;
+import com.insightforge.persistence.entity.Orders;
 import com.insightforge.persistence.entity.Product;
+import com.insightforge.persistence.mapper.ActivitySkuMapper;
 import com.insightforge.persistence.mapper.MerchantMapper;
+import com.insightforge.persistence.mapper.OrderItemMapper;
+import com.insightforge.persistence.mapper.OrdersMapper;
 import com.insightforge.persistence.mapper.ProductMapper;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,7 +27,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -32,10 +42,20 @@ public class MerchantController {
 
     private final MerchantMapper merchantMapper;
     private final ProductMapper productMapper;
+    private final ActivitySkuMapper activitySkuMapper;
+    private final OrdersMapper ordersMapper;
+    private final OrderItemMapper orderItemMapper;
+    private final MerchantAssistantService assistantService;
 
-    public MerchantController(MerchantMapper merchantMapper, ProductMapper productMapper) {
+    public MerchantController(MerchantMapper merchantMapper, ProductMapper productMapper,
+                              ActivitySkuMapper activitySkuMapper, OrdersMapper ordersMapper,
+                              OrderItemMapper orderItemMapper, MerchantAssistantService assistantService) {
         this.merchantMapper = merchantMapper;
         this.productMapper = productMapper;
+        this.activitySkuMapper = activitySkuMapper;
+        this.ordersMapper = ordersMapper;
+        this.orderItemMapper = orderItemMapper;
+        this.assistantService = assistantService;
     }
 
     /** GET /api/merchant/profile 当前商家店铺信息 */
@@ -47,6 +67,45 @@ public class MerchantController {
             return ApiResult.fail(404, "商家不存在");
         }
         return ApiResult.ok(m);
+    }
+
+    /** GET /api/merchant/overview 商家经营概览（商品/库存/订单/Agent 数据，全部商家维度） */
+    @GetMapping("/overview")
+    public ApiResult<Map<String, Object>> overview() {
+        long mid = AuthContextHolder.requireMerchantId();
+        List<Product> products = productMapper.selectList(
+                new QueryWrapper<Product>().eq("merchant_id", mid));
+        List<Long> productIds = products.stream().map(Product::getId).collect(Collectors.toList());
+        List<ActivitySku> skus = productIds.isEmpty() ? List.of()
+                : activitySkuMapper.selectList(new QueryWrapper<ActivitySku>().in("sku_id", productIds));
+        long totalStock = skus.stream().mapToLong(s -> s.getStock() == null ? 0 : s.getStock()).sum();
+        long totalSold = skus.stream().mapToLong(s -> s.getSold() == null ? 0 : s.getSold()).sum();
+        long totalGmv = orderItemMapper.selectList(
+                        new QueryWrapper<OrderItem>().eq("merchant_id", mid)).stream()
+                .mapToLong(oi -> oi.getPrice() == null ? 0L : oi.getPrice().longValue() * oi.getQty())
+                .sum();
+        Map<String, Object> data = new HashMap<>();
+        data.put("merchantId", mid);
+        data.put("productCount", products.size());
+        data.put("skuCount", skus.size());
+        data.put("totalStock", totalStock);
+        data.put("totalSold", totalSold);
+        data.put("totalGmv", totalGmv);
+        data.put("sellThroughRate", totalStock + totalSold == 0 ? 0
+                : Math.round(totalSold * 10000.0 / (totalStock + totalSold)) / 100.0);
+        data.put("generatedAt", java.time.LocalDateTime.now().toString());
+        return ApiResult.ok(data);
+    }
+
+    /** POST /api/merchant/assistant 商家 AI 运营助手 */
+    @PostMapping("/assistant")
+    public ApiResult<AssistantReply> assistant(@RequestBody Map<String, String> body) {
+        long mid = AuthContextHolder.requireMerchantId();
+        String question = body.get("question");
+        if (question == null || question.isBlank()) {
+            return ApiResult.fail(400, "问题不能为空");
+        }
+        return ApiResult.ok(assistantService.ask(mid, question.trim()));
     }
 
     /** GET /api/merchant/products 当前商家的商品列表（只读自己的） */
