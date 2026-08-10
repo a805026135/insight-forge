@@ -20,4 +20,5 @@ public class SalesTickEventPayload implements Serializable {
     private Long skuId;
     private Integer qty;
     private Long ts;
+    private String traceId;
 }

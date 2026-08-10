@@ -6,6 +6,9 @@ package com.insightforge.seckill.core.redis;
  */
 public final class RedisKeys {
 
+    /** 订单幂等键前缀（补偿巡检按此扫描） */
+    public static final String ORDER_IDEMPOTENT_PREFIX = "order:idemp:";
+
     private RedisKeys() {
     }
 
@@ -41,7 +44,7 @@ public final class RedisKeys {
 
     /** 订单幂等：order:idemp:{hash}（SETNX 去重，exactly-once） */
     public static String orderIdempotent(String hash) {
-        return "order:idemp:" + hash;
+        return ORDER_IDEMPOTENT_PREFIX + hash;
     }
 
     /** 当前生效 DSL：guardrail:dsl:{aid}（Redis 热更新） */

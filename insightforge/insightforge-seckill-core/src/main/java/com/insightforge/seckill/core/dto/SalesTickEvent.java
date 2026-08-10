@@ -36,6 +36,9 @@ public class SalesTickEvent implements Serializable {
     /** 事件时间戳（ms） */
     private Long ts;
 
+    /** 链路 traceId（来自请求 MDC，随消息透传） */
+    private String traceId;
+
     /** 便捷工厂：组装一条 tick（ts 取当前时间） */
     public static SalesTickEvent of(Long activityId, Long skuId, int qty) {
         SalesTickEvent e = new SalesTickEvent();

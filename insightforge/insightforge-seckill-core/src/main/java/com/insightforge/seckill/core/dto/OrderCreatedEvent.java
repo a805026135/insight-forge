@@ -40,6 +40,9 @@ public class OrderCreatedEvent implements Serializable {
     /** 成交单价快照（REPRICE 生效后，新订单以实时价成交，供 GMV 统计） */
     private BigDecimal price;
 
+    /** 链路 traceId（来自请求 MDC，随消息透传，消费端日志可串联） */
+    private String traceId;
+
     /** 便捷工厂：从抢购请求 + 订单号组装一条事件 */
     public static OrderCreatedEvent from(SeckillRequest req, String orderId, BigDecimal price) {
         OrderCreatedEvent e = new OrderCreatedEvent();

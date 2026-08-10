@@ -19,6 +19,8 @@ import com.insightforge.seckill.core.redis.RedisIdempotentService;
 import com.insightforge.seckill.core.redis.RedisStockService;
 import com.insightforge.seckill.core.state.ActivityStatus;
 import com.insightforge.seckill.core.state.OrderStatus;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.MDC;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -51,6 +53,7 @@ public class SeckillService {
     private final ActivitySkuMapper activitySkuMapper;
     private final OrdersMapper ordersMapper;
     private final ActivityMapper activityMapper;
+    private final ObjectMapper objectMapper;
     /** SKU 多级缓存（Phase 5）：高频读走 L1 Caffeine + L2 Redis，避免每次打 DB。 */
     private final SkuCacheService skuCacheService;
     /** Redis 库存服务：用 ObjectProvider 拿，local profile 下为 null（不存在该 Bean）。 */
@@ -65,6 +68,7 @@ public class SeckillService {
     public SeckillService(ActivitySkuMapper activitySkuMapper,
                           OrdersMapper ordersMapper,
                           ActivityMapper activityMapper,
+                          ObjectMapper objectMapper,
                           SkuCacheService skuCacheService,
                           ObjectProvider<RedisStockService> redisStockService,
                           ObjectProvider<RedisIdempotentService> idempotentService,
@@ -73,6 +77,7 @@ public class SeckillService {
         this.activitySkuMapper = activitySkuMapper;
         this.ordersMapper = ordersMapper;
         this.activityMapper = activityMapper;
+        this.objectMapper = objectMapper;
         this.skuCacheService = skuCacheService;
         this.redisStockService = redisStockService;
         this.idempotentService = idempotentService;
@@ -127,7 +132,7 @@ public class SeckillService {
         if (rs != null) {
             // 幂等闸门（仅非 local 有 Redis）：先占坑，防止「同一用户重复抢」被当成两次独立扣减。
             RedisIdempotentService idem = idempotentService.getIfAvailable();
-            if (idem != null && !idem.tryAcquire(orderId)) {
+            if (idem != null && !idem.tryAcquire(orderId, orderPayloadJson(req, orderId, price))) {
                 // 这个 orderId 已经被占过坑（之前抢过），直接返回既有订单号 —— 幂等。
                 log.info("命中幂等闸门（Redis SETNX），重复请求被拦：orderId={}", orderId);
                 return ApiResult.ok(orderId);
@@ -137,7 +142,9 @@ public class SeckillService {
             if (res == DeductResult.SUCCESS) {
                 // 扣成功 → 发 Kafka 异步建单，立刻返回（削峰 + 极速响应，P99<10ms）
                 OrderEventProducer producer = orderEventProducer.getIfAvailable();
-                if (producer != null && producer.sendOrderCreated(OrderCreatedEvent.from(req, orderId, price))) {
+                OrderCreatedEvent event = OrderCreatedEvent.from(req, orderId, price);
+                event.setTraceId(MDC.get("traceId"));
+                if (producer != null && producer.sendOrderCreated(event)) {
                     // 集成缝：扣减成功 → 发 sales.tick，驱动后方规则引擎（Agent 控盘与用户争用同一库存）
                     sendSalesTick(req);
                     return ApiResult.ok(orderId);
@@ -224,7 +231,21 @@ public class SeckillService {
     private void sendSalesTick(SeckillRequest req) {
         SalesTickProducer p = salesTickProducer.getIfAvailable();
         if (p != null) {
-            p.send(SalesTickEvent.of(req.getActivityId(), req.getSkuId(), req.getQty()));
+            SalesTickEvent event = SalesTickEvent.of(req.getActivityId(), req.getSkuId(), req.getQty());
+            event.setTraceId(MDC.get("traceId"));
+            p.send(event);
+        }
+    }
+
+    /** 幂等键载荷：把订单事件 JSON 存进 Redis，供补偿巡检在订单丢失时重建（失败退化为 "1"）。 */
+    private String orderPayloadJson(SeckillRequest req, String orderId, BigDecimal price) {
+        try {
+            OrderCreatedEvent event = OrderCreatedEvent.from(req, orderId, price);
+            event.setTraceId(MDC.get("traceId"));
+            return objectMapper.writeValueAsString(event);
+        } catch (Exception e) {
+            log.warn("订单载荷序列化失败，幂等键退化为占位：orderId={}", orderId);
+            return "1";
         }
     }
 

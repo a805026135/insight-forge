@@ -3,6 +3,7 @@ package com.insightforge.api;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * InsightForge 启动类（Phase 0）。
@@ -11,6 +12,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  */
 @SpringBootApplication(scanBasePackages = "com.insightforge")
 @MapperScan("com.insightforge.persistence.mapper")
+@EnableScheduling  // Phase 14.5：订单补偿巡检等定时任务
 public class InsightForgeApplication {
 
     public static void main(String[] args) {

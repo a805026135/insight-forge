@@ -4,6 +4,11 @@ import com.insightforge.agent.core.evaluation.AbExperiment;
 import com.insightforge.agent.core.evaluation.BusinessMetrics;
 import com.insightforge.agent.core.evaluation.BusinessMetricsSource;
 import com.insightforge.agent.core.evaluation.EvaluationThresholds;
+import com.insightforge.agent.core.planning.GuardrailPolicy;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 /**
  * 规则引擎驱动的真实 A/B 评估 CLI（Phase 14）。
@@ -25,8 +30,16 @@ public final class EngineDrivenEvalMain {
                 null, // 评估不查策略源：evaluateWithPolicy 直接给 DSL
                 new DslToDroolsTranslator(),
                 new DroolsRuleCompiler());
-        BusinessMetricsSource source =
-                new SimulatedBusinessMetricsSource(new SeckillSimulator(), engine);
+        // 可选参数 args[0]：真 LLM/Agent 产出的 DSL JSON 文件（GuardrailPolicy 格式），
+        // 让 A/B 评估跑「真实策略」而非内置演示策略。
+        GuardrailPolicy policy = null;
+        if (args.length > 0) {
+            policy = loadPolicy(args[0]);
+            System.out.println("使用外部 DSL：" + args[0] + "（规则数=" + policy.rules().size() + "）");
+        }
+        BusinessMetricsSource source = policy == null
+                ? new SimulatedBusinessMetricsSource(new SeckillSimulator(), engine)
+                : new SimulatedBusinessMetricsSource(new SeckillSimulator(), engine, policy);
 
         BusinessMetrics manual = source.manualRuleMetrics();
         BusinessMetrics ai = source.aiControlledMetrics();
@@ -52,5 +65,15 @@ public final class EngineDrivenEvalMain {
             System.exit(1);
         }
         System.out.println("✅ EVAL GATE PASSED（模拟，指标由规则引擎真实执行产出）");
+    }
+
+    private static GuardrailPolicy loadPolicy(String path) {
+        try {
+            return new ObjectMapper().readValue(Files.readString(Path.of(path)), GuardrailPolicy.class);
+        } catch (Exception e) {
+            System.err.println("无法加载 DSL 文件 " + path + "：" + e.getMessage());
+            System.exit(2);
+            return null; // unreachable
+        }
     }
 }

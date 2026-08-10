@@ -1,24 +1,17 @@
 package com.insightforge.seckill.core.kafka;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.insightforge.persistence.entity.ActivitySku;
-import com.insightforge.persistence.entity.Orders;
-import com.insightforge.persistence.mapper.ActivitySkuMapper;
-import com.insightforge.persistence.mapper.OrdersMapper;
 import com.insightforge.seckill.core.dto.OrderCreatedEvent;
 import com.insightforge.seckill.core.dto.SeckillRequest;
-import com.insightforge.seckill.core.state.OrderStatus;
+import com.insightforge.seckill.core.service.OrderCreationService;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DuplicateKeyException;
+import org.slf4j.MDC;
 import org.springframework.context.annotation.Profile;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.math.BigDecimal;
 
 /**
  * 订单事件消费者（Phase 4）。
@@ -42,16 +35,13 @@ public class OrderCreatedConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(OrderCreatedConsumer.class);
 
-    private final OrdersMapper ordersMapper;
-    private final ActivitySkuMapper activitySkuMapper;
     private final ObjectMapper objectMapper;
+    private final OrderCreationService orderCreationService;
 
-    public OrderCreatedConsumer(OrdersMapper ordersMapper,
-                                ActivitySkuMapper activitySkuMapper,
-                                ObjectMapper objectMapper) {
-        this.ordersMapper = ordersMapper;
-        this.activitySkuMapper = activitySkuMapper;
+    public OrderCreatedConsumer(ObjectMapper objectMapper,
+                                OrderCreationService orderCreationService) {
         this.objectMapper = objectMapper;
+        this.orderCreationService = orderCreationService;
     }
 
     @KafkaListener(topics = KafkaTopicConfig.ORDER_CREATED, groupId = "insightforge-order-consumer")
@@ -65,7 +55,16 @@ public class OrderCreatedConsumer {
             log.error("订单事件反序列化失败，已跳过：{}", record.value(), e);
             return;
         }
+        // Phase 14.5：链路 traceId 贯穿（来自生产端 MDC，随消息透传）
+        MDC.put("traceId", evt.getTraceId());
+        try {
+            process(evt);
+        } finally {
+            MDC.remove("traceId");
+        }
+    }
 
+    private void process(OrderCreatedEvent evt) {
         // 用和生产者一致的确定性订单号，确保「同一抢购」在 DB 里只有一行
         SeckillRequest req = new SeckillRequest();
         req.setUserId(evt.getUserId());
@@ -74,37 +73,8 @@ public class OrderCreatedConsumer {
         req.setQty(evt.getQty());
 
         // —— 异步建单（幂等：order_id 唯一约束兜底）——
-        boolean inserted = createOrderIdempotent(req, evt.getOrderId(), evt.getPrice());
-
-        // —— 仅在「本次真正新建订单」时才把 DB 库存同步减掉（最终一致：Redis 已先扣，这里补齐 DB）——
-        // decrementStock 是原子条件更新，多实例并发也安全，绝不为负；且仅建单成功才扣，杜绝重投多扣。
-        if (inserted) {
-            activitySkuMapper.decrementStock(evt.getSkuId(), evt.getQty());
-        }
+        boolean inserted = orderCreationService.createOrderIdempotent(req, evt.getOrderId(), evt.getPrice());
 
         log.info("异步建单完成：orderId={}, inserted={}", evt.getOrderId(), inserted);
-    }
-
-    /** 建单并吞掉「重复建单」异常（幂等核心）；返回是否真正插入了新行。 */
-    private boolean createOrderIdempotent(SeckillRequest req, String orderId, BigDecimal price) {
-        Orders order = new Orders();
-        order.setOrderId(orderId);
-        order.setUserId(req.getUserId());
-        order.setActivityId(req.getActivityId());
-        order.setSkuId(req.getSkuId());
-        order.setQty(req.getQty());
-        order.setPrice(price);
-        // 异步单与同步建单（SeckillService）保持同一持久初态 CREATE_ORDER，
-        // 否则 OrderStatus.from("CREATED") 会抛异常、导致异步单 cancel/pay 直接 500（REVIEW §3.1）。
-        order.setStatus(OrderStatus.CREATE_ORDER.name());
-        order.setCreatedAt(LocalDateTime.now());
-        try {
-            ordersMapper.insert(order);
-            return true;
-        } catch (DuplicateKeyException e) {
-            // 同一 orderId 已经建过单（Kafka 重投 / 生产者重试）：幂等忽略
-            log.info("订单已存在，命中幂等去重：orderId={}", orderId);
-            return false;
-        }
     }
 }

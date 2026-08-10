@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -52,6 +53,7 @@ public class SalesTickConsumer {
 
     @KafkaListener(topics = TOPIC, groupId = "rule-engine")
     public void onTick(ConsumerRecord<String, String> record) {
+        MDC.put("traceId", nullToDash(record));
         try {
             SalesTickEventPayload p = objectMapper.readValue(record.value(), SalesTickEventPayload.class);
             if (p.getActivityId() == null || p.getSkuId() == null) {
@@ -79,6 +81,17 @@ public class SalesTickConsumer {
         } catch (Exception e) {
             // 一条坏心跳绝不阻塞消费线程，更不阻塞用户抢购
             log.error("[sales.tick] 处理失败(已跳过): {}", record.value(), e);
+        } finally {
+            MDC.remove("traceId");
+        }
+    }
+
+    private String nullToDash(ConsumerRecord<String, String> record) {
+        try {
+            SalesTickEventPayload p = objectMapper.readValue(record.value(), SalesTickEventPayload.class);
+            return p.getTraceId() == null ? "-" : p.getTraceId();
+        } catch (Exception e) {
+            return "-";
         }
     }
 

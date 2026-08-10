@@ -59,10 +59,18 @@ public class SimulatedBusinessMetricsSource implements BusinessMetricsSource {
 
     private final SeckillSimulator simulator;
     private final RuleEngineService engine;
+    private final GuardrailPolicy aiPolicy;
 
     public SimulatedBusinessMetricsSource(SeckillSimulator simulator, RuleEngineService engine) {
+        this(simulator, engine, evalPolicy());
+    }
+
+    /** 支持传入任意 DSL（如真 LLM 产出的策略 JSON），让 A/B 跑「真实策略」。 */
+    public SimulatedBusinessMetricsSource(SeckillSimulator simulator, RuleEngineService engine,
+                                          GuardrailPolicy aiPolicy) {
         this.simulator = simulator;
         this.engine = engine;
+        this.aiPolicy = aiPolicy;
     }
 
     @Override
@@ -73,6 +81,6 @@ public class SimulatedBusinessMetricsSource implements BusinessMetricsSource {
 
     @Override
     public BusinessMetrics aiControlledMetrics() {
-        return simulator.simulate(engine, evalPolicy(), CONFIG).toBusinessMetrics();
+        return simulator.simulate(engine, aiPolicy, CONFIG).toBusinessMetrics();
     }
 }

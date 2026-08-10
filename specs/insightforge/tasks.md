@@ -340,3 +340,30 @@ JMeter 百万压测仍未实跑（本机无 JMeter）。
   `EngineDrivenAbevalTest` 显式门槛步骤。
 
 **验收**：`mvn clean package` BUILD SUCCESS，106 测试全绿；部署全套实测通过（见上）。
+
+---
+
+## Phase 14.5 — 补偿任务 + 链路 traceId + 真 LLM DSL 评估（2026-08-10 第四轮）✅
+
+### ① 订单补偿巡检（堵住「Redis 扣了、订单没落库」）
+- 幂等键 value 现在存订单载荷 JSON（`RedisIdempotentService.tryAcquire(orderId, payload)`）；
+- 新增 `OrderCompensationTask`：每 30s 扫 `order:idemp:*`，凡键在但 DB 无订单的，用载荷幂等重建订单 + 扣 DB 库存；
+- 落库逻辑收敛到 `OrderCreationService`（异步消费者与补偿共用，唯一约束防并发重放）；
+- **实弹验证**：手工制造“Redis 扣减未落库”现场，≤30s 自动补单（日志：`补偿补单成功（原异步落库丢失）`）。
+
+### ② 请求链路 traceId 贯穿
+- `TraceIdFilter`：每个请求生成/透传 X-Trace-Id 进 MDC；logback 控制台格式带 `[traceId]`；
+- Kafka 消息（order.created / sales.tick）带 traceId，消费者续上 MDC；
+- **实弹验证**：请求头 `X-Trace-Id: demo-trace-123456` → 消费者日志同号（`异步建单完成 …[demo-trace-123456]`）。
+
+### ③ 订单表索引（Flyway V4）
+- `orders(user_id)` / `orders(activity_id, sku_id)` / `activity_sku(activity_id)` / `agent_trace(activity_id)`；
+- 已实测线上库 `Migrating schema to version "4 - indexes"` 应用成功（Flyway 单一迁移源的价值验证）。
+
+### ④ 真 LLM DSL 喂 A/B 模拟器
+- `EngineDrivenEvalMain` 支持可选参数：DSL JSON 文件（GuardrailPolicy 格式）；
+- **实弹验证**：导出 activity 5 由 deepseek-v4-flash 产出的 v2 DSL（repriceTo 6598.9 / amount 50），
+  跑模拟得 AI 毛利 **37.7%**（相对人工 +3.37%）、售罄率不劣，GATE PASSED——
+  “真 LLM → 规则引擎 → 指标”全链路真实。
+
+**验收**：`mvn clean package` BUILD SUCCESS，**109 测试全绿**（api 52 + agent-core 26 + rule-engine 30 + seckill-core 2）。
