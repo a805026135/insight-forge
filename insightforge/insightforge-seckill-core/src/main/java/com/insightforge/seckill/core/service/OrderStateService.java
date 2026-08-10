@@ -94,8 +94,8 @@ public class OrderStateService {
             return ApiResult.fail(404, "订单不存在");
         }
         OrderStatus cur = OrderStatus.from(order.getStatus());
-        cur.transitionTo(OrderStatus.PAY).transitionTo(OrderStatus.DONE);
-        order.setStatus(OrderStatus.DONE.name());
+        cur.transitionTo(OrderStatus.PAY).transitionTo(OrderStatus.SHIPPED);
+        order.setStatus(OrderStatus.SHIPPED.name());
         ordersMapper.updateById(order);
         return ApiResult.ok(null);
     }

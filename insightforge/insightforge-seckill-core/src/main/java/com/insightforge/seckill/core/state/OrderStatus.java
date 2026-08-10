@@ -38,6 +38,7 @@ public enum OrderStatus {
     LOCK_STOCK,
     CREATE_ORDER,
     PAY,
+    SHIPPED,
     DONE,
     CANCEL;
 
@@ -47,7 +48,8 @@ public enum OrderStatus {
         TRANSITIONS.put(PRE_CHECK, EnumSet.of(LOCK_STOCK));
         TRANSITIONS.put(LOCK_STOCK, EnumSet.of(CREATE_ORDER, CANCEL));
         TRANSITIONS.put(CREATE_ORDER, EnumSet.of(PAY, CANCEL));
-        TRANSITIONS.put(PAY, EnumSet.of(DONE, CANCEL));
+        TRANSITIONS.put(PAY, EnumSet.of(SHIPPED, DONE, CANCEL));
+        TRANSITIONS.put(SHIPPED, EnumSet.of(DONE));
         TRANSITIONS.put(DONE, EnumSet.noneOf(OrderStatus.class));   // 终态
         TRANSITIONS.put(CANCEL, EnumSet.noneOf(OrderStatus.class)); // 终态
     }
