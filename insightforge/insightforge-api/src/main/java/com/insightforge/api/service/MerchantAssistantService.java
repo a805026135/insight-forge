@@ -81,21 +81,24 @@ public class MerchantAssistantService {
     /** 流式回答：DeepSeek 可用时走真实 token 流，否则按确定性回答分块模拟。 */
     public void askStream(long merchantId, String question, Consumer<String> onChunk) {
         String context = buildContext(merchantId);
+        String text;
         DeepSeekModelClient ds = deepSeekModelClient.getIfAvailable();
         if (ds != null) {
-            ds.streamGenerate(new ModelRequest(
+            // Spring AI M6 的流式端点与 DeepSeek 兼容性不稳定，改用非流式生成完整回答后分块推送
+            ModelResponse resp = ds.generate(new ModelRequest(
                     List.of(ChatMessage.system(SYSTEM_PROMPT),
                             ChatMessage.user(context + "\n\n商家问题：" + question)),
                     "merchant-assistant",
-                    List.of()), onChunk);
-            return;
+                    List.of()));
+            text = resp.content() == null ? "（无回答）" : resp.content();
+        } else {
+            text = deterministicAnswer(context, question);
         }
-        String text = deterministicAnswer(context, question);
-        // 按 4 字符分块模拟打字机效果
-        for (int i = 0; i < text.length(); i += 4) {
-            onChunk.accept(text.substring(i, Math.min(i + 4, text.length())));
+        // 按 6 字符分块模拟打字机效果
+        for (int i = 0; i < text.length(); i += 6) {
+            onChunk.accept(text.substring(i, Math.min(i + 6, text.length())));
             try {
-                Thread.sleep(10);
+                Thread.sleep(8);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
