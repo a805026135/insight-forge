@@ -206,7 +206,19 @@
 - [x] 前端类型：新增 OrderView / ActivityView 类型
 - [x] **验收**：BUILD SUCCESS 96 测试全绿；全链路端到端：登录→查活动(2)→用户查订单(空)→秒杀→查订单(1)→取消→查订单(已取消)
 
-### 最终交付物清单
+### 后端功能全面补齐（2026-08-07 下午第五轮）
+
+> 审计发现 5 个功能缺口 → 全部补齐。构建：`mvn install -DskipTests` BUILD SUCCESS，全 7 模块。E2E 验证：9 端点中 8 通过，1 个非本次变更范围（dashboard/snapshot 端点不存在）。
+
+- [x] **SKU/Product 列表 API**：`GET /api/dashboard/skus?activityId=`（SkuView record，含 productName/seckillPrice/stock），前端 SeckillPage 从 mock 切真实
+- [x] **HITL 审批 API**：`POST /api/dashboard/hitl/{id}/approve|reject`（AgentTrace.reviewStatus），前端 Hitl 从 fake alert 切真实调接口
+- [x] **创建活动 API**：`POST /api/activity`（CreateActivityRequest record，含 SkuConfig[]；自动创建无 productId 的新商品+挂载 SKU），前端 Activities 表单落地
+- [x] **Agent 规划 API**：`POST /api/agent/plan`（AgentController + AgentPlanRequest/Response），前端 AI 规划按钮 + 结果卡片
+- [x] **Span Tree API**：`GET /api/dashboard/traces/{id}/spans`（SpanView record），前端 TraceViewer 点击 trace 展开 span 列表
+
+**踩坑修复**：
+1. POST /api/activity HTTP 500 → H2 显式 ID 插入后序列计数器未推进（主键冲突）。修复：`data.sql` 末尾 + `ALTER TABLE ... RESTART WITH 3`
+2. agent-core 测试 build 失败 → `schema-agent.sql` 未同步 `review_status` 列。修复：补列。
 
 | 文件 | 说明 |
 |------|------|
