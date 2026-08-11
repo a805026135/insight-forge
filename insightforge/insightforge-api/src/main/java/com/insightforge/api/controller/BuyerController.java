@@ -48,13 +48,14 @@ public class BuyerController {
 
     /** POST /api/buyer/assistant 买家客服问答 */
     @PostMapping("/assistant")
-    public ApiResult<BuyerAssistantReply> assistant(@RequestBody Map<String, String> body) {
+    public ApiResult<BuyerAssistantReply> assistant(@RequestBody Map<String, Object> body) {
         long userId = AuthContextHolder.requireUserId();
-        String question = body.get("question");
+        String question = body.get("question") == null ? null : String.valueOf(body.get("question"));
         if (question == null || question.isBlank()) {
             return ApiResult.fail(400, "问题不能为空");
         }
-        return ApiResult.ok(assistantService.ask(userId, question.trim()));
+        Long merchantId = body.get("merchantId") instanceof Number n ? n.longValue() : null;
+        return ApiResult.ok(assistantService.ask(userId, question.trim(), merchantId));
     }
 
     /** GET /api/buyer/chat/history 客服问答历史（跨会话持久化） */
@@ -67,14 +68,15 @@ public class BuyerController {
     @GetMapping("/after-sale/drafts")
     public ApiResult<List<AfterSaleDraft>> afterSaleDrafts(
             @org.springframework.web.bind.annotation.RequestParam String question) {
-        return ApiResult.ok(assistantService.intent(AuthContextHolder.requireUserId(), question).drafts());
+        return ApiResult.ok(assistantService.intent(AuthContextHolder.requireUserId(), question, null).drafts());
     }
 
     /** GET /api/buyer/assistant/intent?question=... 意图识别：无命中→转人工，退款→草稿，商家列表 */
     @GetMapping("/assistant/intent")
     public ApiResult<AssistantIntent> assistantIntent(
-            @org.springframework.web.bind.annotation.RequestParam String question) {
-        return ApiResult.ok(assistantService.intent(AuthContextHolder.requireUserId(), question));
+            @org.springframework.web.bind.annotation.RequestParam String question,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) Long merchantId) {
+        return ApiResult.ok(assistantService.intent(AuthContextHolder.requireUserId(), question, merchantId));
     }
 
     /** POST /api/buyer/support-ticket 发起咨询（转商家客服） */
@@ -138,9 +140,10 @@ public class BuyerController {
 
     /** POST /api/buyer/assistant/stream 流式回答（SSE） */
     @PostMapping("/assistant/stream")
-    public SseEmitter assistantStream(@RequestBody Map<String, String> body) {
+    public SseEmitter assistantStream(@RequestBody Map<String, Object> body) {
         long userId = AuthContextHolder.requireUserId();
-        String question = body.get("question");
+        String question = body.get("question") == null ? null : String.valueOf(body.get("question"));
+        Long merchantId = body.get("merchantId") instanceof Number n ? n.longValue() : null;
         if (question == null || question.isBlank()) {
             SseEmitter bad = new SseEmitter();
             try {
@@ -154,7 +157,7 @@ public class BuyerController {
         SseEmitter emitter = new SseEmitter(120_000L);
         Thread t = new Thread(() -> {
             try {
-                assistantService.askStream(userId, question.trim(), chunk -> {
+                assistantService.askStream(userId, question.trim(), merchantId, chunk -> {
                     try {
                         emitter.send(SseEmitter.event().name("chunk").data(chunk));
                     } catch (Exception e) {

@@ -150,6 +150,10 @@ public class KnowledgeBaseService {
                     && !sourceType.equals(str(d.getMetadata().get("sourceType")))) {
                 continue;
             }
+            Double score = d.getScore();
+            if (score != null && score < properties.getMinScore()) {
+                continue;
+            }
             hits.putIfAbsent(d.getId(), toHit(d));
         }
         return List.copyOf(hits.values());
@@ -168,6 +172,11 @@ public class KnowledgeBaseService {
      * 商家私有知识（自定义文档/决策/运营手册）不会出现在这里。
      */
     public List<KbSearchHit> searchMerchantPublic(long merchantId, String query, int topK) {
+        return searchMerchantPublic(merchantId, query, topK, properties.getMinScore());
+    }
+
+    /** 指定置信度门槛的商家公开知识检索（锁定商家后可放宽，用户已确认商家）。 */
+    public List<KbSearchHit> searchMerchantPublic(long merchantId, String query, int topK, double minScore) {
         if (!properties.isEnabled() || query == null || query.isBlank() || topK <= 0) {
             return List.of();
         }
@@ -179,6 +188,10 @@ public class KnowledgeBaseService {
                 break;
             }
             if (merchantOf(d) != merchantId) {
+                continue;
+            }
+            Double score = d.getScore();
+            if (score != null && score < minScore) {
                 continue;
             }
             String st = str(d.getMetadata().get("sourceType"));

@@ -20,6 +20,9 @@ public class KnowledgeBaseProperties {
     /** 检索注入 prompt 的 topK */
     private int topK = 4;
 
+    /** 命中置信度阈值：低于该相似度视为不可靠，不算命中（防幻觉第 5 道防线） */
+    private double minScore = 0.1;
+
     /** 启动时自动入库平台手册/FAQ/商品/决策 */
     private boolean seedOnStartup = true;
 
@@ -53,6 +56,14 @@ public class KnowledgeBaseProperties {
 
     public void setTopK(int topK) {
         this.topK = topK;
+    }
+
+    public double getMinScore() {
+        return minScore;
+    }
+
+    public void setMinScore(double minScore) {
+        this.minScore = minScore;
     }
 
     public boolean isSeedOnStartup() {

@@ -133,7 +133,7 @@ export default function SupportPage() {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
-  const askStream = async (q?: string) => {
+  const askStream = async (q?: string, merchantId?: number) => {
     const text = (q ?? question).trim();
     if (!text || asking) return;
     setAsking(true);
@@ -147,7 +147,7 @@ export default function SupportPage() {
       const resp = await fetch('/api/buyer/assistant/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify({ question: text }),
+        body: JSON.stringify({ question: text, merchantId }),
         signal: controller.signal,
       });
       if (!resp.ok || !resp.body) throw new Error('流式请求失败');
@@ -360,7 +360,7 @@ export default function SupportPage() {
                           <br />
                           <span style={{ fontSize: 12, color: '#888' }}>{c.merchantName}</span>
                         </span>
-                        <button onClick={() => askStream(`【${c.merchantName}】${c.productName}，${lastQuestion}`)}>
+                        <button onClick={() => askStream(`${c.productName}（${c.merchantName}）— ${lastQuestion}`, c.merchantId)}>
                           选这个
                         </button>
                       </div>

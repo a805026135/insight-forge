@@ -77,8 +77,8 @@ public class BuyerAssistantService {
         this.chatHistory = chatHistory;
     }
 
-    public BuyerAssistantReply ask(long userId, String question) {
-        IntentData data = computeIntent(userId, question);
+    public BuyerAssistantReply ask(long userId, String question, Long explicitMerchantId) {
+        IntentData data = computeIntent(userId, question, explicitMerchantId);
         String answer;
         if (data.candidates().isEmpty() && data.needHuman()) {
             answer = "这个问题知识库暂时无法给出可靠答案。为避免误导，建议转人工客服，或直接联系具体商家咨询。";
@@ -96,13 +96,13 @@ public class BuyerAssistantService {
     }
 
     /** 意图识别（不生成、不记录）：无命中 → 转人工/商品候选；退款 → 草稿。 */
-    public AssistantIntent intent(long userId, String question) {
-        IntentData d = computeIntent(userId, question);
+    public AssistantIntent intent(long userId, String question, Long explicitMerchantId) {
+        IntentData d = computeIntent(userId, question, explicitMerchantId);
         return new AssistantIntent(d.needHuman(), d.merchants(), d.drafts(), d.candidates());
     }
 
-    public void askStream(long userId, String question, Consumer<String> onChunk) {
-        IntentData data = computeIntent(userId, question);
+    public void askStream(long userId, String question, Long explicitMerchantId, Consumer<String> onChunk) {
+        IntentData data = computeIntent(userId, question, explicitMerchantId);
         String text;
         if (!data.candidates().isEmpty()) {
             text = "你问的是哪款商品？选择后我会为你查询对应商家的资料。";
@@ -135,7 +135,7 @@ public class BuyerAssistantService {
     private record MerchantCtx(Long merchantId, String merchantName, boolean explicit) {
     }
 
-    private IntentData computeIntent(long userId, String question) {
+    private IntentData computeIntent(long userId, String question, Long explicitMerchantId) {
         boolean refund = isRefundIntent(question);
         List<AfterSaleDraft> drafts = refund ? buildRefundDrafts(userId) : List.of();
         if (refund) {
@@ -144,11 +144,13 @@ public class BuyerAssistantService {
                     drafts, List.of(), true, null, List.of(), List.of());
         }
 
-        MerchantCtx mc = resolveMerchant(userId, question);
+        MerchantCtx mc = resolveMerchant(userId, question, explicitMerchantId);
         KnowledgeBaseService kb = knowledgeBaseProvider.getIfAvailable();
         List<KbSearchHit> platform = kb == null ? List.of() : kb.search(0L, question, 3);
+        // 已锁定商家（显式选择或追问沿用）：放宽该商家检索的置信度门槛——
+        // 用户已确认商家，把该商家最相关的知识交给模型即可，模型仍有"不足则转人工"约束。
         List<KbSearchHit> merchant = kb == null || mc.merchantId() == null
-                ? List.of() : kb.searchMerchantPublic(mc.merchantId(), question, 3);
+                ? List.of() : kb.searchMerchantPublic(mc.merchantId(), question, 3, 0.0);
 
         if (!platform.isEmpty() || !merchant.isEmpty()) {
             if (mc.merchantId() != null) {
@@ -170,7 +172,13 @@ public class BuyerAssistantService {
     }
 
     /** 商品识别 → 锁定商家；追问（短句/指代词）沿用上一轮商家；提到别家商品立即切换。 */
-    private MerchantCtx resolveMerchant(long userId, String question) {
+    private MerchantCtx resolveMerchant(long userId, String question, Long explicitMerchantId) {
+        // 用户在前端选择了具体商品 → 显式锁定对应商家（结构化，而非把商家名拼进文本）
+        if (explicitMerchantId != null && explicitMerchantId > 0) {
+            Merchant m = merchantMapper.selectById(explicitMerchantId);
+            return new MerchantCtx(explicitMerchantId,
+                    m == null ? "商家" + explicitMerchantId : m.getName(), true);
+        }
         List<Product> products = productMapper.selectList(
                 new QueryWrapper<Product>().eq("status", "ON_SALE"));
         List<Product> hits = products.stream()
@@ -259,6 +267,21 @@ public class BuyerAssistantService {
 
     private String buildContext(long userId, String question, IntentData data) {
         StringBuilder sb = new StringBuilder();
+        // 多轮上下文：注入最近 4 轮问答，让"那价格呢"这类追问能接上上文
+        List<com.insightforge.persistence.entity.BuyerChatMessage> history =
+                chatHistory.history(userId, 8);
+        if (history.size() >= 2) {
+            sb.append("【对话历史】（最近几轮，仅作上下文参考）\n");
+            int start = Math.max(0, history.size() - 8);
+            for (int i = start; i < history.size(); i++) {
+                var m = history.get(i);
+                String prefix = "user".equals(m.getRole()) ? "问" : "答";
+                String content = m.getContent() == null ? "" : m.getContent();
+                sb.append(prefix).append("：")
+                  .append(content.length() > 200 ? content.substring(0, 200) + "…" : content)
+                  .append("\n");
+            }
+        }
         List<Orders> orders = ordersMapper.selectList(
                 new QueryWrapper<Orders>().eq("user_id", userId)
                         .orderByDesc("created_at").last("LIMIT 5"));
