@@ -88,6 +88,7 @@ public class KnowledgeBaseSeeder implements ApplicationRunner {
             seedMerchantProducts(mid);
             seedMerchantDecisions(mid);
             seedMerchantActivities(mid);
+            seedMerchantStoreInfo(mid);
         }
     }
 
@@ -99,11 +100,26 @@ public class KnowledgeBaseSeeder implements ApplicationRunner {
         int products = seedMerchantProducts(merchantId);
         int decisions = seedMerchantDecisions(merchantId);
         int activities = seedMerchantActivities(merchantId);
+        int storeInfo = seedMerchantStoreInfo(merchantId);
         Map<String, Integer> result = new LinkedHashMap<>();
         result.put("productChunks", products);
         result.put("decisionChunks", decisions);
         result.put("activityChunks", activities);
+        result.put("storeInfoChunks", storeInfo);
         return result;
+    }
+
+    private int seedMerchantStoreInfo(long merchantId) {
+        Merchant m = merchantMapper.selectById(merchantId);
+        if (m == null) {
+            return 0;
+        }
+        String text = String.format("店铺公开信息：%s；客服电话：%s；店铺简介：%s；评分：%s；认证：%s",
+                nvl(m.getName()), nvl(m.getServicePhone()), nvl(m.getDescription()),
+                m.getRating(), m.getVerified());
+        int n = kb.ingestText(docKeyStoreInfo(merchantId), "商家公开信息", "STORE_INFO", merchantId, text);
+        log.info("商家#{} 公开信息入库 {} 块", merchantId, n);
+        return n;
     }
 
     private int seedMerchantProducts(long merchantId) {
@@ -198,6 +214,10 @@ public class KnowledgeBaseSeeder implements ApplicationRunner {
 
     private String docKeyActivities(long merchantId) {
         return "merchant/" + merchantId + "/activities";
+    }
+
+    private String docKeyStoreInfo(long merchantId) {
+        return "merchant/" + merchantId + "/store-info";
     }
 
     private String nvl(Object o) {

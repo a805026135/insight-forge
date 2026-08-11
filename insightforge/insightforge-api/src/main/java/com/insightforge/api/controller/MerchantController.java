@@ -174,6 +174,32 @@ public class MerchantController {
         }
     }
 
+    /** POST /api/merchant/store-info 更新店铺客服电话（公开知识，买家客服可检索） */
+    @PostMapping("/store-info")
+    public ApiResult<Map<String, Object>> updateStoreInfo(@RequestBody Map<String, String> body) {
+        long mid = AuthContextHolder.requireMerchantId();
+        String phone = body.get("servicePhone");
+        if (phone == null || phone.isBlank() || phone.trim().length() > 32) {
+            return ApiResult.fail(400, "客服电话不能为空且不超过 32 字符");
+        }
+        Merchant m = merchantMapper.selectById(mid);
+        if (m == null) {
+            return ApiResult.fail(404, "商家不存在");
+        }
+        m.setServicePhone(phone.trim());
+        merchantMapper.updateById(m);
+        String text = String.format("店铺公开信息：%s；客服电话：%s；店铺简介：%s；评分：%s；认证：%s",
+                m.getName() == null ? "" : m.getName(), phone.trim(),
+                m.getDescription() == null ? "" : m.getDescription(),
+                m.getRating(), m.getVerified());
+        int chunks = knowledgeBaseService.ingestText(
+                "merchant/" + mid + "/store-info", "商家公开信息", "STORE_INFO", mid, text);
+        Map<String, Object> data = new HashMap<>();
+        data.put("servicePhone", phone.trim());
+        data.put("chunks", chunks);
+        return ApiResult.ok(data);
+    }
+
     /** GET /api/merchant/profile 当前商家店铺信息 */
     @GetMapping("/profile")
     public ApiResult<Merchant> profile() {

@@ -161,6 +161,12 @@ public class BuyerAssistantService {
             }
         }
 
+        // 订单状态类问题：直接基于【我的最近订单】真实摘要回答，无需知识库命中
+        if (isOrderStatusIntent(question)) {
+            return new IntentData(false, List.of(), List.of(), List.of(),
+                    false, null, List.of(), List.of(), List.of());
+        }
+
         MerchantCtx mc = resolveMerchant(userId, question, explicitMerchantId);
         KnowledgeBaseService kb = knowledgeBaseProvider.getIfAvailable();
         List<KbSearchHit> platform = kb == null ? List.of() : kb.search(0L, question, 3);
@@ -194,6 +200,12 @@ public class BuyerAssistantService {
         return q.contains("客服电话") || q.contains("联系方式") || q.contains("联系商家")
                 || q.contains("怎么联系") || q.contains("售后电话") || q.contains("保修电话")
                 || q.contains("电话");
+    }
+
+    private boolean isOrderStatusIntent(String question) {
+        String q = question == null ? "" : question;
+        // "订单状态/我的订单" 类问题走真实订单摘要；"发货要多久"等时效问题仍走平台知识
+        return q.contains("订单");
     }
 
     private List<OrderCandidate> buildOrderCandidates(long userId) {
@@ -352,11 +364,27 @@ public class BuyerAssistantService {
         if (orders.isEmpty()) {
             sb.append("【我的最近订单】暂无订单。\n");
         } else {
-            sb.append("【我的最近订单】（最多 5 单，地址/电话已脱敏）\n");
+            List<String> orderIds = orders.stream().map(Orders::getOrderId).toList();
+            List<OrderItem> items = orderItemMapper.selectList(
+                    new QueryWrapper<OrderItem>().in("order_id", orderIds));
+            Map<String, OrderItem> firstByOrder = new LinkedHashMap<>();
+            for (OrderItem it : items) {
+                firstByOrder.putIfAbsent(it.getOrderId(), it);
+            }
+            sb.append("【我的最近订单】（最多 5 单，收货信息已脱敏）\n");
             for (Orders o : orders) {
-                sb.append("- 订单").append(o.getOrderId())
-                  .append("：金额 ¥").append(o.getTotalAmount())
-                  .append("；状态 ").append(o.getStatus())
+                OrderItem it = firstByOrder.get(o.getOrderId());
+                String productName = null;
+                if (it != null) {
+                    productName = it.getProductName();
+                } else if (o.getSkuId() != null) {
+                    Product p = productMapper.selectById(o.getSkuId());
+                    productName = p == null ? null : p.getName();
+                }
+                sb.append("- 商品【").append(productName == null ? "未知商品" : productName)
+                  .append("】（订单#").append(o.getOrderId())
+                  .append("）：状态 ").append(statusZh(o.getStatus()))
+                  .append("；金额 ¥").append(o.getTotalAmount())
                   .append("；时间 ").append(o.getCreatedAt())
                   .append("；收货人 ").append(mask(o.getReceiver()))
                   .append("；电话 ").append(maskPhone(o.getPhone()))
@@ -374,15 +402,29 @@ public class BuyerAssistantService {
         if (data.platformHits() != null && !data.platformHits().isEmpty()) {
             sb.append("\n【平台公开知识】（检索自平台知识库）\n");
             for (KbSearchHit h : data.platformHits()) {
-                sb.append("- 《").append(h.title()).append("》")
+                sb.append("- 《平台·").append(h.title()).append("》")
                   .append(h.content().replace("\n", " ")).append("\n");
             }
         }
         sb.append("回答规则：\n")
           .append("1) 只使用当前问题对应商家的资料（若涉及商品，商家以【商家公开知识】标注的为准），不得用其他商家的信息回答本问题；\n")
           .append("2) 若商家说明与平台政策冲突，以平台政策为准并指出差异；\n")
-          .append("3) 回答标注《来源》标题；资料不足时明确说\"知识库未收录，请转人工客服\"，绝不自行推断。\n");
+          .append("3) 回答标注《来源》标题时必须带前缀完整标题：《平台·xxx》或《商家名·xxx》；资料不足时明确说\"知识库未收录，请转人工客服\"，绝不自行推断。\n");
         return sb.toString();
+    }
+
+    private String statusZh(String status) {
+        if (status == null) {
+            return "未知";
+        }
+        return switch (status) {
+            case "CREATE_ORDER" -> "待支付";
+            case "PAY" -> "待发货";
+            case "SHIPPED" -> "已发货";
+            case "DONE" -> "已完成";
+            case "CANCEL" -> "已取消";
+            default -> status;
+        };
     }
 
     private boolean isRefundIntent(String question) {
@@ -452,7 +494,8 @@ public class BuyerAssistantService {
             只能基于【我的最近订单】【商家公开知识】【平台公开知识】回答。
             只使用当前问题对应商家的资料回答，不得混用其他商家的信息。
             若商家说明与平台政策冲突，以平台政策为准并指出差异。
-            回答必须标注《来源》标题；资料不足以回答时，必须说"知识库未收录，请转人工客服"，绝不编造政策条款、价格或订单信息。
+            订单状态用中文描述（待支付/待发货/已发货/已完成/已取消），并说明对应商品。
+            回答必须标注带前缀的《来源》完整标题（《平台·xxx》或《商家名·xxx》）；资料不足以回答时，必须说"知识库未收录，请转人工客服"，绝不编造政策条款、价格或订单信息。
             退款/退货引导用户提交售后工单；工单状态：待审核（APPLIED）→ 已通过（APPROVED）→ 已退款（REFUNDED）；或被驳回（REJECTED）。
             """;
 }

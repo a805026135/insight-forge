@@ -205,8 +205,9 @@ export default function OrderHistory() {
         {qrUrl ? (
           <div style={{ textAlign: 'center', padding: 8 }}>
             <img src={qrUrl} alt="支付二维码" style={{ width: 200, height: 200 }} />
-            <p style={{ marginTop: 8, color: '#888' }}>
-              请用手机扫码（演示环境不会真实扣款），扫码后点击下方按钮确认完成支付。
+        <p style={{ marginTop: 8, color: '#888' }}>
+              请用手机扫码（演示环境不会真实扣款）。<br />
+              <b style={{ color: '#333' }}>扫码本身不会完成支付</b>，请点击下方「我已支付，确认付款」按钮，才算支付成功。
             </p>
             {payOrder && (
               <p style={{ color: '#666' }}>

@@ -45,17 +45,21 @@ export default function MerchantKb() {
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
   const [editing, setEditing] = useState(false);
+  const [phone, setPhone] = useState('');
+  const [phoneSaving, setPhoneSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const load = async () => {
     try {
-      const [s, d] = await Promise.all([
+      const [s, d, p] = await Promise.all([
         fetch('/api/merchant/kb/stats', { headers: { Authorization: `Bearer ${getToken()}` } }).then((r) => r.json()),
         fetch('/api/merchant/kb/docs', { headers: { Authorization: `Bearer ${getToken()}` } }).then((r) => r.json()),
+        fetch('/api/merchant/profile', { headers: { Authorization: `Bearer ${getToken()}` } }).then((r) => r.json()),
       ]);
-      if (s.code !== 0 || d.code !== 0) throw new Error('加载失败');
+      if (s.code !== 0 || d.code !== 0 || p.code !== 0) throw new Error('加载失败');
       setStats(s.data);
       setDocs(d.data.documents ?? []);
+      setPhone(p.data?.servicePhone ?? '');
     } catch (e: any) {
       setMsg(e.message || '加载失败');
     }
@@ -174,6 +178,30 @@ export default function MerchantKb() {
     }
   };
 
+  const savePhone = async () => {
+    const p = phone.trim();
+    if (!p) {
+      setMsg('客服电话不能为空');
+      return;
+    }
+    setPhoneSaving(true);
+    setMsg('');
+    try {
+      const r = await fetch('/api/merchant/store-info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ servicePhone: p }),
+      }).then((res) => res.json());
+      if (r.code !== 0) throw new Error(r.message);
+      setMsg(`✔ 已更新客服电话并入库 ${r.data.chunks} 个切块，买家咨询时会引用`);
+      load();
+    } catch (e: any) {
+      setMsg(e.message || '保存失败');
+    } finally {
+      setPhoneSaving(false);
+    }
+  };
+
   const remove = async (doc: KbDoc) => {
     setDeleting(doc.docKey);
     setMsg('');
@@ -199,6 +227,21 @@ export default function MerchantKb() {
         <span className="badge badge-live">RAG 向量检索</span>
       </div>
       {msg && <div className={`toast ${msg.startsWith('✔') ? 'success' : 'error'}`}>{msg}</div>}
+      <div
+        className="assistant-panel"
+        style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, padding: '10px 14px' }}
+      >
+        <span>☎️ 店铺客服电话（买家咨询时会公开引用）：</span>
+        <Input
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="如 400-100-5678"
+          style={{ width: 220 }}
+        />
+        <button className="btn btn-primary" disabled={phoneSaving} onClick={savePhone}>
+          {phoneSaving ? '保存中…' : '保存'}
+        </button>
+      </div>
       <div className="kpi-grid">
         <div className="kpi-card highlight">
           <div className="kpi-value">{stats?.documents ?? '-'}</div>

@@ -22,5 +22,6 @@ public class Merchant extends BaseEntity {
     private BigDecimal rating;
     private Long salesCount;
     private Boolean verified;
+    private String servicePhone;
     private LocalDateTime createdAt;
 }

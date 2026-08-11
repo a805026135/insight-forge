@@ -195,7 +195,7 @@ public class KnowledgeBaseService {
                 continue;
             }
             String st = str(d.getMetadata().get("sourceType"));
-            if (!("PRODUCT".equals(st) || "ACTIVITY".equals(st))) {
+            if (!("PRODUCT".equals(st) || "ACTIVITY".equals(st) || "STORE_INFO".equals(st))) {
                 continue;
             }
             hits.putIfAbsent(d.getId(), toHit(d));
