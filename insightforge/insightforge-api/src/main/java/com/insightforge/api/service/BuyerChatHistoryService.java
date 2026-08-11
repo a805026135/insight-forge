@@ -41,4 +41,9 @@ public class BuyerChatHistoryService {
         Collections.reverse(out);
         return out;
     }
+
+    /** 清空该用户的客服历史（用户主动清空对话）。 */
+    public void clear(long userId) {
+        mapper.delete(new QueryWrapper<BuyerChatMessage>().eq("user_id", userId));
+    }
 }

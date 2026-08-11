@@ -64,6 +64,13 @@ public class BuyerController {
         return ApiResult.ok(chatHistoryService.history(AuthContextHolder.requireUserId(), limit));
     }
 
+    /** DELETE /api/buyer/chat/history 清空我的客服历史 */
+    @DeleteMapping("/chat/history")
+    public ApiResult<Void> chatHistoryClear() {
+        chatHistoryService.clear(AuthContextHolder.requireUserId());
+        return ApiResult.ok(null);
+    }
+
     /** GET /api/buyer/after-sale/drafts?question=... AI 预填退款草稿（只识别，不写历史） */
     @GetMapping("/after-sale/drafts")
     public ApiResult<List<AfterSaleDraft>> afterSaleDrafts(

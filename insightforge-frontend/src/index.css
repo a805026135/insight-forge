@@ -1517,3 +1517,11 @@ html, body, #root {
   color: var(--green);
   animation: pulse 1s infinite;
 }
+
+.answer-source {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+}

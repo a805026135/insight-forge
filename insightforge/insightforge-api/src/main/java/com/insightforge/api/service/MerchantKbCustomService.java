@@ -73,4 +73,36 @@ public class MerchantKbCustomService {
         return customDocMapper.selectList(
                 new QueryWrapper<AgentKbCustomDoc>().eq("merchant_id", merchantId).orderByDesc("id"));
     }
+
+    public AgentKbCustomDoc get(long merchantId, String docKey) {
+        if (docKey == null || docKey.isBlank()) {
+            throw new IllegalArgumentException("缺少文档 docKey");
+        }
+        AgentKbCustomDoc doc = customDocMapper.selectOne(
+                new QueryWrapper<AgentKbCustomDoc>().eq("doc_key", docKey));
+        if (doc == null || doc.getMerchantId() == null || doc.getMerchantId() != merchantId) {
+            throw new IllegalArgumentException("无权查看该文档或文档不存在");
+        }
+        return doc;
+    }
+
+    /** 编辑自定义知识：更新全文并重新入库（同 docKey 覆盖，版本 +1）。 */
+    public Map<String, Object> update(long merchantId, String docKey, String title, String content) {
+        AgentKbCustomDoc doc = get(merchantId, docKey);
+        String t = title == null ? "" : title.trim();
+        if (t.isBlank() || t.length() > 100) {
+            throw new IllegalArgumentException("标题需为 1~100 字符");
+        }
+        if (content == null || content.isBlank()) {
+            throw new IllegalArgumentException("内容不能为空");
+        }
+        if (content.length() > MAX_CHARS) {
+            throw new IllegalArgumentException("内容不能超过 10 万字符");
+        }
+        doc.setTitle(t);
+        doc.setContent(content);
+        customDocMapper.updateById(doc);
+        int chunks = kb.ingestText(docKey, t, "CUSTOM", merchantId, content);
+        return Map.of("docKey", docKey, "chunks", chunks);
+    }
 }

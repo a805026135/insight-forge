@@ -12,6 +12,13 @@ interface KbDoc {
   chunkCount: number | null;
 }
 
+interface CustomDoc {
+  id: number;
+  docKey: string;
+  title: string;
+  content: string;
+}
+
 const SOURCE_LABEL: Record<string, string> = {
   PLAYBOOK: '运营手册',
   FAQ: 'FAQ',
@@ -32,6 +39,12 @@ export default function MerchantKb() {
   const [upContent, setUpContent] = useState('');
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [viewDoc, setViewDoc] = useState<CustomDoc | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [editDoc, setEditDoc] = useState<CustomDoc | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [editing, setEditing] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const load = async () => {
@@ -101,6 +114,63 @@ export default function MerchantKb() {
       setMsg(e.message || '上传失败');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const view = async (doc: KbDoc) => {
+    setViewLoading(true);
+    setViewDoc({ id: doc.id, docKey: doc.docKey, title: doc.title, content: '' });
+    setMsg('');
+    try {
+      const r = await fetch(`/api/merchant/kb/custom/detail?docKey=${encodeURIComponent(doc.docKey)}`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      }).then((res) => res.json());
+      if (r.code !== 0) throw new Error(r.message);
+      setViewDoc(r.data);
+    } catch (e: any) {
+      setMsg(e.message || '查看失败');
+      setViewDoc(null);
+    } finally {
+      setViewLoading(false);
+    }
+  };
+
+  const openEdit = (doc: KbDoc) => {
+    fetch(`/api/merchant/kb/custom/detail?docKey=${encodeURIComponent(doc.docKey)}`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then((res) => res.json())
+      .then((r) => {
+        if (r.code !== 0) throw new Error(r.message);
+        setEditDoc(r.data);
+        setEditTitle(r.data.title ?? '');
+        setEditContent(r.data.content ?? '');
+      })
+      .catch((e: any) => setMsg(e.message || '加载失败'));
+  };
+
+  const saveEdit = async () => {
+    if (!editDoc) return;
+    if (!editTitle.trim() || !editContent.trim()) {
+      setMsg('标题和内容不能为空');
+      return;
+    }
+    setEditing(true);
+    setMsg('');
+    try {
+      const r = await fetch('/api/merchant/kb/custom', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ docKey: editDoc.docKey, title: editTitle.trim(), content: editContent }),
+      }).then((res) => res.json());
+      if (r.code !== 0) throw new Error(r.message);
+      setMsg(`✔ 已更新并重新入库 ${r.data.chunks} 个切块`);
+      setEditDoc(null);
+      load();
+    } catch (e: any) {
+      setMsg(e.message || '保存失败');
+    } finally {
+      setEditing(false);
     }
   };
 
@@ -185,17 +255,21 @@ export default function MerchantKb() {
                 <td>v{d.version ?? 1}</td>
                 <td>{d.chunkCount ?? 0}</td>
                 <td>
-                  {d.sourceType === 'CUSTOM' ? (
-                    <button
-                      className="btn btn-danger"
-                      disabled={deleting === d.docKey}
-                      onClick={() => remove(d)}
-                    >
-                      {deleting === d.docKey ? '删除中…' : '删除'}
-                    </button>
-                  ) : (
-                    <span style={{ color: '#888', fontSize: 12 }}>内置</span>
-                  )}
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {d.sourceType === 'CUSTOM' ? (
+                      <>
+                        <button disabled={viewLoading} onClick={() => view(d)}>
+                          查看
+                        </button>
+                        <button onClick={() => openEdit(d)}>编辑</button>
+                        <button className="btn btn-danger" disabled={deleting === d.docKey} onClick={() => remove(d)}>
+                          {deleting === d.docKey ? '删除中…' : '删除'}
+                        </button>
+                      </>
+                    ) : (
+                      <span style={{ color: '#888', fontSize: 12 }}>内置</span>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -207,6 +281,45 @@ export default function MerchantKb() {
           </tbody>
         </table>
       </section>
+
+      <Modal
+        title={viewDoc?.title ?? '知识详情'}
+        open={viewDoc != null}
+        onCancel={() => setViewDoc(null)}
+        footer={null}
+      >
+        {viewLoading ? (
+          <p>加载中…</p>
+        ) : (
+          <pre style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.7 }}>
+            {viewDoc?.content ?? ''}
+          </pre>
+        )}
+      </Modal>
+
+      <Modal
+        title="编辑我的知识"
+        open={editDoc != null}
+        onCancel={() => setEditDoc(null)}
+        onOk={saveEdit}
+        okText="保存并重新入库"
+        cancelText="取消"
+        confirmLoading={editing}
+      >
+        <Input
+          placeholder="标题"
+          value={editTitle}
+          maxLength={100}
+          onChange={(e) => setEditTitle(e.target.value)}
+          style={{ marginBottom: 12 }}
+        />
+        <Input.TextArea
+          placeholder="知识内容"
+          value={editContent}
+          rows={8}
+          onChange={(e) => setEditContent(e.target.value)}
+        />
+      </Modal>
 
       <Modal
         title="上传我的知识"

@@ -10,6 +10,8 @@ public record BuyerAssistantReply(
         String answer,
         boolean needHuman,
         List<MerchantContact> merchants,
-        List<AfterSaleDraft> drafts
+        List<AfterSaleDraft> drafts,
+        List<ProductCandidate> productCandidates,
+        List<OrderCandidate> orderCandidates
 ) {
 }

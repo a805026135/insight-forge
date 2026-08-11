@@ -140,6 +140,28 @@ public class MerchantController {
         return ApiResult.ok(kbCustomService.list(AuthContextHolder.requireMerchantId()));
     }
 
+    /** GET /api/merchant/kb/custom/detail?docKey=... 查看自定义知识全文 */
+    @GetMapping("/kb/custom/detail")
+    public ApiResult<AgentKbCustomDoc> kbCustomDetail(@RequestParam String docKey) {
+        try {
+            return ApiResult.ok(kbCustomService.get(AuthContextHolder.requireMerchantId(), docKey));
+        } catch (IllegalArgumentException e) {
+            return ApiResult.fail(400, e.getMessage());
+        }
+    }
+
+    /** PUT /api/merchant/kb/custom 编辑自定义知识（同 docKey 覆盖重入库） */
+    @PutMapping("/kb/custom")
+    public ApiResult<Map<String, Object>> kbCustomUpdate(@RequestBody Map<String, String> body) {
+        long mid = AuthContextHolder.requireMerchantId();
+        try {
+            return ApiResult.ok(new HashMap<>(kbCustomService.update(
+                    mid, body.get("docKey"), body.get("title"), body.get("content"))));
+        } catch (IllegalArgumentException e) {
+            return ApiResult.fail(400, e.getMessage());
+        }
+    }
+
     /** DELETE /api/merchant/kb/custom?docKey=... 删除自定义知识（同时清向量库与切块） */
     @DeleteMapping("/kb/custom")
     public ApiResult<Void> kbCustomDelete(@RequestParam String docKey) {

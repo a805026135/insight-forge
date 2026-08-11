@@ -9,6 +9,7 @@ interface ChatMsg {
   streaming?: boolean;
   drafts?: AfterSaleDraft[];
   candidates?: ProductCandidate[];
+  orderCandidates?: OrderCandidate[];
   human?: { needHuman: boolean; merchants: MerchantContact[] };
 }
 
@@ -30,6 +31,14 @@ interface ProductCandidate {
   merchantId: number;
   merchantName: string;
   imageUrl?: string | null;
+}
+
+interface OrderCandidate {
+  orderId: string;
+  merchantId: number | null;
+  merchantName: string | null;
+  productName: string | null;
+  amount: number | null;
 }
 
 interface AfterSale {
@@ -84,6 +93,34 @@ export default function SupportPage() {
   const [transferMerchants, setTransferMerchants] = useState<MerchantContact[]>([]);
   const [transferQuestion, setTransferQuestion] = useState('');
   const [lastQuestion, setLastQuestion] = useState('');
+
+  const clearChat = async () => {
+    try {
+      const r = await fetch('/api/buyer/chat/history', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${getToken()}` },
+      }).then((res) => res.json());
+      if (r.code !== 0) throw new Error(r.message);
+      setMessages([]);
+      setMsg('✔ 对话已清空');
+    } catch (e: any) {
+      setMsg(e.message || '清空失败');
+    }
+  };
+
+  const renderAnswer = (content: string) => {
+    const lines = content.split('\n');
+    const idx = lines.findIndex((l) => l.includes('来源') && l.includes('《'));
+    if (idx < 0) {
+      return <div className="md-body" dangerouslySetInnerHTML={{ __html: marked.parse(content) }} />;
+    }
+    return (
+      <>
+        <div className="md-body" dangerouslySetInnerHTML={{ __html: marked.parse(lines.slice(0, idx).join('\n')) }} />
+        <div className="answer-source">{lines.slice(idx).join('\n')}</div>
+      </>
+    );
+  };
   const listRef = useRef<HTMLDivElement | null>(null);
   const streamRef = useRef<AbortController | null>(null);
 
@@ -177,6 +214,7 @@ export default function SupportPage() {
       // 流式结束后拉取意图：退款草稿 / 商品候选 / 转人工商家列表
       let drafts: AfterSaleDraft[] = [];
       let candidates: ProductCandidate[] = [];
+      let orderCandidates: OrderCandidate[] = [];
       let human = { needHuman: false, merchants: [] as MerchantContact[] };
       try {
         const r = await fetch(`/api/buyer/assistant/intent?question=${encodeURIComponent(text)}`, {
@@ -185,18 +223,21 @@ export default function SupportPage() {
         if (r.code === 0) {
           drafts = r.data.drafts ?? [];
           candidates = r.data.productCandidates ?? [];
+          orderCandidates = r.data.orderCandidates ?? [];
           human = { needHuman: r.data.needHuman, merchants: r.data.merchants ?? [] };
         }
       } catch {
         // ignore
       }
-      if (candidates.length > 0) {
+      if (candidates.length > 0 || orderCandidates.length > 0) {
         setLastQuestion(text);
       }
       setMessages((prev) => {
         const next = [...prev];
         const idx = next.findIndex((m) => m.role === 'assistant' && m.streaming);
-        if (idx >= 0) next[idx] = { ...next[idx], content: acc, streaming: false, drafts, candidates, human };
+        if (idx >= 0) {
+          next[idx] = { ...next[idx], content: acc, streaming: false, drafts, candidates, orderCandidates, human };
+        }
         return next;
       });
     } catch (e: any) {
@@ -288,6 +329,9 @@ export default function SupportPage() {
       <div className="page-head">
         <h2>在线客服</h2>
         <span className="badge badge-live">7×24 在线</span>
+        <button className="btn" style={{ marginLeft: 'auto' }} onClick={clearChat}>
+          清空对话
+        </button>
       </div>
       {msg && <div className={`toast ${msg.startsWith('✔') ? 'success' : 'error'}`}>{msg}</div>}
       <section className="assistant-panel">
@@ -304,7 +348,7 @@ export default function SupportPage() {
               <div className="chat-avatar">{m.role === 'user' ? '🛒' : '🤖'}</div>
               <div className="chat-body">
                 {m.role === 'assistant' ? (
-                  <div className="md-body" dangerouslySetInnerHTML={{ __html: marked.parse(m.content || '…') }} />
+                  renderAnswer(m.content || '…')
                 ) : (
                   <div className="chat-text">{m.content}</div>
                 )}
@@ -362,6 +406,25 @@ export default function SupportPage() {
                         </span>
                         <button onClick={() => askStream(`${c.productName}（${c.merchantName}）— ${lastQuestion}`, c.merchantId)}>
                           选这个
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {m.orderCandidates && m.orderCandidates.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <div className="assistant-hint">🧾 你问的是哪一笔订单？选择后我按对应商家回答：</div>
+                    {m.orderCandidates.map((oc) => (
+                      <div key={oc.orderId} className="action-card">
+                        <span className="action-desc">
+                          📦 {oc.orderId} · {oc.productName ?? '-'}（{oc.merchantName ?? '未知商家'}）
+                          {oc.amount != null ? ` ¥${oc.amount}` : ''}
+                        </span>
+                        <button
+                          disabled={oc.merchantId == null}
+                          onClick={() => oc.merchantId != null && askStream(lastQuestion, oc.merchantId)}
+                        >
+                          选这笔
                         </button>
                       </div>
                     ))}

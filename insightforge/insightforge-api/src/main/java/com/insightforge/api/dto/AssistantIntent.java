@@ -10,6 +10,7 @@ public record AssistantIntent(
         boolean needHuman,
         List<MerchantContact> merchants,
         List<AfterSaleDraft> drafts,
-        List<ProductCandidate> productCandidates
+        List<ProductCandidate> productCandidates,
+        List<OrderCandidate> orderCandidates
 ) {
 }
