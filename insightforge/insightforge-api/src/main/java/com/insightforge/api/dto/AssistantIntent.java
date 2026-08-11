@@ -9,6 +9,7 @@ import java.util.List;
 public record AssistantIntent(
         boolean needHuman,
         List<MerchantContact> merchants,
-        List<AfterSaleDraft> drafts
+        List<AfterSaleDraft> drafts,
+        List<ProductCandidate> productCandidates
 ) {
 }

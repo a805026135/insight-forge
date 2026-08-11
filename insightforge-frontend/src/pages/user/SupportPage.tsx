@@ -8,6 +8,7 @@ interface ChatMsg {
   content: string;
   streaming?: boolean;
   drafts?: AfterSaleDraft[];
+  candidates?: ProductCandidate[];
   human?: { needHuman: boolean; merchants: MerchantContact[] };
 }
 
@@ -19,6 +20,13 @@ interface AfterSaleDraft {
 }
 
 interface MerchantContact {
+  merchantId: number;
+  merchantName: string;
+}
+
+interface ProductCandidate {
+  productId: number;
+  productName: string;
   merchantId: number;
   merchantName: string;
 }
@@ -74,6 +82,7 @@ export default function SupportPage() {
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferMerchants, setTransferMerchants] = useState<MerchantContact[]>([]);
   const [transferQuestion, setTransferQuestion] = useState('');
+  const [lastQuestion, setLastQuestion] = useState('');
   const listRef = useRef<HTMLDivElement | null>(null);
   const streamRef = useRef<AbortController | null>(null);
 
@@ -164,8 +173,9 @@ export default function SupportPage() {
           });
         }
       }
-      // 流式结束后拉取意图：退款草稿 / 转人工商家列表
+      // 流式结束后拉取意图：退款草稿 / 商品候选 / 转人工商家列表
       let drafts: AfterSaleDraft[] = [];
+      let candidates: ProductCandidate[] = [];
       let human = { needHuman: false, merchants: [] as MerchantContact[] };
       try {
         const r = await fetch(`/api/buyer/assistant/intent?question=${encodeURIComponent(text)}`, {
@@ -173,15 +183,19 @@ export default function SupportPage() {
         }).then((res) => res.json());
         if (r.code === 0) {
           drafts = r.data.drafts ?? [];
+          candidates = r.data.productCandidates ?? [];
           human = { needHuman: r.data.needHuman, merchants: r.data.merchants ?? [] };
         }
       } catch {
         // ignore
       }
+      if (candidates.length > 0) {
+        setLastQuestion(text);
+      }
       setMessages((prev) => {
         const next = [...prev];
         const idx = next.findIndex((m) => m.role === 'assistant' && m.streaming);
-        if (idx >= 0) next[idx] = { ...next[idx], content: acc, streaming: false, drafts, human };
+        if (idx >= 0) next[idx] = { ...next[idx], content: acc, streaming: false, drafts, candidates, human };
         return next;
       });
     } catch (e: any) {
@@ -314,6 +328,19 @@ export default function SupportPage() {
                     <button onClick={() => openTransfer(m.content || '', m.human?.merchants ?? [])}>
                       联系商家客服
                     </button>
+                  </div>
+                )}
+                {m.candidates && m.candidates.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <div className="assistant-hint">🔍 你问的是哪款商品？选择后我按对应商家回答：</div>
+                    {m.candidates.map((c) => (
+                      <div key={c.productId} className="action-card">
+                        <span className="action-desc">🛍️ {c.productName}（{c.merchantName}）</span>
+                        <button onClick={() => askStream(`【${c.merchantName}】${c.productName}，${lastQuestion}`)}>
+                          选这个
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

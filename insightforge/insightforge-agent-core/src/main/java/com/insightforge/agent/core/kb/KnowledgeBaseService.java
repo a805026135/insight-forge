@@ -163,10 +163,41 @@ public class KnowledgeBaseService {
                 .build());
     }
 
+    /**
+     * 检索指定商家的"公开知识"（商品目录/活动规则），供买家客服代理回答商品问题。
+     * 商家私有知识（自定义文档/决策/运营手册）不会出现在这里。
+     */
+    public List<KbSearchHit> searchMerchantPublic(long merchantId, String query, int topK) {
+        if (!properties.isEnabled() || query == null || query.isBlank() || topK <= 0) {
+            return List.of();
+        }
+        int fetchK = Math.max(24, topK * 8);
+        List<Document> candidates = fetchCandidates(query, fetchK);
+        Map<String, KbSearchHit> hits = new LinkedHashMap<>();
+        for (Document d : candidates) {
+            if (hits.size() >= topK) {
+                break;
+            }
+            if (merchantOf(d) != merchantId) {
+                continue;
+            }
+            String st = str(d.getMetadata().get("sourceType"));
+            if (!("PRODUCT".equals(st) || "ACTIVITY".equals(st))) {
+                continue;
+            }
+            hits.putIfAbsent(d.getId(), toHit(d));
+        }
+        return List.copyOf(hits.values());
+    }
+
     private boolean visibleTo(Document d, long merchantId) {
-        Object raw = d.getMetadata().get("merchantId");
-        long mid = raw instanceof Number n ? n.longValue() : 0L;
+        long mid = merchantOf(d);
         return mid == 0L || mid == merchantId;
+    }
+
+    private long merchantOf(Document d) {
+        Object raw = d.getMetadata().get("merchantId");
+        return raw instanceof Number n ? n.longValue() : 0L;
     }
 
     private KbSearchHit toHit(Document d) {
