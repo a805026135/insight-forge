@@ -71,6 +71,18 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-openai</artifactId>
         </dependency>
+        <!-- Phase 19：Milvus 向量库（生产 RAG 检索）；本地/测试用内存 SimpleVectorStore 替代 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-milvus-store</artifactId>
+            <exclusions>
+                <!-- milvus-sdk 传递进来的 log4j-slf4j 绑定会与 Spring Boot 的 logback 冲突 -->
+                <exclusion>
+                    <groupId>org.apache.logging.log4j</groupId>
+                    <artifactId>log4j-slf4j-impl</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
 
         <!-- 运行时驱动（生产接 MySQL；测试用 H2） -->
         <dependency>

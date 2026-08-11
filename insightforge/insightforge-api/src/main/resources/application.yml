@@ -75,9 +75,15 @@ insightforge:
       provider: auto
       api-key: ${INSIGHTFORGE_AGENT_EMBEDDING_API_KEY:}
       base-url: ${INSIGHTFORGE_AGENT_EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
-      model: ${INSIGHTFORGE_AGENT_EMBEDDING_MODEL:text-embedding-v4}
+      model: ${INSIGHTFORGE_AGENT_EMBEDDING_MODEL:qwen3.7-text-embedding}
       dimensions: ${INSIGHTFORGE_AGENT_EMBEDDING_DIMENSIONS:1024}
       local-dimensions: ${INSIGHTFORGE_AGENT_EMBEDDING_LOCAL_DIMENSIONS:512}
+    vectorstore:
+      type: ${INSIGHTFORGE_AGENT_VECTORSTORE_TYPE:simple}
+      milvus-host: ${MILVUS_HOST:localhost}
+      milvus-port: ${MILVUS_PORT:19530}
+      milvus-database: default
+      milvus-collection: insightforge_kb
     knowledge-base:
       enabled: ${INSIGHTFORGE_AGENT_KNOWLEDGE_BASE_ENABLED:true}
       max-chunk-chars: ${INSIGHTFORGE_AGENT_KB_MAX_CHUNK_CHARS:400}

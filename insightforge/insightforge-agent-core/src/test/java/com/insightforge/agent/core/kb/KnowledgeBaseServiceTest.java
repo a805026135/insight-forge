@@ -44,6 +44,7 @@ class KnowledgeBaseServiceTest {
         assertFalse(hits.isEmpty());
         assertTrue(hits.stream().anyMatch(h -> "test/ingest-search/playbook".equals(h.docKey())));
         assertEquals("local-lexical-512", service.providerName());
+        assertTrue(service.vectorStoreName().contains("SimpleVectorStore"));
     }
 
     @Test

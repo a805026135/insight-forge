@@ -5,57 +5,63 @@ import com.insightforge.persistence.entity.AgentKbChunk;
 import com.insightforge.persistence.entity.AgentKbDocument;
 import com.insightforge.persistence.mapper.AgentKbChunkMapper;
 import com.insightforge.persistence.mapper.AgentKbDocumentMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
- * 商家知识库（RAG 核心，Phase 19）。
+ * 商家知识库（RAG 核心，Phase 19 / Milvus）。
  *
  * 设计：
  *  - 文档（agent_kb_document）按 doc_key 幂等重入库，版本 +1；
- *  - 切块（agent_kb_chunk）保存正文 + 归一化向量（JSON，MySQL TEXT）；
- *  - 进程内维护不可变索引快照，search 走余弦相似度，零外部服务；
- *  - merchant_id 隔离：平台知识（NULL）所有商家可见，商家知识仅归属商家可见。
- *
- * 生产切换：EmbeddingProvider 换成 DashScope 只需配置；向量库如需
- * Redis/PGVector/Milvus，替换本类索引实现即可（Spring AI VectorStore 抽象可复用）。
+ *  - 切块（agent_kb_chunk）落 MySQL（记录 chunkId 作为向量库主键，兼作审计）；
+ *  - 向量与正文进 VectorStore：生产 Milvus（COSINE + AUTOINDEX），本地/测试 SimpleVectorStore；
+ *  - 商家隔离：平台知识（merchantId=0）所有商家可见，商家知识仅归属商家可见。
+ *    检索取回候选后在 Java 侧按 merchantId 强制过滤（两种向量库行为一致，绝不越权）；
+ *    生产数据量大时可把过滤下推到 Milvus（SearchRequest.filterExpression），
+ *    Spring AI 抽象已支持，属后续优化点。
  */
 @Service
 public class KnowledgeBaseService {
 
-    private static final Logger log = LoggerFactory.getLogger(KnowledgeBaseService.class);
-
     private final AgentKbDocumentMapper documentMapper;
     private final AgentKbChunkMapper chunkMapper;
+    private final VectorStore vectorStore;
     private final EmbeddingProvider embeddingProvider;
     private final KnowledgeBaseProperties properties;
 
-    private volatile List<IndexedChunk> index = List.of();
-
     public KnowledgeBaseService(AgentKbDocumentMapper documentMapper,
                                 AgentKbChunkMapper chunkMapper,
+                                VectorStore vectorStore,
                                 EmbeddingProvider embeddingProvider,
                                 KnowledgeBaseProperties properties) {
         this.documentMapper = documentMapper;
         this.chunkMapper = chunkMapper;
+        this.vectorStore = vectorStore;
         this.embeddingProvider = embeddingProvider;
         this.properties = properties;
     }
 
     /**
-     * 幂等入库：删除 doc_key 旧块 → 切块 → 向量化 → 插入 → 重建内存索引。
-     * 重复调用同一 doc_key 会覆盖旧版本（文档版本号 +1）。
+     * 幂等入库：删除 doc_key 旧块（MySQL + 向量库）→ 切块 → 插入新块 →
+     * 向量化写入向量库 → 文档版本 +1。
      */
     @Transactional
     public int ingestText(String docKey, String title, String sourceType, Long merchantId, String text) {
         List<String> chunks = TextChunker.chunk(text, properties.getMaxChunkChars(), properties.getOverlapChars());
+        List<AgentKbChunk> oldChunks = chunkMapper.selectList(
+                new QueryWrapper<AgentKbChunk>().eq("doc_key", docKey));
+        if (!oldChunks.isEmpty()) {
+            vectorStore.delete(oldChunks.stream().map(c -> String.valueOf(c.getId())).toList());
+        }
         chunkMapper.delete(new QueryWrapper<AgentKbChunk>().eq("doc_key", docKey));
 
         AgentKbDocument doc = documentMapper.selectOne(
@@ -63,22 +69,33 @@ public class KnowledgeBaseService {
         int version = (doc == null || doc.getVersion() == null) ? 1 : doc.getVersion() + 1;
 
         List<AgentKbChunk> rows = new ArrayList<>();
+        LocalDateTime now = LocalDateTime.now();
         for (String c : chunks) {
-            float[] vec = embeddingProvider.embed(c);
             AgentKbChunk row = new AgentKbChunk();
             row.setDocKey(docKey);
             row.setMerchantId(merchantId);
             row.setTitle(title);
             row.setSourceType(sourceType);
             row.setContent(c);
-            row.setEmbedding(Vectors.toJson(vec));
-            row.setDimension(vec.length);
-            row.setCreatedAt(LocalDateTime.now());
+            row.setCreatedAt(now);
             rows.add(row);
         }
         rows.forEach(chunkMapper::insert);
 
-        LocalDateTime now = LocalDateTime.now();
+        long merchantVisible = merchantId == null ? 0L : merchantId;
+        List<Document> documents = new ArrayList<>();
+        for (AgentKbChunk row : rows) {
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("docKey", docKey);
+            metadata.put("title", title == null ? "" : title);
+            metadata.put("sourceType", sourceType == null ? "" : sourceType);
+            metadata.put("merchantId", merchantVisible);
+            documents.add(new Document(String.valueOf(row.getId()), row.getContent(), metadata));
+        }
+        if (!documents.isEmpty()) {
+            vectorStore.add(documents);
+        }
+
         if (doc == null) {
             AgentKbDocument created = new AgentKbDocument();
             created.setDocKey(docKey);
@@ -103,46 +120,55 @@ public class KnowledgeBaseService {
             doc.setUpdatedAt(now);
             documentMapper.updateById(doc);
         }
-        reloadIndex();
         return rows.size();
     }
 
-    /** 检索：平台知识 + 本商家知识，按余弦相似度取 topK。 */
+    /** 检索：平台知识 + 本商家知识，相似度 topK。商家隔离在 Java 侧强制执行。 */
     public List<KbSearchHit> search(long merchantId, String query, int topK) {
         if (!properties.isEnabled() || query == null || query.isBlank() || topK <= 0) {
             return List.of();
         }
-        float[] q = embeddingProvider.embed(query);
-        int dim = q.length;
-        int limit = Math.max(1, topK);
-        return index.stream()
-                .filter(ic -> ic.dimension() == dim)
-                .filter(ic -> ic.merchantId() == null || ic.merchantId() == merchantId)
-                .map(ic -> new ScoredHit(ic, Vectors.cosine(ic.vector(), q)))
-                .filter(s -> s.score() > 0.01)
-                .sorted(Comparator.comparingDouble(ScoredHit::score).reversed())
-                .limit(limit)
-                .map(s -> new KbSearchHit(s.hit().docKey(), s.hit().title(),
-                        s.hit().content(), s.hit().sourceType(), s.score()))
-                .toList();
+        int fetchK = Math.max(24, topK * 8);
+        List<Document> candidates = fetchCandidates(merchantId, query, fetchK);
+        Map<String, KbSearchHit> hits = new LinkedHashMap<>();
+        for (Document d : candidates) {
+            if (hits.size() >= topK) {
+                break;
+            }
+            if (!visibleTo(d, merchantId)) {
+                continue;
+            }
+            hits.putIfAbsent(d.getId(), toHit(d));
+        }
+        return List.copyOf(hits.values());
     }
 
-    /** 从 MySQL 全量加载并重建内存索引（启动 / 入库后调用）。 */
-    public void reloadIndex() {
-        List<AgentKbChunk> rows = chunkMapper.selectList(new QueryWrapper<>());
-        List<IndexedChunk> rebuilt = new ArrayList<>();
-        for (AgentKbChunk row : rows) {
-            try {
-                float[] vec = Vectors.fromJson(row.getEmbedding());
-                rebuilt.add(new IndexedChunk(row.getDocKey(), row.getTitle(), row.getContent(),
-                        row.getSourceType(), row.getMerchantId(), vec, row.getDimension()));
-            } catch (Exception e) {
-                log.warn("知识库切块向量解析失败，跳过 id={} doc={}", row.getId(), row.getDocKey());
-            }
-        }
-        this.index = rebuilt;
-        log.info("知识库索引重建完成：{} 条切块，embedding={}({}d)",
-                rebuilt.size(), embeddingProvider.name(), embeddingProvider.dimensions());
+    private List<Document> fetchCandidates(long merchantId, String query, int fetchK) {
+        return vectorStore.similaritySearch(SearchRequest.builder()
+                .query(query)
+                .topK(fetchK)
+                .similarityThresholdAll()
+                .build());
+    }
+
+    private boolean visibleTo(Document d, long merchantId) {
+        Object raw = d.getMetadata().get("merchantId");
+        long mid = raw instanceof Number n ? n.longValue() : 0L;
+        return mid == 0L || mid == merchantId;
+    }
+
+    private KbSearchHit toHit(Document d) {
+        Map<String, Object> m = d.getMetadata();
+        return new KbSearchHit(
+                str(m.get("docKey")),
+                str(m.get("title")),
+                d.getText(),
+                str(m.get("sourceType")),
+                d.getScore() == null ? 0.0 : d.getScore());
+    }
+
+    private String str(Object o) {
+        return o == null ? "" : o.toString();
     }
 
     public boolean exists(String docKey) {
@@ -165,14 +191,11 @@ public class KnowledgeBaseService {
         return embeddingProvider.dimensions();
     }
 
+    public String vectorStoreName() {
+        return vectorStore.getClass().getSimpleName();
+    }
+
     public KnowledgeBaseProperties properties() {
         return properties;
-    }
-
-    private record IndexedChunk(String docKey, String title, String content,
-                                String sourceType, Long merchantId, float[] vector, Integer dimension) {
-    }
-
-    private record ScoredHit(IndexedChunk hit, double score) {
     }
 }

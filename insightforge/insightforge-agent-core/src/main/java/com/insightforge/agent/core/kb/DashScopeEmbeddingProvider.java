@@ -21,6 +21,7 @@ public class DashScopeEmbeddingProvider implements EmbeddingProvider {
     private final OpenAiEmbeddingModel model;
     private final String modelName;
     private final int dimensions;
+    private volatile int detectedDimensions;
 
     public DashScopeEmbeddingProvider(String apiKey, String baseUrl, String modelName, int dimensions) {
         OpenAiApi api = OpenAiApi.builder()
@@ -39,17 +40,18 @@ public class DashScopeEmbeddingProvider implements EmbeddingProvider {
 
     @Override
     public int dimensions() {
-        return dimensions;
+        return detectedDimensions > 0 ? detectedDimensions : dimensions;
     }
 
     @Override
     public float[] embed(String text) {
         OpenAiEmbeddingOptions options = OpenAiEmbeddingOptions.builder()
                 .model(modelName)
-                .dimensions(dimensions)
                 .build();
         EmbeddingResponse resp = model.call(new EmbeddingRequest(List.of(text), options));
         Embedding emb = resp.getResult();
-        return Vectors.normalize(emb.getOutput());
+        float[] normalized = Vectors.normalize(emb.getOutput());
+        detectedDimensions = normalized.length;
+        return normalized;
     }
 }

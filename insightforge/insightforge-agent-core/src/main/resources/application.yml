@@ -17,9 +17,15 @@ insightforge:
       provider: auto
       api-key: ${INSIGHTFORGE_AGENT_EMBEDDING_API_KEY:}
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
-      model: text-embedding-v4
+      model: qwen3.7-text-embedding
       dimensions: 1024
       local-dimensions: 512
+    vectorstore:
+      type: ${INSIGHTFORGE_AGENT_VECTORSTORE_TYPE:simple}
+      milvus-host: ${MILVUS_HOST:localhost}
+      milvus-port: ${MILVUS_PORT:19530}
+      milvus-database: default
+      milvus-collection: insightforge_kb
     knowledge-base:
       enabled: true
       max-chunk-chars: 400

@@ -94,6 +94,7 @@ public class MerchantController {
         data.put("enabled", knowledgeBaseService.properties().isEnabled());
         data.put("provider", knowledgeBaseService.providerName());
         data.put("dimensions", knowledgeBaseService.providerDimensions());
+        data.put("vectorStore", knowledgeBaseService.vectorStoreName());
         data.put("documents", knowledgeBaseService.documentCount());
         data.put("chunks", knowledgeBaseService.chunkCount());
         data.put("merchantId", AuthContextHolder.requireMerchantId());
