@@ -2,13 +2,16 @@ package com.insightforge.api.controller;
 
 import com.insightforge.api.auth.AuthContextHolder;
 import com.insightforge.api.dto.AfterSaleDraft;
+import com.insightforge.api.dto.AssistantIntent;
 import com.insightforge.api.dto.BuyerAssistantReply;
 import com.insightforge.api.service.AfterSaleService;
 import com.insightforge.api.service.BuyerAssistantService;
 import com.insightforge.api.service.BuyerChatHistoryService;
+import com.insightforge.api.service.SupportTicketService;
 import com.insightforge.common.result.ApiResult;
 import com.insightforge.persistence.entity.AfterSale;
 import com.insightforge.persistence.entity.BuyerChatMessage;
+import com.insightforge.persistence.entity.SupportTicket;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,13 +34,16 @@ public class BuyerController {
     private final BuyerAssistantService assistantService;
     private final BuyerChatHistoryService chatHistoryService;
     private final AfterSaleService afterSaleService;
+    private final SupportTicketService supportTicketService;
 
     public BuyerController(BuyerAssistantService assistantService,
                            BuyerChatHistoryService chatHistoryService,
-                           AfterSaleService afterSaleService) {
+                           AfterSaleService afterSaleService,
+                           SupportTicketService supportTicketService) {
         this.assistantService = assistantService;
         this.chatHistoryService = chatHistoryService;
         this.afterSaleService = afterSaleService;
+        this.supportTicketService = supportTicketService;
     }
 
     /** POST /api/buyer/assistant 买家客服问答 */
@@ -61,7 +67,44 @@ public class BuyerController {
     @GetMapping("/after-sale/drafts")
     public ApiResult<List<AfterSaleDraft>> afterSaleDrafts(
             @org.springframework.web.bind.annotation.RequestParam String question) {
-        return ApiResult.ok(assistantService.refundDrafts(AuthContextHolder.requireUserId(), question));
+        return ApiResult.ok(assistantService.intent(AuthContextHolder.requireUserId(), question).drafts());
+    }
+
+    /** GET /api/buyer/assistant/intent?question=... 意图识别：无命中→转人工，退款→草稿，商家列表 */
+    @GetMapping("/assistant/intent")
+    public ApiResult<AssistantIntent> assistantIntent(
+            @org.springframework.web.bind.annotation.RequestParam String question) {
+        return ApiResult.ok(assistantService.intent(AuthContextHolder.requireUserId(), question));
+    }
+
+    /** POST /api/buyer/support-ticket 发起咨询（转商家客服） */
+    @PostMapping("/support-ticket")
+    public ApiResult<SupportTicket> supportTicketCreate(@RequestBody Map<String, Object> body) {
+        long userId = AuthContextHolder.requireUserId();
+        long merchantId = body.get("merchantId") instanceof Number n ? n.longValue() : 0L;
+        String question = body.get("question") == null ? null : String.valueOf(body.get("question"));
+        try {
+            return ApiResult.ok(supportTicketService.create(userId, merchantId, question));
+        } catch (IllegalArgumentException e) {
+            return ApiResult.fail(400, e.getMessage());
+        }
+    }
+
+    /** GET /api/buyer/support-ticket 我的咨询列表 */
+    @GetMapping("/support-ticket")
+    public ApiResult<List<SupportTicket>> supportTicketList() {
+        return ApiResult.ok(supportTicketService.buyerList(AuthContextHolder.requireUserId()));
+    }
+
+    /** POST /api/buyer/support-ticket/{id}/close 关闭咨询 */
+    @PostMapping("/support-ticket/{id}/close")
+    public ApiResult<Void> supportTicketClose(@PathVariable Long id) {
+        try {
+            supportTicketService.close(AuthContextHolder.requireUserId(), id);
+            return ApiResult.ok(null);
+        } catch (IllegalArgumentException e) {
+            return ApiResult.fail(400, e.getMessage());
+        }
     }
 
     /** POST /api/buyer/after-sale/apply 提交退款申请（AI 预填后由用户确认提交） */

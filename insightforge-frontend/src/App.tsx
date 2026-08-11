@@ -24,6 +24,7 @@ import MerchantProducts from './pages/merchant/MerchantProducts';
 import MerchantInventory from './pages/merchant/MerchantInventory';
 import MerchantOrders from './pages/merchant/MerchantOrders';
 import MerchantKb from './pages/merchant/MerchantKb';
+import MerchantSupport from './pages/merchant/MerchantSupport';
 import SupportPage from './pages/user/SupportPage';
 import Layout from './components/Layout';
 
@@ -98,6 +99,7 @@ export default function App() {
             <Route path="hitl" element={<Hitl />} />
             <Route path="traces" element={<TraceViewer />} />
             <Route path="kb" element={<MerchantKb />} />
+            <Route path="support" element={<MerchantSupport />} />
           </Route>
         </Routes>
       </AuthProvider>

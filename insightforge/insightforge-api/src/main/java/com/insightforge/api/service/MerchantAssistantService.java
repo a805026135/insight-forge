@@ -139,6 +139,7 @@ public class MerchantAssistantService {
     private List<ChatMessage> buildMessages(long merchantId, String context, String question) {
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(ChatMessage.system(SYSTEM_PROMPT));
+        messages.add(ChatMessage.system("回答必须基于经营数据与【知识库参考】；知识库未收录的信息不要编造，若不确定请明确建议商家联系平台运营。"));
         messages.add(ChatMessage.system("这是多轮对话：请结合用户前面的问题和你自己的回答理解本次问题，不要重复已答内容。"));
         CompactingMemory memory = conversations.computeIfAbsent(merchantId, k -> new CompactingMemory());
         for (ChatMessage m : memory.messages()) {

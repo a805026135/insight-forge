@@ -9,6 +9,7 @@ const MERCHANT_NAV = [
   { to: '/merchant/orders', label: '订单发货' },
   { to: '/merchant/activities', label: '活动管理' },
   { to: '/merchant/hitl', label: '人工审批' },
+  { to: '/merchant/support', label: '售后咨询' },
   { to: '/merchant/traces', label: '调用轨迹' },
 ];
 

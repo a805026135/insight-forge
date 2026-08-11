@@ -8,24 +8,31 @@ import com.insightforge.agent.core.model.DeepSeekModelClient;
 import com.insightforge.agent.core.model.ModelRequest;
 import com.insightforge.agent.core.model.ModelResponse;
 import com.insightforge.api.dto.AfterSaleDraft;
+import com.insightforge.api.dto.AssistantIntent;
 import com.insightforge.api.dto.BuyerAssistantReply;
+import com.insightforge.api.dto.MerchantContact;
 import com.insightforge.persistence.entity.AfterSale;
+import com.insightforge.persistence.entity.OrderItem;
 import com.insightforge.persistence.entity.Orders;
 import com.insightforge.persistence.mapper.AfterSaleMapper;
+import com.insightforge.persistence.mapper.OrderItemMapper;
 import com.insightforge.persistence.mapper.OrdersMapper;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 /**
- * 买家在线客服（Phase 19d/f）：用户级隔离——
- *  - 用户订单走结构化查询（仅本人，地址/电话脱敏），绝不进向量库；
- *  - RAG 只检索平台级公开知识（merchantId=0）；
- *  - 退款意图识别 → 生成退款申请草稿（基于真实订单），由用户确认后提交工单；
- *  - 问答历史持久化，重新进入客服页仍可见。
+ * 买家在线客服（Phase 19d/g）：用户级隔离 + 防幻觉。
+ *  - 订单走 SQL 仅本人，RAG 只取平台级公开知识（merchantId=0）；
+ *  - 知识库无命中 → 强制转人工/商家（needHuman=true），绝不调用 LLM 编造；
+ *  - 退款意图 → 按真实订单生成草稿，用户确认后提交工单；
+ *  - 问答历史持久化。
  */
 @Service
 public class BuyerAssistantService {
@@ -33,39 +40,68 @@ public class BuyerAssistantService {
     private final ObjectProvider<DeepSeekModelClient> deepSeekModelClient;
     private final ObjectProvider<KnowledgeBaseService> knowledgeBaseProvider;
     private final OrdersMapper ordersMapper;
+    private final OrderItemMapper orderItemMapper;
     private final AfterSaleMapper afterSaleMapper;
     private final BuyerChatHistoryService chatHistory;
 
     public BuyerAssistantService(ObjectProvider<DeepSeekModelClient> deepSeekModelClient,
                                  ObjectProvider<KnowledgeBaseService> knowledgeBaseProvider,
                                  OrdersMapper ordersMapper,
+                                 OrderItemMapper orderItemMapper,
                                  AfterSaleMapper afterSaleMapper,
                                  BuyerChatHistoryService chatHistory) {
         this.deepSeekModelClient = deepSeekModelClient;
         this.knowledgeBaseProvider = knowledgeBaseProvider;
         this.ordersMapper = ordersMapper;
+        this.orderItemMapper = orderItemMapper;
         this.afterSaleMapper = afterSaleMapper;
         this.chatHistory = chatHistory;
     }
 
     public BuyerAssistantReply ask(long userId, String question) {
-        String context = buildContext(userId, question);
-        String answer = generate(userId, context, question);
+        boolean refund = isRefundIntent(question);
+        List<AfterSaleDraft> drafts = refund ? buildRefundDrafts(userId) : List.of();
+        boolean needHuman;
+        List<MerchantContact> merchants = List.of();
+        String answer;
+
+        if (refund && drafts.isEmpty()) {
+            answer = "你暂时没有可退款的订单（需 已支付/已发货/已完成 状态）。如需帮助，可以联系商家或人工客服。";
+            needHuman = true;
+            merchants = recentMerchants(userId);
+        } else if (!refund && kbHitEmpty(question)) {
+            answer = "这个问题平台知识库暂时没有收录。为避免误导，建议转人工客服，或直接联系具体商家咨询。";
+            needHuman = true;
+            merchants = recentMerchants(userId);
+        } else {
+            answer = generate(userId, buildContext(userId, question), question);
+            needHuman = false;
+        }
         chatHistory.record(userId, "user", question);
         chatHistory.record(userId, "assistant", answer);
+        return new BuyerAssistantReply(answer, needHuman, merchants, drafts);
+    }
 
-        List<AfterSaleDraft> drafts = List.of();
-        if (isRefundIntent(question)) {
-            drafts = buildRefundDrafts(userId);
-            if (!drafts.isEmpty()) {
-                answer += "\n\n我根据你的真实订单预填了退款申请，请核对后点击【提交退款申请】。";
-            }
-        }
-        return new BuyerAssistantReply(answer, drafts);
+    /** 意图识别（不生成、不记录）：无命中 → needHuman；退款 → drafts；merchants 供转商家选择。 */
+    public AssistantIntent intent(long userId, String question) {
+        boolean refund = isRefundIntent(question);
+        List<AfterSaleDraft> drafts = refund ? buildRefundDrafts(userId) : List.of();
+        boolean needHuman = (refund && drafts.isEmpty()) || (!refund && kbHitEmpty(question));
+        List<MerchantContact> merchants = needHuman ? recentMerchants(userId) : List.of();
+        return new AssistantIntent(needHuman, merchants, drafts);
     }
 
     public void askStream(long userId, String question, Consumer<String> onChunk) {
-        String text = generate(userId, buildContext(userId, question), question);
+        boolean refund = isRefundIntent(question);
+        boolean needHuman = !refund && kbHitEmpty(question);
+        String text;
+        if (refund) {
+            text = generate(userId, buildContext(userId, question), question);
+        } else if (needHuman) {
+            text = "这个问题平台知识库暂时没有收录。为避免误导，建议转人工客服，或直接联系具体商家咨询。";
+        } else {
+            text = generate(userId, buildContext(userId, question), question);
+        }
         chatHistory.record(userId, "user", question);
         chatHistory.record(userId, "assistant", text);
         for (int i = 0; i < text.length(); i += 6) {
@@ -79,9 +115,30 @@ public class BuyerAssistantService {
         }
     }
 
-    /** 退款草稿（只识别不记录历史）：流式回答结束后前端单独拉取，供用户确认提交。 */
-    public List<AfterSaleDraft> refundDrafts(long userId, String question) {
-        return isRefundIntent(question) ? buildRefundDrafts(userId) : List.of();
+    /** 平台知识库是否无命中（买家客服只检索平台级知识）。 */
+    private boolean kbHitEmpty(String question) {
+        KnowledgeBaseService kb = knowledgeBaseProvider.getIfAvailable();
+        return kb == null || kb.search(0L, question, 3).isEmpty();
+    }
+
+    private List<MerchantContact> recentMerchants(long userId) {
+        List<Orders> orders = ordersMapper.selectList(new QueryWrapper<Orders>()
+                .eq("user_id", userId).orderByDesc("created_at").last("LIMIT 20"));
+        List<String> orderIds = orders.stream().map(Orders::getOrderId).distinct().toList();
+        if (orderIds.isEmpty()) {
+            return List.of();
+        }
+        List<OrderItem> items = orderItemMapper.selectList(
+                new QueryWrapper<OrderItem>().in("order_id", orderIds));
+        Map<Long, String> distinct = new LinkedHashMap<>();
+        for (OrderItem it : items) {
+            if (it.getMerchantId() != null) {
+                distinct.putIfAbsent(it.getMerchantId(), it.getMerchantName() == null ? "商家" + it.getMerchantId() : it.getMerchantName());
+            }
+        }
+        return distinct.entrySet().stream()
+                .map(e -> new MerchantContact(e.getKey(), e.getValue()))
+                .limit(5).collect(Collectors.toList());
     }
 
     private String generate(long userId, String context, String question) {
@@ -97,7 +154,6 @@ public class BuyerAssistantService {
         return deterministicAnswer(context, question);
     }
 
-    /** 退款意图识别：问题含“退款/退货”且系统支持，则预填真实订单草稿。 */
     private boolean isRefundIntent(String question) {
         String q = question == null ? "" : question;
         return q.contains("退款") || q.contains("退货");
@@ -154,7 +210,8 @@ public class BuyerAssistantService {
                     sb.append("- 《").append(h.title()).append("》")
                       .append(h.content().replace("\n", " ")).append("\n");
                 }
-                sb.append("请优先参考以上平台公开知识回答，并简要说明依据来源。\n");
+                sb.append("请仅依据以上平台公开知识与订单摘要回答，并标注《来源》标题；\n")
+                  .append("若以上资料不足以回答，请明确说\"知识库未收录，请转人工客服\"，不要自行推断。\n");
             }
         }
         return sb.toString();
@@ -163,21 +220,18 @@ public class BuyerAssistantService {
     private String deterministicAnswer(String context, String question) {
         String q = question == null ? "" : question;
         if (q.contains("退款") || q.contains("退货")) {
-            return "退款需要在系统内提交售后工单：我会根据你的真实订单预填申请（订单号、金额、原因），你确认后提交，状态会按“待审核 → 已通过 → 已退款”流转，可在“我的售后单”里查看进度。";
+            return "退款需要在系统内提交售后工单：我会根据你的真实订单预填申请（订单号、金额、原因），你确认后提交，状态会按“待审核 → 已通过 → 已退款”流转。";
         }
         if (q.contains("物流") || q.contains("发货") || q.contains("快递")) {
-            return "商家承诺支付后 48 小时内发货；建议当面验货再签收，外包装破损可拒收或拍照留证后联系客服。";
+            return "根据《买家售后政策》：商家承诺支付后 48 小时内发货；建议当面验货再签收。";
         }
         if (q.contains("发票")) {
-            return "支持电子发票，可在订单详情页申请，7 个工作日内开具。";
-        }
-        if (q.contains("订单")) {
-            return "我查询到你的最近订单如下（详见上方订单摘要）。如需更详细物流信息，请提供订单号或联系人工客服。";
+            return "根据《买家售后政策》：支持电子发票，可在订单详情页申请，7 个工作日内开具。";
         }
         if (q.contains("客服")) {
             return "订单页在线客服 7×24 小时在线；电话客服 400-888-0000，工作日 9:00-21:00。";
         }
-        return "我是平台在线客服。关于退款退货、物流发货、发票、订单状态等常见问题都可以问我；更复杂的问题会转人工处理。";
+        return "这个问题平台知识库暂时没有收录。为避免误导，建议转人工客服，或直接联系具体商家咨询。";
     }
 
     private String mask(String s) {
@@ -200,10 +254,8 @@ public class BuyerAssistantService {
 
     private static final String SYSTEM_PROMPT = """
             你是一名电商平台在线客服，正在为买家解答问题。
-            只基于【我的最近订单】中的真实订单数据和【平台公开知识】回答，不要编造数据。
-            退款/退货必须引导用户提交售后工单（可让 AI 预填），不得承诺系统外流程。
-            工单状态流转：待审核（APPLIED）→ 已通过（APPROVED）→ 已退款（REFUNDED）；或被驳回（REJECTED）。
-            涉及订单状态/金额时，只引用订单摘要中的真实数据；涉及政策时引用《来源》标题。
-            若知识库未收录相关内容，明确说"该问题需要联系人工客服"。
+            只能基于【我的最近订单】的真实订单数据和【平台公开知识】回答。
+            回答必须标注《来源》标题；资料不足以回答时，必须说"知识库未收录，请转人工客服"，绝不编造政策条款或订单信息。
+            退款/退货引导用户提交售后工单；工单状态：待审核（APPLIED）→ 已通过（APPROVED）→ 已退款（REFUNDED）；或被驳回（REJECTED）。
             """;
 }
