@@ -10,6 +10,7 @@ import com.insightforge.api.dto.MerchantProductView;
 import com.insightforge.api.dto.AssistantReply;
 import com.insightforge.api.service.MerchantAssistantService;
 import com.insightforge.api.service.MerchantActionService;
+import com.insightforge.api.service.AfterSaleService;
 import com.insightforge.api.service.LogisticsReviewService;
 import com.insightforge.api.service.MerchantKbCustomService;
 import com.insightforge.common.result.ApiResult;
@@ -65,6 +66,7 @@ public class MerchantController {
     private final MerchantKbRefresher merchantKbRefresher;
     private final MerchantKbCustomService kbCustomService;
     private final LogisticsReviewService logisticsReviewService;
+    private final AfterSaleService afterSaleService;
 
     public MerchantController(MerchantMapper merchantMapper, ProductMapper productMapper,
                               ActivitySkuMapper activitySkuMapper, OrdersMapper ordersMapper,
@@ -74,7 +76,8 @@ public class MerchantController {
                               KnowledgeBaseSeeder knowledgeBaseSeeder,
                               MerchantKbRefresher merchantKbRefresher,
                               MerchantKbCustomService kbCustomService,
-                              LogisticsReviewService logisticsReviewService) {
+                              LogisticsReviewService logisticsReviewService,
+                              AfterSaleService afterSaleService) {
         this.merchantMapper = merchantMapper;
         this.productMapper = productMapper;
         this.activitySkuMapper = activitySkuMapper;
@@ -87,6 +90,7 @@ public class MerchantController {
         this.merchantKbRefresher = merchantKbRefresher;
         this.kbCustomService = kbCustomService;
         this.logisticsReviewService = logisticsReviewService;
+        this.afterSaleService = afterSaleService;
     }
 
     /** POST /api/merchant/kb/reindex 手动刷新当前商家的知识库（商品 + 历史决策） */
@@ -451,7 +455,55 @@ public class MerchantController {
     }
 
     /** POST /api/merchant/orders/{orderId}/ship ?????PAY ? SHIPPED? */
-    @PostMapping("/orders/{orderId}/ship")
+        /** GET /api/merchant/after-sales?status= ????????????? */
+    @GetMapping("/after-sales")
+    public ApiResult<List<com.insightforge.persistence.entity.AfterSale>> afterSales(
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String status) {
+        long mid = AuthContextHolder.requireMerchantId();
+        return ApiResult.ok(afterSaleService.merchantList(mid, status));
+    }
+
+    /** POST /api/merchant/after-sales/{id}/review?approve=true ?????? */
+    @PostMapping("/after-sales/{id}/review")
+    public ApiResult<Void> afterSaleReview(@PathVariable Long id,
+            @org.springframework.web.bind.annotation.RequestParam boolean approve,
+            @RequestBody(required = false) Map<String, String> body) {
+        long mid = AuthContextHolder.requireMerchantId();
+        try {
+            afterSaleService.review(mid, id, approve, body == null ? null : body.get("note"));
+            return ApiResult.ok(null);
+        } catch (IllegalArgumentException e) {
+            return ApiResult.fail(400, e.getMessage());
+        }
+    }
+
+    /** POST /api/merchant/after-sales/{id}/appeal-review?approve=true ???? */
+    @PostMapping("/after-sales/{id}/appeal-review")
+    public ApiResult<Void> afterSaleAppealReview(@PathVariable Long id,
+            @org.springframework.web.bind.annotation.RequestParam boolean approve,
+            @RequestBody(required = false) Map<String, String> body) {
+        long mid = AuthContextHolder.requireMerchantId();
+        try {
+            afterSaleService.reviewAppeal(mid, id, approve, body == null ? null : body.get("note"));
+            return ApiResult.ok(null);
+        } catch (IllegalArgumentException e) {
+            return ApiResult.fail(400, e.getMessage());
+        }
+    }
+
+    /** POST /api/merchant/after-sales/{id}/refund ?????? */
+    @PostMapping("/after-sales/{id}/refund")
+    public ApiResult<Void> afterSaleRefund(@PathVariable Long id) {
+        long mid = AuthContextHolder.requireMerchantId();
+        try {
+            afterSaleService.refund(mid, id);
+            return ApiResult.ok(null);
+        } catch (IllegalArgumentException e) {
+            return ApiResult.fail(400, e.getMessage());
+        }
+    }
+
+@PostMapping("/orders/{orderId}/ship")
     public ApiResult<Void> ship(@PathVariable String orderId) {
         long mid = AuthContextHolder.requireMerchantId();
         return logisticsReviewService.ship(mid, orderId);

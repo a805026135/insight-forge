@@ -149,7 +149,20 @@ public class BuyerController {
     }
 
     /** POST /api/buyer/after-sale/{id}/cancel 取消待审核的退款申请 */
-    @PostMapping("/after-sale/{id}/cancel")
+        /** POST /api/buyer/after-sale/{id}/appeal ?????????REJECTED ? APPEAL? */
+    @PostMapping("/after-sale/{id}/appeal")
+    public ApiResult<Void> afterSaleAppeal(@PathVariable Long id,
+                                           @RequestBody Map<String, String> body) {
+        long userId = AuthContextHolder.requireUserId();
+        try {
+            afterSaleService.appeal(userId, id, body.get("reason"));
+            return ApiResult.ok(null);
+        } catch (IllegalArgumentException e) {
+            return ApiResult.fail(400, e.getMessage());
+        }
+    }
+
+@PostMapping("/after-sale/{id}/cancel")
     public ApiResult<Void> afterSaleCancel(@PathVariable Long id) {
         long userId = AuthContextHolder.requireUserId();
         try {

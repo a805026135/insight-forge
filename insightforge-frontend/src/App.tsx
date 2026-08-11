@@ -25,6 +25,7 @@ import MerchantInventory from './pages/merchant/MerchantInventory';
 import MerchantOrders from './pages/merchant/MerchantOrders';
 import MerchantKb from './pages/merchant/MerchantKb';
 import MerchantSupport from './pages/merchant/MerchantSupport';
+import MerchantAfterSales from './pages/merchant/MerchantAfterSales';
 import SupportPage from './pages/user/SupportPage';
 import PayConfirm from './pages/PayConfirm';
 import Layout from './components/Layout';
@@ -102,6 +103,7 @@ export default function App() {
             <Route path="traces" element={<TraceViewer />} />
             <Route path="kb" element={<MerchantKb />} />
             <Route path="support" element={<MerchantSupport />} />
+            <Route path="after-sales" element={<MerchantAfterSales />} />
           </Route>
         </Routes>
       </AuthProvider>

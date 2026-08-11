@@ -456,3 +456,18 @@ curl http://localhost:8080/api/dashboard/skus?activityId=1
 > 编写日期：2026-08-10 ｜ 更新：2026-08-10（Phase 14.1 真实闭环 + 部署修复，未提交）
 > 基于 commit `0e800df`（本文档描述基线）；Phase 14.1 改动在工作树（含交接文档本身）
 > 仓库：https://gitee.com/paper-umbrella/insight-forge.git
+
+
+---
+
+## 最近更新：Phase 19o/19p 履约闭环
+
+详见 tutorials/选做10-电商履约闭环.md，摘要：
+
+- **Phase 19o**：V19 新增 shipment/shipment_event/product_review 表；商家发货自动建运单（幂等）；买家确认收货 SHIPPED→DONE+签收轨迹；DONE 订单可评价（回写商品/店铺均分）。
+- **Phase 19p**：V20 after_sale 增加 merchant_id/appeal_reason/handled_by/note；状态机：APPLIED→APPROVED→REFUNDED，APPLIED→REJECTED→APPEAL→商家复核；商家新增「售后处理」页（按店铺隔离）。
+
+### 体验账号
+
+- 买家：user1 / 123456
+- 商家（Apple 旗舰店）：admin / admin123

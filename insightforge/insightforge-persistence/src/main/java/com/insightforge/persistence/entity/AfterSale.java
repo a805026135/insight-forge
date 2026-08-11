@@ -26,6 +26,9 @@ public class AfterSale {
 
     private Long skuId;
 
+    /** 归属商家（商家侧售后处理按店铺隔离） */
+    private Long merchantId;
+
     private String productName;
 
     private Integer qty;
@@ -33,6 +36,19 @@ public class AfterSale {
     private BigDecimal amount;
 
     private String reason;
+
+    /** 申诉理由（REJECTED 后可发起） */
+    private String appealReason;
+
+    private LocalDateTime appealAt;
+
+    /** 处理方（merchant/{id} 或 platform） */
+    private String handledBy;
+
+    private LocalDateTime handledAt;
+
+    /** 商家/平台处理备注 */
+    private String note;
 
     private String status;
 

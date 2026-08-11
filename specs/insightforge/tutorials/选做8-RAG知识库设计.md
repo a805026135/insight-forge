@@ -125,7 +125,7 @@
 | 终止原因显式化 | ✅ 已上线（agent_trace.termination_reason：COMPLETED/BUDGET_EXCEEDED/REFUSED/USER_CANCELLED/INTERRUPTED/ERROR） |
 | Agent 运行暂停/继续 | ✅ 已上线（agent_checkpoint + InterruptGate，DAG→ROLES→ASSEMBLE→ATTEMPT 阶段边界可暂停，/api/agent/runs/{id}/resume 继续） |
 | 买家客服 + 用户级隔离 | ✅ 已上线（订单走 SQL 仅本人，RAG 只取平台公开知识；问答历史持久化，跨会话可见） |
-| 真实退款工单 + AI 预填 | ✅ 已上线（AI 按真实订单生成退款草稿 → 用户确认提交 after_sale 工单，状态 APPLIED→APPROVED→REFUNDED / REJECTED，可取消） |
+| 真实退款工单 + AI 预填 | ✅ 已上线（AI 按真实订单生成退款草稿 → 用户确认提交 after_sale 工单，状态 APPLIED→APPROVED→REFUNDED / REJECTED→APPEAL→复核(V20)，可取消） |
 | 商家大屏（商家维度） | ✅ 已上线（近 7 日趋势 / 类目占比 / 库存状态 / 活动效果图表，全部按商家隔离） |
 | KB 管理接口（stats / reindex） | ✅ 后端已就绪，前端页面未接 |
 | 前端知识库管理页（查看/刷新/统计） | ✅ 已上线（/merchant/kb，stats + 文档列表 + 一键刷新） |

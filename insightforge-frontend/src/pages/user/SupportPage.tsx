@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { marked } from 'marked';
-import { Modal } from 'antd';
+import { Modal, Input } from 'antd';
 import { getToken } from '../../auth/token';
 
 interface ChatMsg {
@@ -72,8 +72,10 @@ const PRESETS = [
 const STATUS_LABEL: Record<string, string> = {
   APPLIED: '待审核',
   APPROVED: '已通过',
+  REFUNDING: '退款中',
   REFUNDED: '已退款',
   REJECTED: '已驳回',
+  APPEAL: '申诉中',
   CANCELLED: '已取消',
 };
 
@@ -387,6 +389,36 @@ export default function SupportPage() {
     }
   };
 
+  const [appealTarget, setAppealTarget] = useState<AfterSale | null>(null);
+  const [appealReason, setAppealReason] = useState('');
+  const [appealing, setAppealing] = useState(false);
+
+  const submitAppeal = async () => {
+    if (!appealTarget) return;
+    if (!appealReason.trim()) {
+      setMsg('????????');
+      return;
+    }
+    setAppealing(true);
+    setMsg('');
+    try {
+      const r = await fetch(`/api/buyer/after-sale/${appealTarget.id}/appeal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ reason: appealReason.trim() }),
+      }).then((res) => res.json());
+      if (r.code !== 0) throw new Error(r.message);
+      setMsg('???????????');
+      setAppealTarget(null);
+      setAppealReason('');
+      loadAfterSales();
+    } catch (e: any) {
+      setMsg(e.message || '????');
+    } finally {
+      setAppealing(false);
+    }
+  };
+
   const cancelAfterSale = async (t: AfterSale) => {
     try {
       const r = await fetch(`/api/buyer/after-sale/${t.id}/cancel`, {
@@ -611,6 +643,9 @@ export default function SupportPage() {
                   {t.status === 'APPLIED' && (
                     <button className="btn btn-danger" onClick={() => cancelAfterSale(t)}>取消</button>
                   )}
+                  {t.status === 'REJECTED' && (
+                    <button onClick={() => { setAppealTarget(t); setAppealReason(''); }}>申诉</button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -637,6 +672,27 @@ export default function SupportPage() {
             <button onClick={() => submitTransfer(m)}>发起咨询</button>
           </div>
         ))}
+
+      <Modal
+        title={'?? - ?? #' + (appealTarget?.id ?? '')}
+        open={appealTarget != null}
+        onCancel={() => setAppealTarget(null)}
+        onOk={submitAppeal}
+        okText="????"
+        cancelText="??"
+        confirmLoading={appealing}
+      >
+        <p style={{ marginBottom: 12, color: '#888' }}>
+          您的退款申请被商家驳回，可以提交申诉，商家将重新复核。
+        </p>
+        <Input.TextArea
+          rows={3}
+          value={appealReason}
+          maxLength={255}
+          onChange={(e) => setAppealReason(e.target.value)}
+          placeholder="说明您的理由，如：商品有质量问题，附上证据描述…"
+        />
+      </Modal>
       </Modal>
     </div>
   );
