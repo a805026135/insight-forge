@@ -78,7 +78,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 || path.startsWith("/api/dashboard/skus")
                 || path.startsWith("/api/dashboard/explain")
                 || path.startsWith("/api/catalog")
-                || path.startsWith("/api/user")) {
+                || path.startsWith("/api/user")
+                || path.startsWith("/api/buyer")) {
             return true;
         }
         // 活动列表：任何登录用户可读（买家秒杀页要展示活动）；创建/状态机仍为商家专属
