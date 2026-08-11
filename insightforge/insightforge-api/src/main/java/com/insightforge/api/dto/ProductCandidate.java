@@ -8,6 +8,7 @@ public record ProductCandidate(
         Long productId,
         String productName,
         Long merchantId,
-        String merchantName
+        String merchantName,
+        String imageUrl
 ) {
 }

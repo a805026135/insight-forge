@@ -29,6 +29,7 @@ interface ProductCandidate {
   productName: string;
   merchantId: number;
   merchantName: string;
+  imageUrl?: string | null;
 }
 
 interface AfterSale {
@@ -334,8 +335,31 @@ export default function SupportPage() {
                   <div style={{ marginTop: 10 }}>
                     <div className="assistant-hint">🔍 你问的是哪款商品？选择后我按对应商家回答：</div>
                     {m.candidates.map((c) => (
-                      <div key={c.productId} className="action-card">
-                        <span className="action-desc">🛍️ {c.productName}（{c.merchantName}）</span>
+                      <div
+                        key={c.productId}
+                        className="action-card"
+                        style={{ display: 'flex', alignItems: 'center', gap: 10 }}
+                      >
+                        <img
+                          src={c.imageUrl ?? ''}
+                          alt={c.productName}
+                          style={{
+                            width: 52,
+                            height: 52,
+                            borderRadius: 8,
+                            objectFit: 'cover',
+                            background: 'var(--border)',
+                            flexShrink: 0,
+                          }}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.visibility = 'hidden';
+                          }}
+                        />
+                        <span className="action-desc" style={{ flex: 1 }}>
+                          <b>{c.productName}</b>
+                          <br />
+                          <span style={{ fontSize: 12, color: '#888' }}>{c.merchantName}</span>
+                        </span>
                         <button onClick={() => askStream(`【${c.merchantName}】${c.productName}，${lastQuestion}`)}>
                           选这个
                         </button>

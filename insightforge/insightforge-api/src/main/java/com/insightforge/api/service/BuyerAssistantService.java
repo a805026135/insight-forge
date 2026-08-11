@@ -217,7 +217,7 @@ public class BuyerAssistantService {
             if (hit && p.getMerchantId() != null) {
                 Merchant m = merchantMapper.selectById(p.getMerchantId());
                 out.add(new ProductCandidate(p.getId(), p.getName(), p.getMerchantId(),
-                        m == null ? "商家" + p.getMerchantId() : m.getName()));
+                        m == null ? "商家" + p.getMerchantId() : m.getName(), p.getImageUrl()));
             }
         }
         return out.stream().distinct().limit(5).collect(Collectors.toList());
