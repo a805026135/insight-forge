@@ -199,10 +199,18 @@ public class MerchantAssistantService {
         List<Product> products = productMapper.selectList(
                 new QueryWrapper<Product>().eq("merchant_id", merchantId));
         // 匹配"给 X 加/补 N 件库存" / "把 X 下架" / "把 X 上架" / "给 X 调到 ¥N"
-        for (Product p : products) {
+        // 先精确匹配商品全名；无精确命中才退回前 6 字前缀，避免"华为 MatePad"误伤整店华为商品
+        List<Product> matched = products.stream()
+                .filter(p -> question.contains(p.getName()))
+                .toList();
+        if (matched.isEmpty()) {
+            matched = products.stream()
+                    .filter(p -> question.contains(
+                            p.getName().length() >= 6 ? p.getName().substring(0, 6) : p.getName()))
+                    .toList();
+        }
+        for (Product p : matched) {
             String name = p.getName();
-            String namePrefix = name.length() >= 6 ? name.substring(0, 6) : name;
-            if (question.contains(name) || question.contains(namePrefix)) {
                 Matcher m = Pattern.compile("(加|补|增加|调增)\\s*(\\d+)\\s*(件|库存)?").matcher(question);
                 if (m.find()) {
                     actions.add(new AssistantAction("ADD_STOCK", p.getId(), name,
@@ -223,7 +231,6 @@ public class MerchantAssistantService {
                             new BigDecimal(pm.group(2)),
                             "将「" + name + "」市场价调整为 ¥" + pm.group(2)));
                 }
-            }
         }
         return actions;
     }
