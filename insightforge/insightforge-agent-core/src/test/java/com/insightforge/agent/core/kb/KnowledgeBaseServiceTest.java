@@ -104,4 +104,22 @@ class KnowledgeBaseServiceTest {
         assertFalse(product.isEmpty());
         assertTrue(product.stream().allMatch(h -> "PRODUCT".equals(h.sourceType())));
     }
+
+    @Test
+    void deleteDocCleansVectorsChunksAndDocument() {
+        String docKey = "test/delete/custom";
+        service.ingestText(docKey, "自定义知识", "CUSTOM", 1L,
+                "门店夜间补货 SOP：每晚十点前完成补货并拍照留档，货架缺货率控制在 5% 以内。");
+        assertFalse(service.search(1L, "夜间补货 SOP", 5).isEmpty());
+
+        service.deleteDoc(docKey);
+
+        assertTrue(service.search(1L, "夜间补货 SOP", 5).stream()
+                        .noneMatch(h -> docKey.equals(h.docKey())),
+                "删除后向量库不应再命中被删文档");
+        assertEquals(0L, documentMapper.selectCount(
+                new QueryWrapper<AgentKbDocument>().eq("doc_key", docKey)));
+        assertEquals(0L, chunkMapper.selectCount(
+                new QueryWrapper<AgentKbChunk>().eq("doc_key", docKey)));
+    }
 }

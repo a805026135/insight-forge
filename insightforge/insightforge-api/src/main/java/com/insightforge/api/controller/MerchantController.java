@@ -10,6 +10,7 @@ import com.insightforge.api.dto.MerchantProductView;
 import com.insightforge.api.dto.AssistantReply;
 import com.insightforge.api.service.MerchantAssistantService;
 import com.insightforge.api.service.MerchantActionService;
+import com.insightforge.api.service.MerchantKbCustomService;
 import com.insightforge.common.result.ApiResult;
 import com.insightforge.persistence.entity.ActivitySku;
 import com.insightforge.persistence.entity.OrderItem;
@@ -20,6 +21,7 @@ import com.insightforge.api.dto.OrderDetailView;
 import com.insightforge.api.dto.OrderItemView;
 import com.insightforge.seckill.core.state.OrderStatus;
 import com.insightforge.persistence.entity.Product;
+import com.insightforge.persistence.entity.AgentKbCustomDoc;
 import com.insightforge.persistence.mapper.ActivitySkuMapper;
 import com.insightforge.persistence.mapper.MerchantMapper;
 import com.insightforge.persistence.mapper.OrderItemMapper;
@@ -32,6 +34,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -59,6 +62,7 @@ public class MerchantController {
     private final KnowledgeBaseService knowledgeBaseService;
     private final KnowledgeBaseSeeder knowledgeBaseSeeder;
     private final MerchantKbRefresher merchantKbRefresher;
+    private final MerchantKbCustomService kbCustomService;
 
     public MerchantController(MerchantMapper merchantMapper, ProductMapper productMapper,
                               ActivitySkuMapper activitySkuMapper, OrdersMapper ordersMapper,
@@ -66,7 +70,8 @@ public class MerchantController {
                               MerchantActionService actionService,
                               KnowledgeBaseService knowledgeBaseService,
                               KnowledgeBaseSeeder knowledgeBaseSeeder,
-                              MerchantKbRefresher merchantKbRefresher) {
+                              MerchantKbRefresher merchantKbRefresher,
+                              MerchantKbCustomService kbCustomService) {
         this.merchantMapper = merchantMapper;
         this.productMapper = productMapper;
         this.activitySkuMapper = activitySkuMapper;
@@ -77,6 +82,7 @@ public class MerchantController {
         this.knowledgeBaseService = knowledgeBaseService;
         this.knowledgeBaseSeeder = knowledgeBaseSeeder;
         this.merchantKbRefresher = merchantKbRefresher;
+        this.kbCustomService = kbCustomService;
     }
 
     /** POST /api/merchant/kb/reindex 手动刷新当前商家的知识库（商品 + 历史决策） */
@@ -115,6 +121,35 @@ public class MerchantController {
         data.put("vectorStore", knowledgeBaseService.vectorStoreName());
         data.put("documents", knowledgeBaseService.listVisibleDocuments(mid));
         return ApiResult.ok(data);
+    }
+
+    /** POST /api/merchant/kb/custom 上传自定义知识（JSON: title + content，txt/md 文本） */
+    @PostMapping("/kb/custom")
+    public ApiResult<Map<String, Object>> kbCustomUpload(@RequestBody Map<String, String> body) {
+        long mid = AuthContextHolder.requireMerchantId();
+        try {
+            return ApiResult.ok(new HashMap<>(kbCustomService.upload(mid, body.get("title"), body.get("content"))));
+        } catch (IllegalArgumentException e) {
+            return ApiResult.fail(400, e.getMessage());
+        }
+    }
+
+    /** GET /api/merchant/kb/custom 我的自定义知识列表 */
+    @GetMapping("/kb/custom")
+    public ApiResult<List<AgentKbCustomDoc>> kbCustomList() {
+        return ApiResult.ok(kbCustomService.list(AuthContextHolder.requireMerchantId()));
+    }
+
+    /** DELETE /api/merchant/kb/custom?docKey=... 删除自定义知识（同时清向量库与切块） */
+    @DeleteMapping("/kb/custom")
+    public ApiResult<Void> kbCustomDelete(@RequestParam String docKey) {
+        long mid = AuthContextHolder.requireMerchantId();
+        try {
+            kbCustomService.delete(mid, docKey);
+            return ApiResult.ok(null);
+        } catch (IllegalArgumentException e) {
+            return ApiResult.fail(400, e.getMessage());
+        }
     }
 
     /** GET /api/merchant/profile 当前商家店铺信息 */

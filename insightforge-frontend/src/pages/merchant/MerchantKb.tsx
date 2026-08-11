@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Modal, Input } from 'antd';
 import { getToken } from '../../auth/token';
 
 interface KbDoc {
@@ -18,6 +19,7 @@ const SOURCE_LABEL: Record<string, string> = {
   PRODUCT: '商品目录',
   DECISION: '历史决策',
   ACTIVITY: '活动规则',
+  CUSTOM: '自定义',
 };
 
 export default function MerchantKb() {
@@ -25,6 +27,12 @@ export default function MerchantKb() {
   const [docs, setDocs] = useState<KbDoc[]>([]);
   const [msg, setMsg] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [upTitle, setUpTitle] = useState('');
+  const [upContent, setUpContent] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
   const load = async () => {
     try {
@@ -64,6 +72,56 @@ export default function MerchantKb() {
     }
   };
 
+  const readFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => setUpContent(String(reader.result ?? ''));
+    reader.readAsText(file, 'utf-8');
+  };
+
+  const upload = async () => {
+    if (!upTitle.trim() || !upContent.trim()) {
+      setMsg('标题和内容不能为空');
+      return;
+    }
+    setUploading(true);
+    setMsg('');
+    try {
+      const r = await fetch('/api/merchant/kb/custom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ title: upTitle.trim(), content: upContent }),
+      }).then((res) => res.json());
+      if (r.code !== 0) throw new Error(r.message);
+      setMsg(`✔ 已入库 ${r.data.chunks} 个切块，商家助手问答即可检索到这份知识`);
+      setUploadOpen(false);
+      setUpTitle('');
+      setUpContent('');
+      load();
+    } catch (e: any) {
+      setMsg(e.message || '上传失败');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const remove = async (doc: KbDoc) => {
+    setDeleting(doc.docKey);
+    setMsg('');
+    try {
+      const r = await fetch(`/api/merchant/kb/custom?docKey=${encodeURIComponent(doc.docKey)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${getToken()}` },
+      }).then((res) => res.json());
+      if (r.code !== 0) throw new Error(r.message);
+      setMsg('✔ 已删除该知识（向量库与切块同步清理）');
+      load();
+    } catch (e: any) {
+      setMsg(e.message || '删除失败');
+    } finally {
+      setDeleting(null);
+    }
+  };
+
   return (
     <div className="agent-workbench">
       <div className="page-head">
@@ -94,11 +152,16 @@ export default function MerchantKb() {
         </div>
       </div>
       <section className="assistant-panel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <h3>📚 知识库文档（平台级 + 本店）</h3>
-          <button className="btn btn-primary" disabled={refreshing} onClick={reindex}>
-            {refreshing ? '刷新中…' : '立即刷新本店知识'}
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-primary" disabled={refreshing} onClick={reindex}>
+              {refreshing ? '刷新中…' : '重建本店知识'}
+            </button>
+            <button className="btn" onClick={() => setUploadOpen(true)}>
+              ＋ 上传我的知识
+            </button>
+          </div>
         </div>
         <table className="data-table">
           <thead>
@@ -108,20 +171,32 @@ export default function MerchantKb() {
               <th>归属</th>
               <th>版本</th>
               <th>切块</th>
-              <th>docKey</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
             {docs.map((d) => (
               <tr key={d.id}>
-                <td>{d.title}</td>
+                <td title={d.docKey}>{d.title}</td>
                 <td>
                   <span className="badge">{SOURCE_LABEL[d.sourceType] ?? d.sourceType}</span>
                 </td>
                 <td>{d.merchantId == null ? '平台级' : '本店'}</td>
                 <td>v{d.version ?? 1}</td>
                 <td>{d.chunkCount ?? 0}</td>
-                <td style={{ fontSize: 12, color: '#888' }}>{d.docKey}</td>
+                <td>
+                  {d.sourceType === 'CUSTOM' ? (
+                    <button
+                      className="btn btn-danger"
+                      disabled={deleting === d.docKey}
+                      onClick={() => remove(d)}
+                    >
+                      {deleting === d.docKey ? '删除中…' : '删除'}
+                    </button>
+                  ) : (
+                    <span style={{ color: '#888', fontSize: 12 }}>内置</span>
+                  )}
+                </td>
               </tr>
             ))}
             {docs.length === 0 && (
@@ -132,6 +207,44 @@ export default function MerchantKb() {
           </tbody>
         </table>
       </section>
+
+      <Modal
+        title="上传我的知识"
+        open={uploadOpen}
+        onCancel={() => setUploadOpen(false)}
+        onOk={upload}
+        okText="入库"
+        cancelText="取消"
+        confirmLoading={uploading}
+      >
+        <p style={{ marginBottom: 12, color: '#888' }}>
+          支持粘贴文本或上传 .txt / .md 文件（≤10 万字符）。入库后仅本店可见，商家助手问答会自动引用。
+        </p>
+        <Input
+          placeholder="标题，如：门店运营 SOP / 大促客服话术"
+          value={upTitle}
+          maxLength={100}
+          onChange={(e) => setUpTitle(e.target.value)}
+          style={{ marginBottom: 12 }}
+        />
+        <Input.TextArea
+          placeholder="粘贴知识内容…"
+          value={upContent}
+          rows={8}
+          onChange={(e) => setUpContent(e.target.value)}
+          style={{ marginBottom: 12 }}
+        />
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".txt,.md,text/plain,text/markdown"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) readFile(f);
+          }}
+          style={{ fontSize: 13 }}
+        />
+      </Modal>
     </div>
   );
 }

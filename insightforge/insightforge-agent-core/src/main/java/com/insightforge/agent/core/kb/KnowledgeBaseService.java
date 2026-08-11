@@ -187,6 +187,18 @@ public class KnowledgeBaseService {
         return documentMapper.selectCount(new QueryWrapper<AgentKbDocument>().eq("doc_key", docKey)) > 0;
     }
 
+    /** 删除一个文档（自定义知识删除入口）：清理向量库向量 + 切块 + 文档行。 */
+    @Transactional
+    public void deleteDoc(String docKey) {
+        List<AgentKbChunk> chunks = chunkMapper.selectList(
+                new QueryWrapper<AgentKbChunk>().eq("doc_key", docKey));
+        if (!chunks.isEmpty()) {
+            vectorStore.delete(chunks.stream().map(c -> String.valueOf(c.getId())).toList());
+        }
+        chunkMapper.delete(new QueryWrapper<AgentKbChunk>().eq("doc_key", docKey));
+        documentMapper.delete(new QueryWrapper<AgentKbDocument>().eq("doc_key", docKey));
+    }
+
     public long chunkCount() {
         return chunkMapper.selectCount(new QueryWrapper<>());
     }
