@@ -34,7 +34,7 @@ public class KnowledgeBaseConfig {
     public EmbeddingProvider embeddingProvider(
             @Value("${insightforge.agent.embedding.provider:auto}") String provider,
             @Value("${insightforge.agent.embedding.api-key:}") String apiKey,
-            @Value("${insightforge.agent.embedding.base-url:https://dashscope.aliyuncs.com/compatible-mode/v1}") String baseUrl,
+            @Value("${insightforge.agent.embedding.base-url:https://dashscope.aliyuncs.com/compatible-mode}") String baseUrl,
             @Value("${insightforge.agent.embedding.model:qwen3.7-text-embedding}") String model,
             @Value("${insightforge.agent.embedding.dimensions:1024}") int dimensions,
             @Value("${insightforge.agent.embedding.local-dimensions:512}") int localDimensions) {

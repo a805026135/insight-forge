@@ -74,7 +74,7 @@ insightforge:
     embedding:
       provider: auto
       api-key: ${INSIGHTFORGE_AGENT_EMBEDDING_API_KEY:}
-      base-url: ${INSIGHTFORGE_AGENT_EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+      base-url: ${INSIGHTFORGE_AGENT_EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
       model: ${INSIGHTFORGE_AGENT_EMBEDDING_MODEL:qwen3.7-text-embedding}
       dimensions: ${INSIGHTFORGE_AGENT_EMBEDDING_DIMENSIONS:1024}
       local-dimensions: ${INSIGHTFORGE_AGENT_EMBEDDING_LOCAL_DIMENSIONS:512}

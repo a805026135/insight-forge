@@ -16,7 +16,7 @@ insightforge:
     embedding:
       provider: auto
       api-key: ${INSIGHTFORGE_AGENT_EMBEDDING_API_KEY:}
-      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      base-url: https://dashscope.aliyuncs.com/compatible-mode
       model: qwen3.7-text-embedding
       dimensions: 1024
       local-dimensions: 512
