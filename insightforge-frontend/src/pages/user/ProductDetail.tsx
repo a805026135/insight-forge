@@ -8,6 +8,8 @@ export default function ProductDetail() {
   const [p, setP] = useState<ProductDetailView | null>(null);
   const [msg, setMsg] = useState('');
   const [adding, setAdding] = useState(false);
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [reviewStat, setReviewStat] = useState<{ ratingCount: number; ratingTotal: number } | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -15,6 +17,15 @@ export default function ProductDetail() {
       .detail(Number(id))
       .then(setP)
       .catch((e) => setMsg(e.message || '加载失败'));
+    fetch(`/api/buyer/review?productId=${Number(id)}`)
+      .then((r) => r.json())
+      .then((r) => {
+        if (r.code === 0) {
+          setReviewStat({ ratingCount: r.data.ratingCount ?? 0, ratingTotal: r.data.ratingTotal ?? 0 });
+          setReviews(r.data.reviews ?? []);
+        }
+      })
+      .catch(() => {});
   }, [id]);
 
   const addCart = async (qty: number) => {
@@ -102,6 +113,31 @@ export default function ProductDetail() {
           {msg && <div className={`toast ${msg.includes('✅') ? 'success' : 'error'}`}>{msg}</div>}
         </div>
       </div>
+
+      <section className="assistant-panel" style={{ marginTop: 20 }}>
+        <h3>????</h3>
+        {reviewStat && reviewStat.ratingCount > 0 ? (
+          <>
+            <p style={{ color: '#666', marginBottom: 12 }}>
+              ?????<b style={{ color: '#f59e0b', fontSize: 18 }}>
+                {(reviewStat.ratingTotal / reviewStat.ratingCount).toFixed(1)}
+              </b> / 5?{reviewStat.ratingCount} ????
+            </p>
+            {reviews.map((r, idx) => (
+              <div key={idx} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <b>{r.userDisplayName ?? '????'}</b>
+                  <span style={{ color: '#f59e0b' }}>{'?'.repeat(Math.max(0, Math.min(5, r.rating ?? 0)))}</span>
+                  <span style={{ fontSize: 12, color: '#999' }}>{String(r.createdAt ?? '').replace('T', ' ').slice(0, 19)}</span>
+                </div>
+                {r.content ? <p style={{ marginTop: 6, color: 'var(--text)' }}>{r.content}</p> : null}
+              </div>
+            ))}
+          </>
+        ) : (
+          <p style={{ color: '#999' }}>????????????</p>
+        )}
+      </section>
     </div>
   );
 }

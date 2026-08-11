@@ -1,0 +1,44 @@
+﻿[INFO] Scanning for projects...
+[INFO] 
+[INFO] -----------------< com.insightforge:insightforge-api >------------------
+[INFO] Building InsightForge API 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ insightforge-api ---
+[INFO] Copying 28 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ insightforge-api ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 66 source files with javac [debug parameters release 21] to target\classes
+[INFO] ��������·���з�����һ����������������������
+  ��ע�����δ�����а�� javac ���ܻ������ע�����
+  �������ٰ�����ָ����һ��������� (-processor)��
+  ��ָ��������·�� (--processor-path, --processor-module-path)��
+  ����ʽ��������ע���� (-proc:only, -proc:full)��
+  ��ʹ�� -Xlint:-options ���ش���Ϣ��
+  ��ʹ�� -proc:none ������ע�����
+[INFO] /C:/Users/z/Documents/ChatGPT/project11/insight-forge/insightforge/insightforge-api/src/main/java/com/insightforge/api/observability/ObservabilityService.java: ĳЩ�����ļ�ʹ�û򸲸����ѹ�ʱ�� API��
+[INFO] /C:/Users/z/Documents/ChatGPT/project11/insight-forge/insightforge/insightforge-api/src/main/java/com/insightforge/api/observability/ObservabilityService.java: �й���ϸ��Ϣ, ��ʹ�� -Xlint:deprecation ���±��롣
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR : 
+[INFO] -------------------------------------------------------------
+[ERROR] /C:/Users/z/Documents/ChatGPT/project11/insight-forge/insightforge/insightforge-api/src/main/java/com/insightforge/api/service/LogisticsReviewService.java:[81,9] �޷����ʵ����
+[INFO] 1 error
+[INFO] -------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  5.315 s
+[INFO] Finished at: 2026-08-11T21:34:20+08:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project insightforge-api: Compilation failure
+[ERROR] /C:/Users/z/Documents/ChatGPT/project11/insight-forge/insightforge/insightforge-api/src/main/java/com/insightforge/api/service/LogisticsReviewService.java:[81,9] �޷����ʵ����
+[ERROR] 
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

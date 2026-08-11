@@ -1,0 +1,57 @@
+﻿[INFO] Scanning for projects...
+[INFO] 
+[INFO] -----------------< com.insightforge:insightforge-api >------------------
+[INFO] Building InsightForge API 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- clean:3.2.0:clean (default-clean) @ insightforge-api ---
+[INFO] Deleting C:\Users\z\Documents\ChatGPT\project11\insight-forge\insightforge\insightforge-api\target
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ insightforge-api ---
+[INFO] Copying 28 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ insightforge-api ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 66 source files with javac [debug parameters release 21] to target\classes
+[INFO] ��������·���з�����һ����������������������
+  ��ע�����δ�����а�� javac ���ܻ������ע�����
+  �������ٰ�����ָ����һ��������� (-processor)��
+  ��ָ��������·�� (--processor-path, --processor-module-path)��
+  ����ʽ��������ע���� (-proc:only, -proc:full)��
+  ��ʹ�� -Xlint:-options ���ش���Ϣ��
+  ��ʹ�� -proc:none ������ע�����
+[INFO] /C:/Users/z/Documents/ChatGPT/project11/insight-forge/insightforge/insightforge-api/src/main/java/com/insightforge/api/observability/ObservabilityService.java: ĳЩ�����ļ�ʹ�û򸲸����ѹ�ʱ�� API��
+[INFO] /C:/Users/z/Documents/ChatGPT/project11/insight-forge/insightforge/insightforge-api/src/main/java/com/insightforge/api/observability/ObservabilityService.java: �й���ϸ��Ϣ, ��ʹ�� -Xlint:deprecation ���±��롣
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ insightforge-api ---
+[INFO] skip non existing resourceDirectory C:\Users\z\Documents\ChatGPT\project11\insight-forge\insightforge\insightforge-api\src\test\resources
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ insightforge-api ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 18 source files with javac [debug parameters release 21] to target\test-classes
+[INFO] ��������·���з�����һ����������������������
+  ��ע�����δ�����а�� javac ���ܻ������ע�����
+  �������ٰ�����ָ����һ��������� (-processor)��
+  ��ָ��������·�� (--processor-path, --processor-module-path)��
+  ����ʽ��������ע���� (-proc:only, -proc:full)��
+  ��ʹ�� -Xlint:-options ���ش���Ϣ��
+  ��ʹ�� -proc:none ������ע�����
+[INFO] /C:/Users/z/Documents/ChatGPT/project11/insight-forge/insightforge/insightforge-api/src/test/java/com/insightforge/api/OrderCompensationTaskTest.java: C:\Users\z\Documents\ChatGPT\project11\insight-forge\insightforge\insightforge-api\src\test\java\com\insightforge\api\OrderCompensationTaskTest.javaʹ����δ�����򲻰�ȫ�Ĳ�����
+[INFO] /C:/Users/z/Documents/ChatGPT/project11/insight-forge/insightforge/insightforge-api/src/test/java/com/insightforge/api/OrderCompensationTaskTest.java: �й���ϸ��Ϣ, ��ʹ�� -Xlint:unchecked ���±��롣
+[INFO] 
+[INFO] --- surefire:3.2.5:test (default-test) @ insightforge-api ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.1:jar (default-jar) @ insightforge-api ---
+[INFO] Building jar: C:\Users\z\Documents\ChatGPT\project11\insight-forge\insightforge\insightforge-api\target\insightforge-api-0.1.0-SNAPSHOT.jar
+[INFO] 
+[INFO] --- spring-boot:3.3.5:repackage (repackage) @ insightforge-api ---
+[INFO] Replacing main artifact C:\Users\z\Documents\ChatGPT\project11\insight-forge\insightforge\insightforge-api\target\insightforge-api-0.1.0-SNAPSHOT.jar with repackaged archive, adding nested dependencies in BOOT-INF/.
+[INFO] The original artifact has been renamed to C:\Users\z\Documents\ChatGPT\project11\insight-forge\insightforge\insightforge-api\target\insightforge-api-0.1.0-SNAPSHOT.jar.original
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  8.931 s
+[INFO] Finished at: 2026-08-11T21:31:54+08:00
+[INFO] ------------------------------------------------------------------------

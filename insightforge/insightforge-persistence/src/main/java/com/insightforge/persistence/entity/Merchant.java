@@ -20,6 +20,10 @@ public class Merchant extends BaseEntity {
     private String logo;
     private String description;
     private BigDecimal rating;
+    /** 动态评分聚合：评价数 + 评分总分（均分 = ratingTotal / ratingCount） */
+    private Integer ratingCount;
+
+    private Integer ratingTotal;
     private Long salesCount;
     private Boolean verified;
     private String servicePhone;

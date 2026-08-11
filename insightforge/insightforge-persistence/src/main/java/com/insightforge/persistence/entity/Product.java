@@ -39,4 +39,9 @@ public class Product extends BaseEntity {
     private String status;
 
     private Integer stock;
+
+    /** 评分聚合：评价数 + 评分总分（均分 = ratingTotal / ratingCount） */
+    private Integer ratingCount;
+
+    private Integer ratingTotal;
 }

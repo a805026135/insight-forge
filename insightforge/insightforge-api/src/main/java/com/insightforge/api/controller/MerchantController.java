@@ -10,6 +10,7 @@ import com.insightforge.api.dto.MerchantProductView;
 import com.insightforge.api.dto.AssistantReply;
 import com.insightforge.api.service.MerchantAssistantService;
 import com.insightforge.api.service.MerchantActionService;
+import com.insightforge.api.service.LogisticsReviewService;
 import com.insightforge.api.service.MerchantKbCustomService;
 import com.insightforge.common.result.ApiResult;
 import com.insightforge.persistence.entity.ActivitySku;
@@ -63,6 +64,7 @@ public class MerchantController {
     private final KnowledgeBaseSeeder knowledgeBaseSeeder;
     private final MerchantKbRefresher merchantKbRefresher;
     private final MerchantKbCustomService kbCustomService;
+    private final LogisticsReviewService logisticsReviewService;
 
     public MerchantController(MerchantMapper merchantMapper, ProductMapper productMapper,
                               ActivitySkuMapper activitySkuMapper, OrdersMapper ordersMapper,
@@ -71,7 +73,8 @@ public class MerchantController {
                               KnowledgeBaseService knowledgeBaseService,
                               KnowledgeBaseSeeder knowledgeBaseSeeder,
                               MerchantKbRefresher merchantKbRefresher,
-                              MerchantKbCustomService kbCustomService) {
+                              MerchantKbCustomService kbCustomService,
+                              LogisticsReviewService logisticsReviewService) {
         this.merchantMapper = merchantMapper;
         this.productMapper = productMapper;
         this.activitySkuMapper = activitySkuMapper;
@@ -83,6 +86,7 @@ public class MerchantController {
         this.knowledgeBaseSeeder = knowledgeBaseSeeder;
         this.merchantKbRefresher = merchantKbRefresher;
         this.kbCustomService = kbCustomService;
+        this.logisticsReviewService = logisticsReviewService;
     }
 
     /** POST /api/merchant/kb/reindex 手动刷新当前商家的知识库（商品 + 历史决策） */
@@ -450,20 +454,7 @@ public class MerchantController {
     @PostMapping("/orders/{orderId}/ship")
     public ApiResult<Void> ship(@PathVariable String orderId) {
         long mid = AuthContextHolder.requireMerchantId();
-        long cnt = orderItemMapper.selectCount(
-                new QueryWrapper<OrderItem>().eq("order_id", orderId).eq("merchant_id", mid));
-        if (cnt == 0) {
-            return ApiResult.fail(403, "???????");
-        }
-        Orders order = ordersMapper.selectOne(new QueryWrapper<Orders>().eq("order_id", orderId));
-        if (order == null) {
-            return ApiResult.fail(404, "?????");
-        }
-        OrderStatus.from(order.getStatus()).transitionTo(OrderStatus.SHIPPED);
-        order.setStatus(OrderStatus.SHIPPED.name());
-        order.setShippedAt(java.time.LocalDateTime.now());
-        ordersMapper.updateById(order);
-        return ApiResult.ok(null);
+        return logisticsReviewService.ship(mid, orderId);
     }
 
     private boolean midEquals(Long a, long b) {

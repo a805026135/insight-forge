@@ -7,10 +7,12 @@ import com.insightforge.api.dto.BuyerAssistantReply;
 import com.insightforge.api.service.AfterSaleService;
 import com.insightforge.api.service.BuyerAssistantService;
 import com.insightforge.api.service.BuyerChatHistoryService;
+import com.insightforge.api.service.LogisticsReviewService;
 import com.insightforge.api.service.SupportTicketService;
 import com.insightforge.common.result.ApiResult;
 import com.insightforge.persistence.entity.AfterSale;
 import com.insightforge.persistence.entity.BuyerChatMessage;
+import com.insightforge.persistence.entity.ProductReview;
 import com.insightforge.persistence.entity.SupportTicket;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,15 +37,18 @@ public class BuyerController {
     private final BuyerChatHistoryService chatHistoryService;
     private final AfterSaleService afterSaleService;
     private final SupportTicketService supportTicketService;
+    private final LogisticsReviewService logisticsReviewService;
 
     public BuyerController(BuyerAssistantService assistantService,
                            BuyerChatHistoryService chatHistoryService,
                            AfterSaleService afterSaleService,
-                           SupportTicketService supportTicketService) {
+                           SupportTicketService supportTicketService,
+                           LogisticsReviewService logisticsReviewService) {
         this.assistantService = assistantService;
         this.chatHistoryService = chatHistoryService;
         this.afterSaleService = afterSaleService;
         this.supportTicketService = supportTicketService;
+        this.logisticsReviewService = logisticsReviewService;
     }
 
     /** POST /api/buyer/assistant 买家客服问答 */
@@ -153,6 +158,40 @@ public class BuyerController {
         } catch (IllegalArgumentException e) {
             return ApiResult.fail(400, e.getMessage());
         }
+    }
+
+    /** POST /api/buyer/orders/{orderId}/confirm 买家确认收货（SHIPPED → DONE + 签收轨迹） */
+    @PostMapping("/orders/{orderId}/confirm")
+    public ApiResult<Void> confirmReceipt(@PathVariable String orderId) {
+        return logisticsReviewService.confirmReceipt(AuthContextHolder.requireUserId(), orderId);
+    }
+
+    /** GET /api/buyer/orders/{orderId}/logistics 订单物流轨迹 */
+    @GetMapping("/orders/{orderId}/logistics")
+    public ApiResult<Map<String, Object>> logistics(@PathVariable String orderId) {
+        return logisticsReviewService.logistics(AuthContextHolder.requireUserId(), orderId);
+    }
+
+    /** POST /api/buyer/review 提交评价（DONE 订单，同一订单商品仅一次） */
+    @PostMapping("/review")
+    public ApiResult<ProductReview> review(@RequestBody Map<String, Object> body) {
+        long userId = AuthContextHolder.requireUserId();
+        String orderId = body.get("orderId") == null ? null : String.valueOf(body.get("orderId"));
+        Long productId = body.get("productId") instanceof Number n ? n.longValue() : null;
+        int rating = body.get("rating") instanceof Number n ? n.intValue() : 0;
+        String content = body.get("content") == null ? null : String.valueOf(body.get("content"));
+        try {
+            return logisticsReviewService.createReview(userId, orderId, productId, rating, content);
+        } catch (IllegalArgumentException e) {
+            return ApiResult.fail(400, e.getMessage());
+        }
+    }
+
+    /** GET /api/buyer/review?productId= 商品评价列表 */
+    @GetMapping("/review")
+    public ApiResult<Map<String, Object>> reviews(
+            @org.springframework.web.bind.annotation.RequestParam Long productId) {
+        return logisticsReviewService.productReviews(productId);
     }
 
     /** POST /api/buyer/assistant/stream 流式回答（SSE） */
