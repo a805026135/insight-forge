@@ -6,6 +6,24 @@ interface ChatMsg {
   role: 'user' | 'assistant';
   content: string;
   streaming?: boolean;
+  drafts?: AfterSaleDraft[];
+}
+
+interface AfterSaleDraft {
+  orderId: string;
+  amount: number | null;
+  reason: string;
+  description: string;
+}
+
+interface AfterSale {
+  id: number;
+  orderId: string;
+  productName: string | null;
+  amount: number | null;
+  reason: string;
+  status: string;
+  createdAt: string;
 }
 
 const PRESETS = [
@@ -16,19 +34,57 @@ const PRESETS = [
   '客服电话是多少？',
 ];
 
+const STATUS_LABEL: Record<string, string> = {
+  APPLIED: '待审核',
+  APPROVED: '已通过',
+  REFUNDED: '已退款',
+  REJECTED: '已驳回',
+  CANCELLED: '已取消',
+};
+
 export default function SupportPage() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
   const [msg, setMsg] = useState('');
+  const [tickets, setTickets] = useState<AfterSale[]>([]);
+  const [submitting, setSubmitting] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const streamRef = useRef<AbortController | null>(null);
+
+  const loadTickets = async () => {
+    try {
+      const r = await fetch('/api/buyer/after-sale', {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      }).then((res) => res.json());
+      if (r.code === 0) setTickets(r.data ?? []);
+    } catch {
+      // 忽略历史加载失败
+    }
+  };
+
+  const loadHistory = async () => {
+    try {
+      const r = await fetch('/api/buyer/chat/history?limit=50', {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      }).then((res) => res.json());
+      if (r.code === 0) {
+        setMessages((r.data ?? []).map((m: any) => ({ role: m.role, content: m.content })));
+      }
+    } catch {
+      // 忽略历史加载失败
+    }
+  };
+
+  useEffect(() => {
+    loadHistory();
+    loadTickets();
+    return () => streamRef.current?.abort();
+  }, []);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
-
-  useEffect(() => () => streamRef.current?.abort(), []);
 
   const askStream = async (q?: string) => {
     const text = (q ?? question).trim();
@@ -71,10 +127,20 @@ export default function SupportPage() {
           });
         }
       }
+      // 流式回答结束后，单独拉取退款草稿（只识别、不重复记录历史）
+      let drafts: AfterSaleDraft[] = [];
+      try {
+        const r = await fetch(`/api/buyer/after-sale/drafts?question=${encodeURIComponent(text)}`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        }).then((res) => res.json());
+        if (r.code === 0) drafts = r.data.drafts ?? [];
+      } catch {
+        // 草稿获取失败不阻塞
+      }
       setMessages((prev) => {
         const next = [...prev];
         const idx = next.findIndex((m) => m.role === 'assistant' && m.streaming);
-        if (idx >= 0) next[idx] = { ...next[idx], content: acc, streaming: false };
+        if (idx >= 0) next[idx] = { ...next[idx], content: acc, streaming: false, drafts };
         return next;
       });
     } catch (e: any) {
@@ -92,6 +158,39 @@ export default function SupportPage() {
     }
   };
 
+  const submitRefund = async (d: AfterSaleDraft) => {
+    setSubmitting(d.orderId);
+    setMsg('');
+    try {
+      const r = await fetch('/api/buyer/after-sale/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ orderId: d.orderId, reason: d.reason }),
+      }).then((res) => res.json());
+      if (r.code !== 0) throw new Error(r.message);
+      setMsg(`✔ 退款申请已提交（工单 #${r.data.id}），状态：待审核`);
+      loadTickets();
+    } catch (e: any) {
+      setMsg(e.message || '提交失败');
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
+  const cancelTicket = async (t: AfterSale) => {
+    try {
+      const r = await fetch(`/api/buyer/after-sale/${t.id}/cancel`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}` },
+      }).then((res) => res.json());
+      if (r.code !== 0) throw new Error(r.message);
+      setMsg('✔ 已取消退款申请');
+      loadTickets();
+    } catch (e: any) {
+      setMsg(e.message || '取消失败');
+    }
+  };
+
   return (
     <div className="agent-workbench">
       <div className="page-head">
@@ -102,7 +201,7 @@ export default function SupportPage() {
       <section className="assistant-panel">
         <h3>🤖 平台智能客服</h3>
         <p className="assistant-hint">
-          基于平台售后政策/FAQ 与你的订单信息流式回答；订单数据仅你本人可见。
+          基于平台售后政策/FAQ 与你的订单信息回答；退款由系统生成草稿，你确认后真实提交。
         </p>
         <div className="chat-list" ref={listRef}>
           {messages.length === 0 && (
@@ -118,6 +217,23 @@ export default function SupportPage() {
                   <div className="chat-text">{m.content}</div>
                 )}
                 {m.role === 'assistant' && m.streaming && <span className="cursor-blink">▍</span>}
+                {m.drafts && m.drafts.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    {m.drafts.map((d, di) => (
+                      <div key={di} className="action-card">
+                        <span className="action-desc">
+                          💳 {d.description}（原因：{d.reason}）
+                        </span>
+                        <button
+                          disabled={submitting === d.orderId}
+                          onClick={() => submitRefund(d)}
+                        >
+                          {submitting === d.orderId ? '提交中…' : '提交退款申请'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -140,6 +256,47 @@ export default function SupportPage() {
             </button>
           ))}
         </div>
+      </section>
+
+      <section className="assistant-panel" style={{ marginTop: 16 }}>
+        <h3>🧾 我的售后单</h3>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>工单号</th>
+              <th>订单号</th>
+              <th>商品</th>
+              <th>金额</th>
+              <th>原因</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tickets.map((t) => (
+              <tr key={t.id}>
+                <td>#{t.id}</td>
+                <td>{t.orderId}</td>
+                <td>{t.productName ?? '-'}</td>
+                <td>¥{t.amount ?? '-'}</td>
+                <td>{t.reason}</td>
+                <td>
+                  <span className="badge">{STATUS_LABEL[t.status] ?? t.status}</span>
+                </td>
+                <td>
+                  {t.status === 'APPLIED' && (
+                    <button className="btn btn-danger" onClick={() => cancelTicket(t)}>
+                      取消
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {tickets.length === 0 && (
+              <tr><td colSpan={7}>暂无售后工单</td></tr>
+            )}
+          </tbody>
+        </table>
       </section>
     </div>
   );
