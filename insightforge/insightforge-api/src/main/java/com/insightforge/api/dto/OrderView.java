@@ -17,6 +17,8 @@ public record OrderView(
         LocalDateTime createdAt,
         String productName,
         String productImage,
-        String activityName
+        String activityName,
+        Long merchantId,
+        String merchantName
 ) {
 }

@@ -6,6 +6,7 @@ interface Ticket {
   userId: number;
   question: string;
   answer: string | null;
+  transcript: string | null;
   status: string;
   createdAt: string;
 }
@@ -84,6 +85,7 @@ export default function MerchantSupport() {
             <tr>
               <th>#</th>
               <th>买家ID</th>
+              <th>对话上下文</th>
               <th>问题</th>
               <th>商家回复</th>
               <th>状态</th>
@@ -95,6 +97,16 @@ export default function MerchantSupport() {
               <tr key={t.id}>
                 <td>#{t.id}</td>
                 <td>用户#{t.userId}</td>
+                <td style={{ maxWidth: 300 }}>
+                  {t.transcript ? (
+                    <details>
+                      <summary style={{ cursor: 'pointer', color: '#666' }}>查看买家与Agent的对话</summary>
+                      <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12, marginTop: 6, background: 'var(--bg)', padding: 8, borderRadius: 6 }}>{t.transcript}</pre>
+                    </details>
+                  ) : (
+                    <span style={{ color: '#aaa' }}>无</span>
+                  )}
+                </td>
                 <td style={{ maxWidth: 280 }}>{t.question}</td>
                 <td style={{ maxWidth: 260 }}>{t.answer ?? '—'}</td>
                 <td><span className="badge">{STATUS_LABEL[t.status] ?? t.status}</span></td>
@@ -115,7 +127,7 @@ export default function MerchantSupport() {
                 </td>
               </tr>
             ))}
-            {tickets.length === 0 && <tr><td colSpan={6}>暂无{tickets.length ? '' : '待'}处理工单</td></tr>}
+            {tickets.length === 0 && <tr><td colSpan={7}>暂无{tickets.length ? '' : '待'}处理工单</td></tr>}
           </tbody>
         </table>
       </section>

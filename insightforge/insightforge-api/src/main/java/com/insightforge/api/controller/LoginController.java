@@ -44,7 +44,9 @@ public class LoginController {
 
         AuthUser user = authUser.get();
         LoginResponse resp = LoginResponse.from(user);
-        resp.setToken(authService.issueToken(user));
+        long[] expiresAt = new long[1];
+        resp.setToken(authService.issueToken(user, expiresAt));
+        resp.setTokenExpiresAt(expiresAt[0]);
         return ApiResult.ok(resp);
     }
 
@@ -56,7 +58,9 @@ public class LoginController {
         try {
             var user = authService.register(req.getUsername(), req.getPassword(), req.getDisplayName());
             LoginResponse resp = LoginResponse.from(user);
-            resp.setToken(authService.issueToken(user));
+            long[] expiresAt = new long[1];
+            resp.setToken(authService.issueToken(user, expiresAt));
+            resp.setTokenExpiresAt(expiresAt[0]);
             return ApiResult.ok(resp);
         } catch (IllegalArgumentException e) {
             return ApiResult.fail(400, e.getMessage());

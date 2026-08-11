@@ -174,10 +174,14 @@ public class MerchantController {
         }
     }
 
-    /** POST /api/merchant/store-info 更新店铺客服电话（公开知识，买家客服可检索） */
+    /** POST /api/merchant/store-info 更新店铺名/客服电话（公开知识，买家客服可检索） */
     @PostMapping("/store-info")
     public ApiResult<Map<String, Object>> updateStoreInfo(@RequestBody Map<String, String> body) {
         long mid = AuthContextHolder.requireMerchantId();
+        String name = body.get("name");
+        if (name != null && !name.isBlank() && name.trim().length() > 64) {
+            return ApiResult.fail(400, "店铺名不能超过 64 字符");
+        }
         String phone = body.get("servicePhone");
         if (phone == null || phone.isBlank() || phone.trim().length() > 32) {
             return ApiResult.fail(400, "客服电话不能为空且不超过 32 字符");
@@ -185,6 +189,9 @@ public class MerchantController {
         Merchant m = merchantMapper.selectById(mid);
         if (m == null) {
             return ApiResult.fail(404, "商家不存在");
+        }
+        if (name != null && !name.isBlank()) {
+            m.setName(name.trim());
         }
         m.setServicePhone(phone.trim());
         merchantMapper.updateById(m);
@@ -195,6 +202,7 @@ public class MerchantController {
         int chunks = knowledgeBaseService.ingestText(
                 "merchant/" + mid + "/store-info", "商家公开信息", "STORE_INFO", mid, text);
         Map<String, Object> data = new HashMap<>();
+        data.put("name", m.getName());
         data.put("servicePhone", phone.trim());
         data.put("chunks", chunks);
         return ApiResult.ok(data);

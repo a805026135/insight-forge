@@ -33,7 +33,10 @@ public class Orders extends BaseEntity {
     /** 活动 id */
     private Long activityId;
 
-    /** SKU id（= product.id） */
+    /** 活动 SKU 行 id（秒杀单才有；普通购物车单为空） */
+    private Long activitySkuId;
+
+    /** SKU id（统一为 product.id） */
     private Long skuId;
 
     /** 购买数量 */

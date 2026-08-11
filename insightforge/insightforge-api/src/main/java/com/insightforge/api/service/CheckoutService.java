@@ -94,6 +94,14 @@ public class CheckoutService {
         Map<Long, ActivitySku> skuMap = loadSkus(cartItems);
 
         for (CartItem ci : cartItems) {
+            // ?????????????????????????????????
+            Product first = productMap.get(ci.getProductId());
+            if (order.getSkuId() == null && first != null) {
+                order.setSkuId(first.getId());
+                order.setQty(ci.getQty());
+                ActivitySku firstSku = ci.getActivitySkuId() != null ? skuMap.get(ci.getActivitySkuId()) : null;
+                order.setActivityId(firstSku == null ? null : firstSku.getActivityId());
+            }
             Product p = productMap.get(ci.getProductId());
             if (p == null) {
                 throw new IllegalStateException("商品不存在: product=" + ci.getProductId());

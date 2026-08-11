@@ -60,8 +60,10 @@ public class BuyerController {
 
     /** GET /api/buyer/chat/history 客服问答历史（跨会话持久化） */
     @GetMapping("/chat/history")
-    public ApiResult<List<BuyerChatMessage>> chatHistory(@org.springframework.web.bind.annotation.RequestParam(defaultValue = "50") int limit) {
-        return ApiResult.ok(chatHistoryService.history(AuthContextHolder.requireUserId(), limit));
+    public ApiResult<List<BuyerChatMessage>> chatHistory(
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "50") int limit,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) Long merchantId) {
+        return ApiResult.ok(chatHistoryService.history(AuthContextHolder.requireUserId(), merchantId, limit));
     }
 
     /** DELETE /api/buyer/chat/history 清空我的客服历史 */
@@ -114,6 +116,14 @@ public class BuyerController {
         } catch (IllegalArgumentException e) {
             return ApiResult.fail(400, e.getMessage());
         }
+    }
+
+    /** POST /api/buyer/support-ticket/{merchantId}/wake 用户唤醒商家 Agent（解除人工接管暂停） */
+    @PostMapping("/support-ticket/{merchantId}/wake")
+    public ApiResult<Void> supportTicketWake(@PathVariable Long merchantId) {
+        long userId = AuthContextHolder.requireUserId();
+        supportTicketService.wakeAgent(userId, merchantId);
+        return ApiResult.ok(null);
     }
 
     /** POST /api/buyer/after-sale/apply 提交退款申请（AI 预填后由用户确认提交） */

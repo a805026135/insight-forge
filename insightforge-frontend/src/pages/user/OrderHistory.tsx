@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Modal, Input } from 'antd';
+import { useNavigate } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { useAuth } from '../../auth/AuthContext';
 import { getToken } from '../../auth/token';
@@ -7,6 +8,7 @@ import { orderApi, OrderView } from '../../api';
 
 export default function OrderHistory() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<OrderView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -203,6 +205,14 @@ export default function OrderHistory() {
                       )}
                       {canRefund(o.status) && (
                         <button onClick={() => setRefundOrder(o)}>申请退款</button>
+                      )}
+                      {o.merchantId != null && (
+                        <button
+                          className="btn-contact"
+                          onClick={() => navigate(`/user/support?merchant=${o.merchantId}`)}
+                        >
+                          联系商家客服
+                        </button>
                       )}
                     </div>
                   </td>

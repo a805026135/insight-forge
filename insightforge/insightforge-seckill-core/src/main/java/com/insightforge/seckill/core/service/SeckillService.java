@@ -180,7 +180,8 @@ public class SeckillService {
         order.setOrderId(orderId);
         order.setUserId(req.getUserId());
         order.setActivityId(req.getActivityId());
-        order.setSkuId(req.getSkuId());
+        order.setActivitySkuId(sku.getId());
+        order.setSkuId(sku.getSkuId());
         order.setQty(req.getQty());
         order.setPrice(price);
         // 订单落库即进入状态机的第一个持久状态 CREATE_ORDER（代表「下单成功、库存已锁」）。

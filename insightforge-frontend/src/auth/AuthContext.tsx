@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { setToken, clearToken } from './token';
+import { setToken, clearToken, setTokenExpiresAt, isTokenExpired } from './token';
 
 export interface UserInfo {
   id: number;
@@ -20,6 +20,12 @@ const AuthContext = createContext<AuthCtx>(null!);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(() => {
     try {
+      // 令牌已过期：立即视为未登录，避免“隔天打开仍免登录”
+      if (isTokenExpired()) {
+        clearToken();
+        localStorage.removeItem('insightforge_user');
+        return null;
+      }
       const raw = localStorage.getItem('insightforge_user');
       return raw ? (JSON.parse(raw) as UserInfo) : null;
     } catch {
@@ -36,8 +42,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const json = await resp.json();
     if (json.code !== 0) throw new Error(json.message);
     const u = json.data as UserInfo & { token: string };
+    const expiresAt = (json.data as any).tokenExpiresAt ?? null;
     setUser(u);
     setToken(u.token);
+    setTokenExpiresAt(expiresAt);
     localStorage.setItem('insightforge_user', JSON.stringify(u));
     return u;
   }, []);
@@ -52,8 +60,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const json = await resp.json();
       if (json.code !== 0) throw new Error(json.message);
       const u = json.data as UserInfo & { token: string };
+      const expiresAt = (json.data as any).tokenExpiresAt ?? null;
       setUser(u);
       setToken(u.token);
+      setTokenExpiresAt(expiresAt);
       localStorage.setItem('insightforge_user', JSON.stringify(u));
       return u;
     },

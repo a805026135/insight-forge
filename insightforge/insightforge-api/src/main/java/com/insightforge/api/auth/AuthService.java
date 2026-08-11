@@ -106,7 +106,16 @@ public class AuthService {
 
     /** 签发 JWT。 */
     public String issueToken(AuthUser user) {
+        return issueToken(user, new long[]{0});
+    }
+
+    /** 签发 JWT，并通过 outExpiresAt 回传过期时间（epoch 毫秒）。 */
+    public String issueToken(AuthUser user, long[] outExpiresAt) {
         Instant now = Instant.now();
+        Date expiresAt = Date.from(now.plus(ttlHours, ChronoUnit.HOURS));
+        if (outExpiresAt != null && outExpiresAt.length > 0) {
+            outExpiresAt[0] = expiresAt.getTime();
+        }
         return Jwts.builder()
                 .subject(String.valueOf(user.id()))
                 .claim("username", user.username())
@@ -114,7 +123,7 @@ public class AuthService {
                 .claim("displayName", user.displayName())
                 .claim("merchantId", user.merchantId() == null ? 0L : user.merchantId())
                 .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plus(ttlHours, ChronoUnit.HOURS)))
+                .expiration(expiresAt)
                 .signWith(key)
                 .compact();
     }

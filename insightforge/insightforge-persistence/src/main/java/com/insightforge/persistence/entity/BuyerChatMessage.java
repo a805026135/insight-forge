@@ -19,6 +19,9 @@ public class BuyerChatMessage {
 
     private Long userId;
 
+    /** 为空=平台客服会话；非空=该商家的专属客服会话（上下文隔离） */
+    private Long merchantId;
+
     /** user / assistant */
     private String role;
 

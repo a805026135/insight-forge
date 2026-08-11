@@ -11,6 +11,7 @@ public record AssistantIntent(
         List<MerchantContact> merchants,
         List<AfterSaleDraft> drafts,
         List<ProductCandidate> productCandidates,
-        List<OrderCandidate> orderCandidates
+        List<OrderCandidate> orderCandidates,
+        boolean paused
 ) {
 }

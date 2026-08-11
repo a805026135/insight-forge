@@ -9,7 +9,11 @@ import com.insightforge.api.service.PaymentTokenService;
 import com.insightforge.persistence.entity.Activity;
 import com.insightforge.persistence.entity.Orders;
 import com.insightforge.persistence.entity.Product;
+import com.insightforge.persistence.entity.OrderItem;
+import com.insightforge.persistence.entity.Merchant;
 import com.insightforge.persistence.mapper.ActivityMapper;
+import com.insightforge.persistence.mapper.OrderItemMapper;
+import com.insightforge.persistence.mapper.MerchantMapper;
 import com.insightforge.persistence.mapper.OrdersMapper;
 import com.insightforge.persistence.mapper.ProductMapper;
 import com.insightforge.seckill.core.service.OrderStateService;
@@ -43,15 +47,20 @@ public class OrderController {
     private final ProductMapper productMapper;
     private final ActivityMapper activityMapper;
     private final PaymentTokenService paymentTokenService;
+    private final OrderItemMapper orderItemMapper;
+    private final MerchantMapper merchantMapper;
 
     public OrderController(OrderStateService orderStateService, OrdersMapper ordersMapper,
                            ProductMapper productMapper, ActivityMapper activityMapper,
-                           PaymentTokenService paymentTokenService) {
+                           PaymentTokenService paymentTokenService,
+                           OrderItemMapper orderItemMapper, MerchantMapper merchantMapper) {
         this.orderStateService = orderStateService;
         this.ordersMapper = ordersMapper;
         this.productMapper = productMapper;
         this.activityMapper = activityMapper;
         this.paymentTokenService = paymentTokenService;
+        this.orderItemMapper = orderItemMapper;
+        this.merchantMapper = merchantMapper;
     }
 
     /** 按用户 id 查订单列表（最近下单的排前面），给前端「我的订单」页用。 */
@@ -71,15 +80,29 @@ public class OrderController {
         Set<Long> activityIds = orders.stream().map(Orders::getActivityId).collect(Collectors.toSet());
         Map<Long, Activity> activityMap = activityMapper.selectBatchIds(activityIds).stream()
                 .collect(Collectors.toMap(Activity::getId, a -> a));
+        Map<String, OrderItem> itemMap = orders.isEmpty() ? Map.of()
+                : orderItemMapper.selectList(new QueryWrapper<OrderItem>()
+                        .in("order_id", orders.stream().map(Orders::getOrderId).collect(Collectors.toList())))
+                .stream().collect(Collectors.toMap(OrderItem::getOrderId, i -> i, (a, b) -> a));
         return ApiResult.ok(orders.stream().map(o -> {
             Product p = productMap.get(o.getSkuId());
             Activity a = activityMap.get(o.getActivityId());
+            OrderItem item = itemMap.get(o.getOrderId());
+            Long merchantId = item != null && item.getMerchantId() != null ? item.getMerchantId()
+                    : (p != null ? p.getMerchantId() : null);
+            String merchantName = item != null && item.getMerchantName() != null
+                    ? item.getMerchantName() : null;
+            if (merchantName == null && merchantId != null) {
+                Merchant m = merchantMapper.selectById(merchantId);
+                merchantName = m == null ? null : m.getName();
+            }
             return new OrderView(
                     o.getOrderId(), o.getUserId(), o.getActivityId(), o.getSkuId(), o.getQty(),
                     o.getPrice(), o.getStatus(), o.getCreatedAt(),
                     p != null ? p.getName() : "未知商品",
                     p != null ? p.getImageUrl() : "",
-                    a != null ? a.getName() : "未知活动");
+                    a != null ? a.getName() : "未知活动",
+                    merchantId, merchantName);
         }).collect(Collectors.toList()));
     }
 

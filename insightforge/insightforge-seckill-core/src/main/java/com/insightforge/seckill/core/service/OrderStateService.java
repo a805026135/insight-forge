@@ -28,16 +28,19 @@ public class OrderStateService {
 
     private final OrdersMapper ordersMapper;
     private final ActivitySkuMapper skuMapper;
+    private final com.insightforge.persistence.mapper.ProductMapper productMapper;
     private final SkuCacheService skuCacheService;
     /** LIVE 期间 Redis 是权威库存，取消必须同步回补（local 下为 null，跳过）。 */
     private final ObjectProvider<RedisStockService> redisStockService;
 
     public OrderStateService(OrdersMapper ordersMapper,
                              ActivitySkuMapper skuMapper,
+                             com.insightforge.persistence.mapper.ProductMapper productMapper,
                              SkuCacheService skuCacheService,
                              ObjectProvider<RedisStockService> redisStockService) {
         this.ordersMapper = ordersMapper;
         this.skuMapper = skuMapper;
+        this.productMapper = productMapper;
         this.skuCacheService = skuCacheService;
         this.redisStockService = redisStockService;
     }
@@ -52,41 +55,44 @@ public class OrderStateService {
     public ApiResult<Void> cancel(String orderId) {
         Orders order = ordersMapper.selectOne(new QueryWrapper<Orders>().eq("order_id", orderId));
         if (order == null) {
-            return ApiResult.fail(404, "订单不存在");
+            return ApiResult.fail(404, "?????");
         }
         OrderStatus cur = OrderStatus.from(order.getStatus());
         if (cur == OrderStatus.CANCEL) {
-            return ApiResult.ok(null); // 已取消，幂等返回
+            return ApiResult.ok(null); // ????????
         }
-        cur.transitionTo(OrderStatus.CANCEL); // 仅 CREATE_ORDER / PAY 可取消；DONE 会抛异常
+        cur.transitionTo(OrderStatus.CANCEL); // ? CREATE_ORDER / PAY ????DONE ????
 
-        // 订单里存的是 product.id（=sku_id），库存表主键是 id，需按 (activity_id, sku_id) 定位
-        ActivitySku sku = skuMapper.selectOne(new QueryWrapper<ActivitySku>()
-                .eq("activity_id", order.getActivityId())
-                .eq("sku_id", order.getSkuId()));
-        if (sku == null) {
-            return ApiResult.fail(404, "库存记录不存在");
-        }
-        int aff = skuMapper.incrementStock(sku.getId(), order.getQty());
-        if (aff == 0) {
-            return ApiResult.fail(409, "库存回补失败（sold 不足，可能已回补）");
-        }
-        // Phase 14.1：DB 回补成功后，同步回补 Redis 权威库存（仅键存在时），
-        // 否则用户取消的库存 LIVE 期间买不到，且结算对账必然 Redis↔DB 漂移。
-        RedisStockService rs = redisStockService.getIfAvailable();
-        if (rs != null) {
-            rs.increaseStockIfExists(order.getActivityId(), sku.getId(), order.getQty());
+        if (order.getActivitySkuId() != null) {
+            // ???????????activity_sku????? Redis ????
+            ActivitySku sku = skuMapper.selectById(order.getActivitySkuId());
+            if (sku == null) {
+                return ApiResult.fail(404, "???????");
+            }
+            int aff = skuMapper.incrementStock(sku.getId(), order.getQty());
+            if (aff == 0) {
+                return ApiResult.fail(409, "???????sold ?????????");
+            }
+            // DB ????????? Redis ?????????????? LIVE ??????????
+            RedisStockService rs = redisStockService.getIfAvailable();
+            if (rs != null) {
+                rs.increaseStockIfExists(order.getActivityId(), sku.getId(), order.getQty());
+            }
+            skuCacheService.evict(sku.getId());
+        } else if (order.getSkuId() != null) {
+            // ?????????? skuId = product.id?????????
+            int aff = productMapper.incrementStock(order.getSkuId(), order.getQty());
+            if (aff == 0) {
+                return ApiResult.fail(409, "?????????????????");
+            }
+        } else {
+            return ApiResult.fail(400, "???????????????");
         }
         order.setStatus(OrderStatus.CANCEL.name());
         ordersMapper.updateById(order);
-        skuCacheService.evict(order.getSkuId()); // 失效缓存，下次读回源最新库存
         return ApiResult.ok(null);
     }
 
-    /**
-     * 标记支付（仅演示状态机迁转，无真实支付）：CREATE_ORDER → PAY → DONE。
-     * 链式 transitionTo：任一步非法（如从 CANCEL 直接 DONE）立即抛异常。
-     */
     @Transactional
     public ApiResult<Void> markPaid(String orderId) {
         Orders order = ordersMapper.selectOne(new QueryWrapper<Orders>().eq("order_id", orderId));

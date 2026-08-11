@@ -60,8 +60,8 @@ class AfterSaleFlowTest {
 
     @Test
     void chatHistoryPersistsAcrossCalls() {
-        chatHistoryService.record(9002L, "user", "你好，怎么退款？");
-        chatHistoryService.record(9002L, "assistant", "我为你预填了退款申请，请确认提交。");
+        chatHistoryService.record(9002L, null, "user", "你好，怎么退款？");
+        chatHistoryService.record(9002L, null, "assistant", "我为你预填了退款申请，请确认提交。");
 
         var rows = chatHistoryService.history(9002L, 50);
         assertEquals(2, rows.size());

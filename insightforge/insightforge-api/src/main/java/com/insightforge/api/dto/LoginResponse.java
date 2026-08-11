@@ -16,6 +16,8 @@ public class LoginResponse {
     private Long merchantId;
     /** JWT（后续请求放 Authorization: Bearer <token>） */
     private String token;
+    /** 令牌过期时间（epoch 毫秒），前端据此自动登出，避免“隔天仍免登录” */
+    private Long tokenExpiresAt;
 
     public static LoginResponse from(AuthUser u) {
         LoginResponse r = new LoginResponse();

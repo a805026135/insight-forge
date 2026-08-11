@@ -22,12 +22,13 @@ public class BuyerChatHistoryService {
         this.mapper = mapper;
     }
 
-    public void record(long userId, String role, String content) {
+    public void record(long userId, Long merchantId, String role, String content) {
         if (content == null || content.isBlank()) {
             return;
         }
         BuyerChatMessage m = new BuyerChatMessage();
         m.setUserId(userId);
+        m.setMerchantId(merchantId);
         m.setRole(role);
         m.setContent(content);
         m.setCreatedAt(LocalDateTime.now());
@@ -35,8 +36,31 @@ public class BuyerChatHistoryService {
     }
 
     public List<BuyerChatMessage> history(long userId, int limit) {
+        return history(userId, null, limit);
+    }
+
+    /** 按 (userId, merchantId) 取历史；merchantId 为空表示平台客服会话 */
+    public List<BuyerChatMessage> history(long userId, Long merchantId, int limit) {
+        QueryWrapper<BuyerChatMessage> qw = new QueryWrapper<BuyerChatMessage>()
+                .eq("user_id", userId);
+        if (merchantId == null) {
+            qw.isNull("merchant_id");
+        } else {
+            qw.eq("merchant_id", merchantId);
+        }
+        List<BuyerChatMessage> rows = mapper.selectList(qw
+                .orderByDesc("id").last("LIMIT " + Math.min(Math.max(limit, 10), 200)));
+        List<BuyerChatMessage> out = new ArrayList<>(rows);
+        Collections.reverse(out);
+        return out;
+    }
+
+    /** 按商家取最近若干条（供转人工时生成对话摘要） */
+    public List<BuyerChatMessage> recent(long userId, Long merchantId, int limit) {
         List<BuyerChatMessage> rows = mapper.selectList(new QueryWrapper<BuyerChatMessage>()
-                .eq("user_id", userId).orderByDesc("id").last("LIMIT " + Math.min(Math.max(limit, 10), 200)));
+                .eq("user_id", userId)
+                .eq("merchant_id", merchantId)
+                .orderByDesc("id").last("LIMIT " + Math.min(Math.max(limit, 10), 200)));
         List<BuyerChatMessage> out = new ArrayList<>(rows);
         Collections.reverse(out);
         return out;

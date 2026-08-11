@@ -55,6 +55,7 @@ public class BuyerAssistantService {
     private final MerchantMapper merchantMapper;
     private final AfterSaleMapper afterSaleMapper;
     private final BuyerChatHistoryService chatHistory;
+    private final SupportTicketService supportTicketService;
 
     /** 用户 → 上一轮锁定的商家（用于追问沿用，一旦提到别家商品立即切换） */
     private final Map<Long, Long> lastMerchantByUser = new ConcurrentHashMap<>();
@@ -67,7 +68,8 @@ public class BuyerAssistantService {
                                  ProductMapper productMapper,
                                  MerchantMapper merchantMapper,
                                  AfterSaleMapper afterSaleMapper,
-                                 BuyerChatHistoryService chatHistory) {
+                                 BuyerChatHistoryService chatHistory,
+                                 SupportTicketService supportTicketService) {
         this.deepSeekModelClient = deepSeekModelClient;
         this.knowledgeBaseProvider = knowledgeBaseProvider;
         this.ordersMapper = ordersMapper;
@@ -76,6 +78,7 @@ public class BuyerAssistantService {
         this.merchantMapper = merchantMapper;
         this.afterSaleMapper = afterSaleMapper;
         this.chatHistory = chatHistory;
+        this.supportTicketService = supportTicketService;
     }
 
     public BuyerAssistantReply ask(long userId, String question, Long explicitMerchantId) {
@@ -92,8 +95,8 @@ public class BuyerAssistantService {
         } else {
             answer = generate(userId, buildContext(userId, question, data), question);
         }
-        chatHistory.record(userId, "user", question);
-        chatHistory.record(userId, "assistant", answer);
+        chatHistory.record(userId, explicitMerchantId, "user", question);
+        chatHistory.record(userId, explicitMerchantId, "assistant", answer);
         return new BuyerAssistantReply(answer, data.needHuman(), data.merchants(), data.drafts(),
                 data.candidates(), data.orderCandidates());
     }
@@ -101,11 +104,28 @@ public class BuyerAssistantService {
     /** 意图识别（不生成、不记录）：无命中 → 转人工/商品候选；退款 → 草稿。 */
     public AssistantIntent intent(long userId, String question, Long explicitMerchantId) {
         IntentData d = computeIntent(userId, question, explicitMerchantId);
+        boolean paused = explicitMerchantId != null && supportTicketService.isAgentPaused(userId, explicitMerchantId);
         return new AssistantIntent(d.needHuman(), d.merchants(), d.drafts(),
-                d.candidates(), d.orderCandidates());
+                d.candidates(), d.orderCandidates(), paused);
     }
 
     public void askStream(long userId, String question, Long explicitMerchantId, Consumer<String> onChunk) {
+        if (explicitMerchantId != null && supportTicketService.isAgentPaused(userId, explicitMerchantId)) {
+            chatHistory.record(userId, explicitMerchantId, "user", question);
+            String pauseText = "?????" + merchantName(explicitMerchantId) + "??????????Agent ??????"
+                    + "???????????????????? Agent????????? 10 ????????";
+            chatHistory.record(userId, explicitMerchantId, "assistant", pauseText);
+            for (int i = 0; i < pauseText.length(); i += 6) {
+                onChunk.accept(pauseText.substring(i, Math.min(i + 6, pauseText.length())));
+                try {
+                    Thread.sleep(8);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+            return;
+        }
         IntentData data = computeIntent(userId, question, explicitMerchantId);
         String text;
         if (data.structuredAnswer() != null) {
@@ -119,8 +139,8 @@ public class BuyerAssistantService {
         } else {
             text = generate(userId, buildContext(userId, question, data), question);
         }
-        chatHistory.record(userId, "user", question);
-        chatHistory.record(userId, "assistant", text);
+        chatHistory.record(userId, explicitMerchantId, "user", question);
+        chatHistory.record(userId, explicitMerchantId, "assistant", text);
         for (int i = 0; i < text.length(); i += 6) {
             onChunk.accept(text.substring(i, Math.min(i + 6, text.length())));
             try {
@@ -385,7 +405,7 @@ public class BuyerAssistantService {
         StringBuilder sb = new StringBuilder();
         // 多轮上下文：注入最近 4 轮问答，让"那价格呢"这类追问能接上上文
         List<com.insightforge.persistence.entity.BuyerChatMessage> history =
-                chatHistory.history(userId, 8);
+                chatHistory.history(userId, data.mc() == null ? null : data.mc().merchantId(), 8);
         if (history.size() >= 2) {
             sb.append("【对话历史】（最近几轮，仅作上下文参考）\n");
             int start = Math.max(0, history.size() - 8);
@@ -492,6 +512,11 @@ public class BuyerAssistantService {
                     "订单 " + o.getOrderId() + "（¥" + o.getTotalAmount() + "）退款申请草稿"));
         }
         return drafts;
+    }
+
+    private String merchantName(long merchantId) {
+        Merchant m = merchantMapper.selectById(merchantId);
+        return m == null || m.getName() == null ? "??" + merchantId : m.getName();
     }
 
     private String deterministicAnswer(String context, String question) {

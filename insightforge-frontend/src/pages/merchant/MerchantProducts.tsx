@@ -65,6 +65,24 @@ export default function MerchantProducts() {
           {showForm ? '收起' : '+ 新增商品'}
         </button>
       </div>
+      <div className="kpi-grid" style={{ marginBottom: 16 }}>
+        <div className="kpi-card highlight">
+          <div className="kpi-value">{list.length}</div>
+          <div className="kpi-label">商品总数</div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-value">{list.filter((p) => p.status === 'ON_SALE').length}</div>
+          <div className="kpi-label">在售</div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-value">{list.filter((p) => p.status !== 'ON_SALE').length}</div>
+          <div className="kpi-label">已下架</div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-value">{list.reduce((s, p) => s + (p.stock ?? 0), 0)}</div>
+          <div className="kpi-label">总库存</div>
+        </div>
+      </div>
       {msg && <div className="toast error">{msg}</div>}
       {showForm && (
         <div className="create-form">
@@ -95,6 +113,7 @@ export default function MerchantProducts() {
               <div className="mp-sku">{p.sku}</div>
               <div className="mp-cat">{p.category}</div>
               <div className="mp-price">¥{p.marketPrice ?? '-'}</div>
+              <div className="mp-stock">库存 {p.stock ?? 0} 件</div>
               <span className={`badge ${p.status === 'ON_SALE' ? 'badge-live' : 'badge-closed'}`}>
                 {p.status === 'ON_SALE' ? '在售' : '已下架'}
               </span>

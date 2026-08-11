@@ -26,6 +26,9 @@ public class SupportTicket {
 
     private String answer;
 
+    /** 转人工时截取的对话摘要，商家侧可见完整上下文 */
+    private String transcript;
+
     private String status;
 
     private LocalDateTime createdAt;

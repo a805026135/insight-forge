@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { marked } from 'marked';
 import { Modal } from 'antd';
 import { getToken } from '../../auth/token';
@@ -6,6 +7,7 @@ import { getToken } from '../../auth/token';
 interface ChatMsg {
   role: 'user' | 'assistant';
   content: string;
+  fromHuman?: boolean;
   streaming?: boolean;
   drafts?: AfterSaleDraft[];
   candidates?: ProductCandidate[];
@@ -82,6 +84,11 @@ const TICKET_LABEL: Record<string, string> = {
 };
 
 export default function SupportPage() {
+  const [searchParams] = useSearchParams();
+  const merchantParam = searchParams.get('merchant');
+  const merchantId = merchantParam && !isNaN(Number(merchantParam)) ? Number(merchantParam) : null;
+  const [merchantName, setMerchantName] = useState('');
+  const [agentPaused, setAgentPaused] = useState(false);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
@@ -129,7 +136,27 @@ export default function SupportPage() {
       const r = await fetch('/api/buyer/support-ticket', {
         headers: { Authorization: `Bearer ${getToken()}` },
       }).then((res) => res.json());
-      if (r.code === 0) setTickets(r.data ?? []);
+      if (r.code === 0) {
+        setTickets(r.data ?? []);
+        if (merchantId != null) {
+          const mine = (r.data ?? []).filter((t: SupportTicket) => t.merchantId === merchantId);
+          setAgentPaused(mine.some((t: SupportTicket) => t.status === 'OPEN' || t.status === 'REPLIED'));
+          const replies = mine
+            .filter((t: SupportTicket) => t.answer)
+            .sort((a: SupportTicket, b: SupportTicket) => a.id - b.id)
+            .map((t: SupportTicket) => ({
+              role: 'assistant' as const,
+              fromHuman: true,
+              content: t.answer as string,
+            }));
+          if (replies.length > 0) {
+            setMessages((prev) => {
+              const next = prev.filter((m) => !m.fromHuman);
+              return [...next, ...replies];
+            });
+          }
+        }
+      }
     } catch {
       // ignore
     }
@@ -148,7 +175,8 @@ export default function SupportPage() {
 
   const loadHistory = async () => {
     try {
-      const r = await fetch('/api/buyer/chat/history?limit=50', {
+      const qs = merchantId != null ? `limit=50&merchantId=${merchantId}` : 'limit=50';
+      const r = await fetch(`/api/buyer/chat/history?${qs}`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       }).then((res) => res.json());
       if (r.code === 0) {
@@ -164,7 +192,21 @@ export default function SupportPage() {
     loadTickets();
     loadAfterSales();
     return () => streamRef.current?.abort();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [merchantId]);
+
+  useEffect(() => {
+    if (merchantId == null) return;
+    fetch('/api/catalog/merchants', { headers: { Authorization: `Bearer ${getToken()}` } })
+      .then((r) => r.json())
+      .then((r) => {
+        if (r.code === 0) {
+          const m = (r.data ?? []).find((x: any) => x.id === merchantId);
+          setMerchantName(m?.name ?? '');
+        }
+      })
+      .catch(() => {});
+  }, [merchantId]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
@@ -225,6 +267,7 @@ export default function SupportPage() {
           candidates = r.data.productCandidates ?? [];
           orderCandidates = r.data.orderCandidates ?? [];
           human = { needHuman: r.data.needHuman, merchants: r.data.merchants ?? [] };
+          if (merchantId != null && r.data.paused) setAgentPaused(true);
         }
       } catch {
         // ignore
@@ -275,11 +318,45 @@ export default function SupportPage() {
   };
 
   const openTransfer = (questionText: string, merchants: MerchantContact[]) => {
+    if (merchantId != null) {
+      // 商家专属会话：直接转当前商家人工，不再弹商家列表
+      fetch('/api/buyer/support-ticket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ merchantId, question: questionText }),
+      })
+        .then((r) => r.json())
+        .then((r) => {
+          if (r.code === 0) {
+            setMsg('已转人工客服，商家回复会显示在这里；Agent 已暂停 10 分钟');
+            setAgentPaused(true);
+            loadTickets();
+          } else {
+            setMsg(r.message || '转人工失败');
+          }
+        })
+        .catch(() => setMsg('转人工失败'));
+      return;
+    }
     setTransferQuestion(questionText);
     setTransferMerchants(merchants);
     setTransferOpen(true);
   };
 
+  const wakeAgent = async () => {
+    if (merchantId == null) return;
+    try {
+      const r = await fetch(`/api/buyer/support-ticket/${merchantId}/wake`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}` },
+      }).then((res) => res.json());
+      if (r.code !== 0) throw new Error(r.message);
+      setAgentPaused(false);
+      setMsg('Agent 已唤醒，可以继续提问了');
+    } catch (e: any) {
+      setMsg(e.message || '唤醒失败');
+    }
+  };
   const submitTransfer = async (m: MerchantContact) => {
     try {
       const r = await fetch('/api/buyer/support-ticket', {
@@ -335,11 +412,16 @@ export default function SupportPage() {
       </div>
       {msg && <div className={`toast ${msg.startsWith('✔') ? 'success' : 'error'}`}>{msg}</div>}
       <section className="assistant-panel">
-        <h3>🤖 平台智能客服</h3>
+        <h3>{merchantId != null ? `🏪 ${merchantName || '商家'} 专属客服` : '🤖 平台智能客服'}</h3>
+        {merchantId != null && (
+          <p className="assistant-hint">
+            本会话仅回答该商家的商品/库存/发货/售后问题，只引用该商家知识库与你在该店的订单；平台政策类问题请回到平台客服。
+          </p>
+        )}
         <p className="assistant-hint">
-          回答仅基于平台知识库与你的订单；知识库未收录时自动转商家/人工，绝不编造。
+          回答仅基于知识库与你的订单；知识库未收录时自动转商家/人工，绝不编造。
         </p>
-        <div className="chat-list" ref={listRef}>
+<div className="chat-list" ref={listRef}>
           {messages.length === 0 && (
             <div className="chat-empty">问问退货退款、物流发货、发票或你的订单吧。</div>
           )}
@@ -348,11 +430,18 @@ export default function SupportPage() {
               <div className="chat-avatar">{m.role === 'user' ? '🛒' : '🤖'}</div>
               <div className="chat-body">
                 {m.role === 'assistant' ? (
-                  renderAnswer(m.content || '…')
+                  m.fromHuman ? (
+                    <div className="chat-text chat-human">
+                      <b>商家人工回复：</b>
+                      {m.content}
+                    </div>
+                  ) : (
+                    renderAnswer(m.content || '...')
+                  )
                 ) : (
                   <div className="chat-text">{m.content}</div>
                 )}
-                {m.role === 'assistant' && m.streaming && <span className="cursor-blink">▍</span>}
+{m.role === 'assistant' && m.streaming && <span className="cursor-blink">▍</span>}
                 {m.drafts && m.drafts.length > 0 && (
                   <div style={{ marginTop: 10 }}>
                     {m.drafts.map((d, di) => (
@@ -434,6 +523,14 @@ export default function SupportPage() {
             </div>
           ))}
         </div>
+        {agentPaused && merchantId != null && (
+          <div className="action-card" style={{ margin: '10px 0' }}>
+            <span className="action-desc">
+              已转「{merchantName || '商家'}」人工客服：Agent 暂停回答，商家回复会显示在上方。
+            </span>
+            <button onClick={wakeAgent}>唤醒 Agent（继续自动问答）</button>
+          </div>
+        )}
         <div className="assistant-input">
           <input
             value={question}

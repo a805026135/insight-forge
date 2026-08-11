@@ -1,5 +1,7 @@
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { useEffect, useState } from 'react';
+import { getToken } from '../auth/token';
 
 const MERCHANT_NAV = [
   { to: '/merchant/agent', label: 'Agent 工作台' },
@@ -26,9 +28,47 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [shopName, setShopName] = useState<string | null>(null);
+  const [shopPhone, setShopPhone] = useState('');
 
   const isMerchant = user?.role === 'merchant';
   const navItems = isMerchant ? MERCHANT_NAV : USER_NAV;
+
+  useEffect(() => {
+    if (!isMerchant) return;
+    fetch('/api/merchant/profile', { headers: { Authorization: `Bearer ${getToken()}` } })
+      .then((r) => r.json())
+      .then((r) => {
+        if (r.code === 0) {
+          setShopName(r.data?.name ?? null);
+          setShopPhone(r.data?.servicePhone ?? '');
+        }
+      })
+      .catch(() => {});
+  }, [isMerchant]);
+
+  const editShop = () => {
+    if (!isMerchant) return;
+    const name = window.prompt('店铺名称', shopName ?? '');
+    if (name == null || !name.trim()) return;
+    const phone = window.prompt('客服电话（买家咨询时会公开引用）', shopPhone);
+    if (phone == null || !phone.trim()) return;
+    fetch('/api/merchant/store-info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+      body: JSON.stringify({ name: name.trim(), servicePhone: phone.trim() }),
+    })
+      .then((r) => r.json())
+      .then((r) => {
+        if (r.code === 0) {
+          setShopName(r.data?.name ?? name.trim());
+          setShopPhone(r.data?.servicePhone ?? phone.trim());
+        } else {
+          window.alert(r.message || '保存失败');
+        }
+      })
+      .catch(() => window.alert('保存失败'));
+  };
 
   const handleLogout = () => {
     logout();
@@ -56,6 +96,11 @@ export default function Layout() {
           <div className="user-info">
             <span className="user-name">{user?.displayName}</span>
             <span className="user-role">{isMerchant ? '商家' : '买家'}</span>
+            {isMerchant && shopName && (
+              <button className="shop-name" onClick={editShop} title="点击修改店铺名/客服电话">
+                🏪 {shopName} ✎
+              </button>
+            )}
           </div>
           <button
             className="theme-toggle"

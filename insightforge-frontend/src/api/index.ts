@@ -264,16 +264,19 @@ export interface GuardrailView {
 export interface OrderView {
   orderId: string;
   userId: number;
-  activityId: number;
+  activityId: number | null;
+  activitySkuId?: number | null;
   skuId: number;
   qty: number;
-  /** 成交单价快照（REPRICE 生效后新订单带新价） */
+  /** ???????REPRICE ?????????? */
   price: number | null;
   status: string;
   createdAt: string;
   productName: string;
   productImage: string;
   activityName: string;
+  merchantId: number | null;
+  merchantName: string | null;
 }
 
 /** Span 视图 —— 匹配 SpanView.java (record) */
