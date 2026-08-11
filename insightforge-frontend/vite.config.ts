@@ -8,9 +8,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: 'http://localhost:8080', changeOrigin: true },
+      // 本机 8080/8082 被 Docker Desktop/WSL 占用，本地调试统一走 8090
+      '/api': { target: 'http://localhost:8090', changeOrigin: true },
       // WebSocket 大屏推送
-      '/ws': { target: 'ws://localhost:8080', ws: true },
+      '/ws': { target: 'ws://localhost:8090', ws: true },
     },
   },
 });
