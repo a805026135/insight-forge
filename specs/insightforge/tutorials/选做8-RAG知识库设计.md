@@ -52,6 +52,7 @@
 | 商家商品目录 | `merchant/{id}/products` | `product` 表按商家聚合（名称/分类/售价/库存/状态/描述） | 商家级 | 启动时缺省入库 + `/api/merchant/kb/reindex` 手动刷新 | 商品咨询、卖点、库存说明 |
 | 商家历史决策 | `merchant/{id}/decisions` | `audit_log` 中该商家已批准执行的动作 | 商家级 | 同上 | 复盘、相似场景建议 |
 | 商家活动与促销规则 | `merchant/{id}/activities` | `activity` + `activity_sku` 表聚合（活动名/时间/秒杀价/库存/已售） | 商家级 | 同上 | 活动问答、秒杀参与建议 |
+| 商家自定义知识 | `merchant/{id}/custom/{uuid}` | 商家上传 txt/md 或粘贴文本（SOP/手册/话术），全文落 `agent_kb_custom_doc` | 商家级 | 上传即入库，可删除（同步清向量库） | 私有运营知识问答、话术引用 |
 
 ### 3.2 规划中（按价值排序）
 
