@@ -66,7 +66,8 @@ public class KnowledgeBaseConfig {
                     .databaseName(props.getMilvusDatabase())
                     .embeddingDimension(dims)
                     .metricType(MetricType.COSINE)
-                    .indexType(IndexType.AUTOINDEX)
+                    .indexType(IndexType.HNSW)
+                    .indexParameters("{\"M\": 16, \"efConstruction\": 200}")
                     .initializeSchema(true)
                     .build();
             log.info("知识库向量库已启用 Milvus：{}:{}/{}，embedding={}({}d)",
