@@ -41,6 +41,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         // 公开路径
         if ("/api/login".equals(path) || "/api/register".equals(path)
+                || path.startsWith("/api/order/pay-")
                 || path.startsWith("/actuator") || !path.startsWith("/api/")) {
             filterChain.doFilter(request, response);
             return;

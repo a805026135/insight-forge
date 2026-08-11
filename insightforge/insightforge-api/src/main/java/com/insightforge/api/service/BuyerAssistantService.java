@@ -81,14 +81,14 @@ public class BuyerAssistantService {
     public BuyerAssistantReply ask(long userId, String question, Long explicitMerchantId) {
         IntentData data = computeIntent(userId, question, explicitMerchantId);
         String answer;
-        if (!data.orderCandidates().isEmpty()) {
+        if (data.structuredAnswer() != null) {
+            answer = data.structuredAnswer();
+        } else if (!data.orderCandidates().isEmpty()) {
             answer = "你问的是哪一笔订单？选择后我按对应商家的信息回答。";
         } else if (!data.candidates().isEmpty()) {
             answer = "你问的是哪款商品？选择后我会为你查询对应商家的资料。";
         } else if (data.needHuman()) {
             answer = "这个问题知识库暂时无法给出可靠答案。为避免误导，建议转人工客服，或直接联系具体商家咨询。";
-        } else if (data.candidates().isEmpty() && data.refund && data.drafts().isEmpty()) {
-            answer = "你暂时没有可退款的订单（需 已支付/已发货/已完成 状态）。如需帮助，可以联系商家或人工客服。";
         } else {
             answer = generate(userId, buildContext(userId, question, data), question);
         }
@@ -108,14 +108,14 @@ public class BuyerAssistantService {
     public void askStream(long userId, String question, Long explicitMerchantId, Consumer<String> onChunk) {
         IntentData data = computeIntent(userId, question, explicitMerchantId);
         String text;
-        if (!data.orderCandidates().isEmpty()) {
+        if (data.structuredAnswer() != null) {
+            text = data.structuredAnswer();
+        } else if (!data.orderCandidates().isEmpty()) {
             text = "你问的是哪一笔订单？选择后我按对应商家的信息回答。";
         } else if (!data.candidates().isEmpty()) {
             text = "你问的是哪款商品？选择后我会为你查询对应商家的资料。";
         } else if (data.needHuman()) {
             text = "这个问题知识库暂时无法给出可靠答案。为避免误导，建议转人工客服，或直接联系具体商家咨询。";
-        } else if (data.refund() && data.drafts().isEmpty()) {
-            text = "你暂时没有可退款的订单（需 已支付/已发货/已完成 状态）。如需帮助，可以联系商家或人工客服。";
         } else {
             text = generate(userId, buildContext(userId, question, data), question);
         }
@@ -136,7 +136,7 @@ public class BuyerAssistantService {
                               List<AfterSaleDraft> drafts, List<ProductCandidate> candidates,
                               boolean refund, MerchantCtx mc,
                               List<KbSearchHit> platformHits, List<KbSearchHit> merchantHits,
-                              List<OrderCandidate> orderCandidates) {
+                              List<OrderCandidate> orderCandidates, String structuredAnswer) {
     }
 
     private record MerchantCtx(Long merchantId, String merchantName, boolean explicit) {
@@ -146,25 +146,31 @@ public class BuyerAssistantService {
         boolean refund = isRefundIntent(question);
         List<AfterSaleDraft> drafts = refund ? buildRefundDrafts(userId) : List.of();
         if (refund) {
-            boolean needHuman = drafts.isEmpty();
-            return new IntentData(needHuman, needHuman ? recentMerchants(userId) : List.of(),
-                    drafts, List.of(), true, null, List.of(), List.of(), List.of());
+            // 退款问题优先走平台政策知识（解释流程）；有可退订单时再附加草稿
+            KnowledgeBaseService kb = knowledgeBaseProvider.getIfAvailable();
+            List<KbSearchHit> platform = kb == null ? List.of() : kb.search(0L, question, 3);
+            if (!platform.isEmpty() || !drafts.isEmpty()) {
+                return new IntentData(false, List.of(), drafts, List.of(), true, null,
+                        platform, List.of(), List.of(), null);
+            }
+            return new IntentData(true, recentMerchants(userId), List.of(), List.of(), true, null,
+                    List.of(), List.of(), List.of(), null);
         }
 
-        // 电话/售后类问题：先让用户确认是哪一笔订单，再按对应商家回答；
+        // 电话/发货/售后类问题：先让用户确认是哪一笔订单，再按对应商家回答；
         // 若已显式锁定商家（用户已选定订单），跳过候选直接检索
-        if (isContactIntent(question) && explicitMerchantId == null) {
+        if (needsContextIntent(question) && explicitMerchantId == null) {
             List<OrderCandidate> orderCandidates = buildOrderCandidates(userId);
             if (!orderCandidates.isEmpty()) {
                 return new IntentData(false, List.of(), List.of(), List.of(),
-                        false, null, List.of(), List.of(), orderCandidates);
+                        false, null, List.of(), List.of(), orderCandidates, null);
             }
         }
 
-        // 订单状态类问题：直接基于【我的最近订单】真实摘要回答，无需知识库命中
+        // 订单状态类问题：结构化生成（不走 LLM，保证排版与真实数据）
         if (isOrderStatusIntent(question)) {
             return new IntentData(false, List.of(), List.of(), List.of(),
-                    false, null, List.of(), List.of(), List.of());
+                    false, null, List.of(), List.of(), List.of(), buildOrderStatusAnswer(userId));
         }
 
         MerchantCtx mc = resolveMerchant(userId, question, explicitMerchantId);
@@ -181,31 +187,65 @@ public class BuyerAssistantService {
                 lastMerchantNameByUser.put(userId, mc.merchantName());
             }
             return new IntentData(false, List.of(), List.of(), List.of(),
-                    false, mc, platform, merchant, List.of());
+                    false, mc, platform, merchant, List.of(), null);
         }
 
         // 无命中：疑似商品问题 → 给商品候选；否则转人工
         List<ProductCandidate> candidates = mc.merchantId() == null ? matchCandidates(question) : List.of();
         if (!candidates.isEmpty()) {
-            return new IntentData(false, List.of(), List.of(), candidates, false, mc, List.of(), List.of(), List.of());
+            return new IntentData(false, List.of(), List.of(), candidates, false, mc,
+                    List.of(), List.of(), List.of(), null);
         }
         List<MerchantContact> contacts = mc.merchantId() == null
                 ? recentMerchants(userId)
                 : List.of(new MerchantContact(mc.merchantId(), mc.merchantName()));
-        return new IntentData(true, contacts, List.of(), List.of(), false, mc, List.of(), List.of(), List.of());
+        return new IntentData(true, contacts, List.of(), List.of(), false, mc,
+                List.of(), List.of(), List.of(), null);
     }
 
-    private boolean isContactIntent(String question) {
+    private boolean needsContextIntent(String question) {
         String q = question == null ? "" : question;
         return q.contains("客服电话") || q.contains("联系方式") || q.contains("联系商家")
                 || q.contains("怎么联系") || q.contains("售后电话") || q.contains("保修电话")
-                || q.contains("电话");
+                || q.contains("电话") || q.contains("发货") || q.contains("物流")
+                || q.contains("时效") || q.contains("什么时候到") || q.contains("多久能到")
+                || q.contains("售后") || q.contains("保修");
     }
 
     private boolean isOrderStatusIntent(String question) {
         String q = question == null ? "" : question;
         // "订单状态/我的订单" 类问题走真实订单摘要；"发货要多久"等时效问题仍走平台知识
         return q.contains("订单");
+    }
+
+    private String buildOrderStatusAnswer(long userId) {
+        List<Orders> orders = ordersMapper.selectList(new QueryWrapper<Orders>()
+                .eq("user_id", userId).orderByDesc("created_at").last("LIMIT 5"));
+        if (orders.isEmpty()) {
+            return "你目前还没有订单，先去「限时秒杀」下一单吧。";
+        }
+        List<String> orderIds = orders.stream().map(Orders::getOrderId).toList();
+        List<OrderItem> items = orderItemMapper.selectList(
+                new QueryWrapper<OrderItem>().in("order_id", orderIds));
+        Map<String, OrderItem> firstByOrder = new LinkedHashMap<>();
+        for (OrderItem it : items) {
+            firstByOrder.putIfAbsent(it.getOrderId(), it);
+        }
+        StringBuilder sb = new StringBuilder("你的最近订单状态如下：\n");
+        int i = 1;
+        for (Orders o : orders) {
+            OrderItem it = firstByOrder.get(o.getOrderId());
+            String productName = it != null ? it.getProductName() : null;
+            if (productName == null && o.getSkuId() != null) {
+                Product p = productMapper.selectById(o.getSkuId());
+                productName = p == null ? null : p.getName();
+            }
+            sb.append(i++).append(". 【").append(productName == null ? "未知商品" : productName)
+              .append("】（订单#").append(o.getOrderId()).append("）：")
+              .append(statusZh(o.getStatus()))
+              .append("；时间 ").append(o.getCreatedAt()).append("\n");
+        }
+        return sb.toString();
     }
 
     private List<OrderCandidate> buildOrderCandidates(long userId) {

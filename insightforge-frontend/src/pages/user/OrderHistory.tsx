@@ -51,15 +51,40 @@ export default function OrderHistory() {
     setPayOrder(o);
     setQrUrl('');
     try {
+      const r = await fetch(`/api/order/${o.orderId}/pay-request`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}` },
+      }).then((res) => res.json());
+      if (r.code !== 0) throw new Error(r.message);
       const url = await QRCode.toDataURL(
-        `insightforge://pay?order=${o.orderId}&amount=${o.price != null ? o.price * (o.qty ?? 1) : 0}`,
+        `${window.location.origin}/pay-confirm?token=${r.data.token}`,
         { width: 200, margin: 1 },
       );
       setQrUrl(url);
-    } catch {
-      setMsg('二维码生成失败');
+    } catch (e: any) {
+      setMsg(e.message || '二维码生成失败');
     }
   };
+
+  // 打开支付弹窗后轮询订单状态：手机端确认支付（PAY）后自动关闭并提示
+  useEffect(() => {
+    if (!payOrder) return;
+    const timer = setInterval(async () => {
+      try {
+        const data = await orderApi.list(user?.id ?? 0);
+        const cur = data.find((x) => x.orderId === payOrder.orderId);
+        if (cur && cur.status === 'PAY') {
+          setMsg('✔ 支付成功（手机端已确认）');
+          setPayOrder(null);
+          await refresh();
+        }
+      } catch {
+        // 忽略轮询错误
+      }
+    }, 2000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payOrder]);
 
   const confirmPay = async () => {
     if (!payOrder) return;

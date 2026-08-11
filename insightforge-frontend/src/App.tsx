@@ -26,6 +26,7 @@ import MerchantOrders from './pages/merchant/MerchantOrders';
 import MerchantKb from './pages/merchant/MerchantKb';
 import MerchantSupport from './pages/merchant/MerchantSupport';
 import SupportPage from './pages/user/SupportPage';
+import PayConfirm from './pages/PayConfirm';
 import Layout from './components/Layout';
 
 function ProtectedRoute({ children, allowRole }: { children: React.ReactNode; allowRole?: string }) {
@@ -63,6 +64,7 @@ export default function App() {
               </PublicRoute>
             }
           />
+          <Route path="/pay-confirm" element={<PayConfirm />} />
           <Route
             path="/user/*"
             element={
