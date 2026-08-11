@@ -120,10 +120,13 @@
 | 生产 Milvus + DashScope qwen3.7-text-embedding | ✅ 已上线（1024 维，HNSW+COSINE） |
 | 动作批准前规则校验 | ✅ 已上线（按动作类型检索运营手册约束，拼入建议卡片） |
 | 商品/动作变更自动刷新知识库 | ✅ 已上线（MerchantKbRefresher 异步 + 60s 去抖） |
-| 商家助手多轮对话记忆 | ✅ 已上线（ShortTermMemory，每商家最近 20 条） |
+| 商家助手多轮对话记忆 + 记忆窗口压缩 | ✅ 已上线（CompactingMemory：每商家一份，超阈值把最旧窗口压缩为历史摘要，可注入 LLM 摘要器） |
+| 终止原因显式化 | ✅ 已上线（agent_trace.termination_reason：COMPLETED/BUDGET_EXCEEDED/REFUSED/USER_CANCELLED/INTERRUPTED/ERROR） |
+| Agent 运行暂停/继续 | ✅ 已上线（agent_checkpoint + InterruptGate，DAG→ROLES→ASSEMBLE→ATTEMPT 阶段边界可暂停，/api/agent/runs/{id}/resume 继续） |
+| 买家客服 + 用户级隔离 | ✅ 已上线（订单走 SQL 仅本人，RAG 只取平台公开知识；/api/buyer/assistant） |
 | KB 管理接口（stats / reindex） | ✅ 后端已就绪，前端页面未接 |
-| 买家客服 + 用户级隔离 | ⬜ 规划（P1） |
-| 前端知识库管理页（查看/刷新/统计） | ⬜ 规划（P2） |
+| 前端知识库管理页（查看/刷新/统计） | ✅ 已上线（/merchant/kb，stats + 文档列表 + 一键刷新） |
+| 买家在线客服页 | ✅ 已上线（/user/support） |
 
 ---
 
