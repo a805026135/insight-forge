@@ -22,6 +22,7 @@ public record Trace(
         BigDecimal budgetCostUsd,
         long totalLatencyMs,
         boolean correctFailure,
+        TerminationReason terminationReason,
         List<Span> spans) {
 
     public static Builder builder(String traceId, Long activityId, LocalDateTime startedAt,
@@ -44,6 +45,7 @@ public record Trace(
         private BigDecimal budgetCostUsd;
         private long totalLatencyMs;
         private boolean correctFailure;
+        private TerminationReason terminationReason;
         private int retryCount;
         private final List<Span> spans = new ArrayList<>();
 
@@ -87,6 +89,11 @@ public record Trace(
             return this;
         }
 
+        public Builder terminationReason(TerminationReason reason) {
+            this.terminationReason = reason;
+            return this;
+        }
+
         public Builder addSpan(Span span) {
             this.spans.add(span);
             return this;
@@ -104,7 +111,7 @@ public record Trace(
         public Trace build() {
             return new Trace(traceId, activityId, startedAt, finishedAt, status, failureKind,
                     modelVersion, promptVersion, budgetTokens, budgetCostUsd, totalLatencyMs,
-                    correctFailure, List.copyOf(spans));
+                    correctFailure, terminationReason, List.copyOf(spans));
         }
     }
 }

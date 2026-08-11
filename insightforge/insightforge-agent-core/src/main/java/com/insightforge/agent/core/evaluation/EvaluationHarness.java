@@ -10,6 +10,8 @@ import com.insightforge.agent.core.planning.MultiAgentOrchestrator;
 import com.insightforge.agent.core.planning.PlanningResult;
 import com.insightforge.agent.core.planning.RoleAgent;
 import com.insightforge.agent.core.runtime.AgentMetrics;
+import com.insightforge.agent.core.runtime.CheckpointService;
+import com.insightforge.agent.core.runtime.InterruptGate;
 import com.insightforge.agent.core.runtime.AgentRunStatus;
 import com.insightforge.agent.core.runtime.AgentTask;
 import org.springframework.stereotype.Component;
@@ -50,9 +52,11 @@ public class EvaluationHarness {
                              DslCompiler dslCompiler,
                              IndependentCritic critic,
                              GuardrailPolicyRepository repository,
-                             TraceRecorder traceRecorder,
-                             AgentMetrics metrics,
-                             BusinessMetricsSource businessMetricsSource,
+                              TraceRecorder traceRecorder,
+                              AgentMetrics metrics,
+                              CheckpointService checkpointService,
+                              InterruptGate interruptGate,
+                              BusinessMetricsSource businessMetricsSource,
                              SystemRunMetricsSource systemRunMetricsSource,
                              QualitativeAssessor qualitativeAssessor,
                              EvaluationThresholds thresholds) {
@@ -61,7 +65,8 @@ public class EvaluationHarness {
         // ② 失败样本回归用的「强制不合规」编排器（期望全 CORRECT_FAILURE）
         this.rejectOrchestrator = new MultiAgentOrchestrator(
                 roleAgent, policyAgent, dslCompiler, critic, repository,
-                traceRecorder, metrics, 3, true, MODEL_VERSION, PROMPT_VERSION);
+                traceRecorder, metrics, checkpointService, interruptGate,
+                3, true, MODEL_VERSION, PROMPT_VERSION);
         this.businessMetricsSource = businessMetricsSource;
         this.systemRunMetricsSource = systemRunMetricsSource;
         this.qualitativeAssessor = qualitativeAssessor;

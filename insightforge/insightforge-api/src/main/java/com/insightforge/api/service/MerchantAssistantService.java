@@ -9,7 +9,7 @@ import com.insightforge.agent.core.model.ModelRequest;
 import com.insightforge.agent.core.model.ModelResponse;
 import com.insightforge.agent.core.kb.KbSearchHit;
 import com.insightforge.agent.core.kb.KnowledgeBaseService;
-import com.insightforge.agent.core.memory.ShortTermMemory;
+import com.insightforge.agent.core.memory.CompactingMemory;
 import com.insightforge.api.dto.AssistantAction;
 import com.insightforge.api.dto.AssistantReply;
 import com.insightforge.persistence.entity.ActivitySku;
@@ -46,7 +46,7 @@ public class MerchantAssistantService {
 
     private final ObjectProvider<DeepSeekModelClient> deepSeekModelClient;
     private final ObjectProvider<KnowledgeBaseService> knowledgeBaseProvider;
-    private final Map<Long, ShortTermMemory> conversations = new ConcurrentHashMap<>();
+    private final Map<Long, CompactingMemory> conversations = new ConcurrentHashMap<>();
     private final MerchantMapper merchantMapper;
     private final ProductMapper productMapper;
     private final ActivitySkuMapper activitySkuMapper;
@@ -140,7 +140,7 @@ public class MerchantAssistantService {
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(ChatMessage.system(SYSTEM_PROMPT));
         messages.add(ChatMessage.system("这是多轮对话：请结合用户前面的问题和你自己的回答理解本次问题，不要重复已答内容。"));
-        ShortTermMemory memory = conversations.computeIfAbsent(merchantId, k -> new ShortTermMemory(20));
+        CompactingMemory memory = conversations.computeIfAbsent(merchantId, k -> new CompactingMemory());
         for (ChatMessage m : memory.messages()) {
             if (!"system".equals(m.role())) {
                 messages.add(m);
@@ -151,7 +151,7 @@ public class MerchantAssistantService {
     }
 
     private void remember(long merchantId, String question, String answer) {
-        ShortTermMemory memory = conversations.computeIfAbsent(merchantId, k -> new ShortTermMemory(20));
+        CompactingMemory memory = conversations.computeIfAbsent(merchantId, k -> new CompactingMemory());
         memory.add(ChatMessage.user(question));
         memory.add(ChatMessage.assistant(answer == null ? "" : answer));
     }

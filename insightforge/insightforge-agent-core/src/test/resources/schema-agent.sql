@@ -79,7 +79,8 @@ CREATE TABLE IF NOT EXISTS agent_trace (
     budget_cost_usd  DECIMAL(10,4),
     total_latency_ms BIGINT,
     correct_failure  BOOLEAN,
-    review_status    VARCHAR(32)
+    review_status    VARCHAR(32),
+    termination_reason VARCHAR(32)
 );
 
 CREATE TABLE IF NOT EXISTS agent_span (
@@ -136,4 +137,17 @@ CREATE TABLE IF NOT EXISTS agent_kb_chunk (
     embedding   TEXT,
     dimension   INT,
     created_at  DATETIME
+);
+
+-- Phase 19d：Agent 运行 checkpoint（暂停/继续）
+CREATE TABLE IF NOT EXISTS agent_checkpoint (
+    run_id       VARCHAR(64) PRIMARY KEY,
+    activity_id  BIGINT,
+    phase        VARCHAR(32),
+    step_index   INT,
+    task_json    TEXT,
+    context_json TEXT,
+    status       VARCHAR(32),
+    created_at   DATETIME,
+    updated_at   DATETIME
 );

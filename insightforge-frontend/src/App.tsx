@@ -23,6 +23,8 @@ import AgentWorkbench from './pages/merchant/AgentWorkbench';
 import MerchantProducts from './pages/merchant/MerchantProducts';
 import MerchantInventory from './pages/merchant/MerchantInventory';
 import MerchantOrders from './pages/merchant/MerchantOrders';
+import MerchantKb from './pages/merchant/MerchantKb';
+import SupportPage from './pages/user/SupportPage';
 import Layout from './components/Layout';
 
 function ProtectedRoute({ children, allowRole }: { children: React.ReactNode; allowRole?: string }) {
@@ -75,6 +77,7 @@ export default function App() {
             <Route path="cart" element={<CartPage />} />
             <Route path="checkout" element={<CheckoutPage />} />
             <Route path="orders" element={<OrderHistory />} />
+            <Route path="support" element={<SupportPage />} />
             <Route path="profile" element={<ProfilePage />} />
           </Route>
           <Route
@@ -94,6 +97,7 @@ export default function App() {
             <Route path="guardrails" element={<Guardrails />} />
             <Route path="hitl" element={<Hitl />} />
             <Route path="traces" element={<TraceViewer />} />
+            <Route path="kb" element={<MerchantKb />} />
           </Route>
         </Routes>
       </AuthProvider>

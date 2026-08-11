@@ -2,8 +2,11 @@ package com.insightforge.api.controller;
 
 import com.insightforge.agent.core.planning.MultiAgentOrchestrator;
 import com.insightforge.agent.core.planning.PlanningResult;
+import com.insightforge.agent.core.runtime.CheckpointService;
 import com.insightforge.agent.core.runtime.AgentRunStatus;
 import com.insightforge.agent.core.runtime.AgentTask;
+import com.insightforge.agent.core.runtime.InterruptGate;
+import com.insightforge.persistence.entity.AgentCheckpoint;
 import com.insightforge.api.dto.AgentPlanRequest;
 import com.insightforge.api.dto.AgentPlanResponse;
 import com.insightforge.api.observability.dto.TraceView;
@@ -13,6 +16,8 @@ import com.insightforge.persistence.mapper.ActivitySkuMapper;
 import com.insightforge.common.result.ApiResult;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -36,10 +41,67 @@ public class AgentController {
 
     private final MultiAgentOrchestrator orchestrator;
     private final ActivitySkuMapper activitySkuMapper;
+    private final InterruptGate interruptGate;
+    private final CheckpointService checkpointService;
 
-    public AgentController(MultiAgentOrchestrator orchestrator, ActivitySkuMapper activitySkuMapper) {
+    public AgentController(MultiAgentOrchestrator orchestrator, ActivitySkuMapper activitySkuMapper,
+                           InterruptGate interruptGate, CheckpointService checkpointService) {
         this.orchestrator = orchestrator;
         this.activitySkuMapper = activitySkuMapper;
+        this.interruptGate = interruptGate;
+        this.checkpointService = checkpointService;
+    }
+
+    /** POST /api/agent/runs/{runId}/pause 请求暂停运行中的规划（下一个阶段边界生效） */
+    @PostMapping("/runs/{runId}/pause")
+    public ApiResult<Map<String, Object>> pause(@PathVariable String runId) {
+        interruptGate.pause(runId);
+        return ApiResult.ok(Map.of("runId", runId, "status", "PAUSE_REQUESTED"));
+    }
+
+    /** POST /api/agent/runs/{runId}/cancel 取消运行（checkpoint 删除，不可恢复） */
+    @PostMapping("/runs/{runId}/cancel")
+    public ApiResult<Map<String, Object>> cancel(@PathVariable String runId) {
+        interruptGate.cancel(runId);
+        return ApiResult.ok(Map.of("runId", runId, "status", "CANCEL_REQUESTED"));
+    }
+
+    /** POST /api/agent/runs/{runId}/resume 从 checkpoint 继续被暂停的规划 */
+    @PostMapping("/runs/{runId}/resume")
+    public ApiResult<AgentPlanResponse> resume(@PathVariable String runId) {
+        try {
+            PlanningResult result = orchestrator.resume(runId);
+            String publishedVersion = null;
+            if (result.status() == AgentRunStatus.SUCCESS && result.published() != null) {
+                publishedVersion = result.published().version();
+            }
+            String failureKindStr = result.trace().failureKind() != null
+                    ? result.trace().failureKind().name() : null;
+            return ApiResult.ok(new AgentPlanResponse(
+                    result.trace().traceId(), result.status().name(), failureKindStr,
+                    result.trace().correctFailure(), publishedVersion,
+                    result.trace().totalLatencyMs(),
+                    TraceView.toVerdict(result.status().name(), failureKindStr)));
+        } catch (IllegalArgumentException e) {
+            return ApiResult.fail(404, e.getMessage());
+        }
+    }
+
+    /** GET /api/agent/runs/{runId} 查询 checkpoint 状态（阶段/进度） */
+    @GetMapping("/runs/{runId}")
+    public ApiResult<Map<String, Object>> runStatus(@PathVariable String runId) {
+        var cp = checkpointService.load(runId);
+        if (cp.isEmpty()) {
+            return ApiResult.fail(404, "无该运行的 checkpoint（可能已完成或不存在）");
+        }
+        AgentCheckpoint c = cp.get();
+        return ApiResult.ok(Map.of(
+                "runId", runId,
+                "phase", c.getPhase(),
+                "stepIndex", c.getStepIndex(),
+                "status", c.getStatus(),
+                "activityId", c.getActivityId(),
+                "updatedAt", String.valueOf(c.getUpdatedAt())));
     }
 
     /**

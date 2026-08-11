@@ -4,6 +4,7 @@ import com.insightforge.agent.core.runtime.AgentRuntime;
 import com.insightforge.agent.core.runtime.AgentRunStatus;
 import com.insightforge.agent.core.runtime.AgentTask;
 import com.insightforge.agent.core.runtime.FailureKind;
+import com.insightforge.agent.core.runtime.TerminationReason;
 import com.insightforge.agent.core.runtime.Trace;
 import com.insightforge.persistence.entity.AgentTrace;
 import com.insightforge.persistence.mapper.AgentTraceMapper;
@@ -39,10 +40,12 @@ class AgentRuntimeBudgetTest {
         // 预算闸门触发 → 优雅停止为正确失败（ESCALATE），而非崩溃
         assertEquals(AgentRunStatus.CORRECT_FAILURE, t.status());
         assertEquals(FailureKind.ESCALATE, t.failureKind());
+        assertEquals(TerminationReason.BUDGET_EXCEEDED, t.terminationReason());
 
         AgentTrace entity = traceMapper.selectById(t.traceId());
         assertNotNull(entity);
         assertEquals("CORRECT_FAILURE", entity.getStatus());
         assertEquals("ESCALATE", entity.getFailureKind());
+        assertEquals("BUDGET_EXCEEDED", entity.getTerminationReason());
     }
 }

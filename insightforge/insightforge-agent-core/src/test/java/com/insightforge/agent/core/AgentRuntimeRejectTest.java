@@ -5,6 +5,7 @@ import com.insightforge.agent.core.runtime.AgentRunStatus;
 import com.insightforge.agent.core.runtime.AgentRuntime;
 import com.insightforge.agent.core.runtime.AgentTask;
 import com.insightforge.agent.core.runtime.FailureKind;
+import com.insightforge.agent.core.runtime.TerminationReason;
 import com.insightforge.agent.core.runtime.Trace;
 import com.insightforge.persistence.entity.AgentTrace;
 import com.insightforge.persistence.mapper.AgentTraceMapper;
@@ -46,11 +47,13 @@ class AgentRuntimeRejectTest {
         assertEquals(AgentRunStatus.CORRECT_FAILURE, t.status());
         assertEquals(FailureKind.REFUSE, t.failureKind());
         assertTrue(t.correctFailure());
+        assertEquals(TerminationReason.REFUSED, t.terminationReason());
 
         AgentTrace entity = traceMapper.selectById(t.traceId());
         assertNotNull(entity);
         assertEquals("CORRECT_FAILURE", entity.getStatus());
         assertTrue(entity.getCorrectFailure());
+        assertEquals("REFUSED", entity.getTerminationReason());
 
         assertEquals(before + 1, metrics.correctFailures().get());
     }

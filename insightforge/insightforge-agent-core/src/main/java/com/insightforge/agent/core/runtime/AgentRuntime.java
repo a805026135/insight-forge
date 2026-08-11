@@ -100,7 +100,8 @@ public class AgentRuntime {
                 try {
                     budgetGate.assertWithinBudget();
                 } catch (BudgetExceededException e) {
-                    return terminate(startedAt, tb, AgentRunStatus.CORRECT_FAILURE, FailureKind.ESCALATE, true);
+                    return terminate(startedAt, tb, AgentRunStatus.CORRECT_FAILURE, FailureKind.ESCALATE, true,
+                            TerminationReason.BUDGET_EXCEEDED);
                 }
 
                 // —— 思考：调模型 ——
@@ -124,7 +125,7 @@ public class AgentRuntime {
                     // 成功：方案存为 Artifact，供下游（Phase 8 多智能体 / Phase 9 规则引擎）复用
                     artifactStore.put(Artifact.of("plan-" + traceId, "plan", resp.content()));
                     tb.addSpan(Span.critic(traceId, step, verdict, tb.retryCount(), SpanStatus.OK, "plan-" + traceId));
-                    return terminate(startedAt, tb, AgentRunStatus.SUCCESS, null, false);
+                    return terminate(startedAt, tb, AgentRunStatus.SUCCESS, null, false, TerminationReason.COMPLETED);
                 }
 
                 // —— 反思重试 ——
@@ -140,17 +141,19 @@ public class AgentRuntime {
                 // 重试耗尽：正确失败（拒绝交付不合规方案，比假装成功可靠）
                 metrics.criticRejections().incrementAndGet();
                 tb.addSpan(Span.critic(traceId, step, verdict, retry, SpanStatus.FAIL, null));
-                return terminate(startedAt, tb, AgentRunStatus.CORRECT_FAILURE, FailureKind.REFUSE, true);
+                return terminate(startedAt, tb, AgentRunStatus.CORRECT_FAILURE, FailureKind.REFUSE, true,
+                        TerminationReason.REFUSED);
             }
             // 步数耗尽仍未成功 → 正确失败
-            return terminate(startedAt, tb, AgentRunStatus.CORRECT_FAILURE, FailureKind.REFUSE, true);
+            return terminate(startedAt, tb, AgentRunStatus.CORRECT_FAILURE, FailureKind.REFUSE, true,
+                    TerminationReason.REFUSED);
 
         } catch (Exception e) {
             // 崩溃：FAILED（坏的失败，必须修）
             tb.addSpan(Span.critic(traceId, budgetGate.getMaxSteps(),
                     CriticVerdict.fail(List.of("运行时异常: " + e.getMessage()), 0.5, "HIGH"),
                     tb.retryCount(), SpanStatus.FAIL, null));
-            return terminate(startedAt, tb, AgentRunStatus.FAILED, null, false);
+            return terminate(startedAt, tb, AgentRunStatus.FAILED, null, false, TerminationReason.ERROR);
         }
     }
 
@@ -199,11 +202,13 @@ public class AgentRuntime {
 
     /** 统一收口：填终态/耗时/预算、累加终态计数、落库、返回。 */
     private Trace terminate(LocalDateTime startedAt, Trace.Builder tb,
-                            AgentRunStatus status, FailureKind kind, boolean correctFailure) {
+                            AgentRunStatus status, FailureKind kind, boolean correctFailure,
+                            TerminationReason reason) {
         LocalDateTime now = LocalDateTime.now();
         tb.status(status)
                 .failureKind(kind)
                 .correctFailure(correctFailure)
+                .terminationReason(reason)
                 .finishedAt(now)
                 .totalLatencyMs(Duration.between(startedAt, now).toMillis())
                 .budget(budgetGate.getTokens(), BigDecimal.valueOf(budgetGate.costUsd()));

@@ -195,6 +195,13 @@ public class KnowledgeBaseService {
         return documentMapper.selectCount(new QueryWrapper<>());
     }
 
+    /** 当前商家可见的文档列表（平台级 + 本商家），供管理页展示。 */
+    public List<AgentKbDocument> listVisibleDocuments(long merchantId) {
+        return documentMapper.selectList(new QueryWrapper<AgentKbDocument>()
+                .and(w -> w.isNull("merchant_id").or().eq("merchant_id", merchantId))
+                .orderByAsc("id"));
+    }
+
     public String providerName() {
         return embeddingProvider.name();
     }

@@ -51,4 +51,7 @@ public class AgentTrace {
 
     /** HITL 审批结果：null=未复核 / APPROVED=已通过 / REJECTED=已驳回 */
     private String reviewStatus;
+
+    /** 运行终止原因（Phase 19d）：COMPLETED/BUDGET_EXCEEDED/REFUSED/USER_CANCELLED/INTERRUPTED/ERROR */
+    private String terminationReason;
 }

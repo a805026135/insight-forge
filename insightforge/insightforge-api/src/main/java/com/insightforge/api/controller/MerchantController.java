@@ -105,6 +105,18 @@ public class MerchantController {
         return ApiResult.ok(data);
     }
 
+    /** GET /api/merchant/kb/docs 当前商家可见的知识库文档列表（平台级 + 本商家） */
+    @GetMapping("/kb/docs")
+    public ApiResult<Map<String, Object>> kbDocs() {
+        long mid = AuthContextHolder.requireMerchantId();
+        Map<String, Object> data = new HashMap<>();
+        data.put("provider", knowledgeBaseService.providerName());
+        data.put("dimensions", knowledgeBaseService.providerDimensions());
+        data.put("vectorStore", knowledgeBaseService.vectorStoreName());
+        data.put("documents", knowledgeBaseService.listVisibleDocuments(mid));
+        return ApiResult.ok(data);
+    }
+
     /** GET /api/merchant/profile 当前商家店铺信息 */
     @GetMapping("/profile")
     public ApiResult<Merchant> profile() {

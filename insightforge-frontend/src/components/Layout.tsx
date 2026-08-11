@@ -3,6 +3,7 @@ import { useAuth } from '../auth/AuthContext';
 
 const MERCHANT_NAV = [
   { to: '/merchant/agent', label: 'Agent 工作台' },
+  { to: '/merchant/kb', label: '知识库管理' },
   { to: '/merchant/products', label: '商品管理' },
   { to: '/merchant/inventory', label: '库存管理' },
   { to: '/merchant/orders', label: '订单发货' },
@@ -16,6 +17,7 @@ const USER_NAV = [
   { to: '/user/seckill', label: '限时秒杀' },
   { to: '/user/cart', label: '购物车' },
   { to: '/user/orders', label: '我的订单' },
+  { to: '/user/support', label: '在线客服' },
   { to: '/user/profile', label: '个人中心' },
 ];
 

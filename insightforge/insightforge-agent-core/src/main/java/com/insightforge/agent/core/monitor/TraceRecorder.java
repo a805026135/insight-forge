@@ -6,6 +6,7 @@ import com.insightforge.persistence.entity.AgentSpan;
 import com.insightforge.persistence.entity.AgentTrace;
 import com.insightforge.persistence.mapper.AgentSpanMapper;
 import com.insightforge.persistence.mapper.AgentTraceMapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.stereotype.Component;
 
 /**
@@ -37,6 +38,7 @@ public class TraceRecorder {
         entity.setBudgetCostUsd(trace.budgetCostUsd());
         entity.setTotalLatencyMs(trace.totalLatencyMs());
         entity.setCorrectFailure(trace.correctFailure());
+        entity.setTerminationReason(trace.terminationReason() == null ? null : trace.terminationReason().name());
         traceMapper.insert(entity);
 
         for (Span s : trace.spans()) {
@@ -58,6 +60,12 @@ public class TraceRecorder {
             se.setArtifactRef(s.artifactRef());
             spanMapper.insert(se);
         }
+    }
+
+    /** 删除一次运行的全部 trace/span（resume 前清理旧快照，避免主键冲突）。 */
+    public void deleteTrace(String traceId) {
+        spanMapper.delete(new QueryWrapper<AgentSpan>().eq("trace_id", traceId));
+        traceMapper.deleteById(traceId);
     }
 
     /** 列定义 VARCHAR(4000)，超出截断，防止撑爆。 */
