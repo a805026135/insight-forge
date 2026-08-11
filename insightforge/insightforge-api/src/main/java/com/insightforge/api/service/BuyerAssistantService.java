@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -172,21 +173,22 @@ public class BuyerAssistantService {
     private MerchantCtx resolveMerchant(long userId, String question) {
         List<Product> products = productMapper.selectList(
                 new QueryWrapper<Product>().eq("status", "ON_SALE"));
-        Product hit = products.stream()
+        List<Product> hits = products.stream()
                 .filter(p -> p.getName() != null && question.contains(p.getName()))
-                .findFirst()
-                .orElse(null);
-        if (hit == null) {
-            hit = products.stream()
+                .toList();
+        if (hits.isEmpty()) {
+            hits = products.stream()
                     .filter(p -> p.getName() != null && p.getName().length() >= 6
                             && question.contains(p.getName().substring(0, 6)))
-                    .findFirst()
-                    .orElse(null);
+                    .toList();
         }
-        if (hit != null && hit.getMerchantId() != null) {
-            Merchant m = merchantMapper.selectById(hit.getMerchantId());
-            return new MerchantCtx(hit.getMerchantId(),
-                    m == null ? "商家" + hit.getMerchantId() : m.getName(), true);
+        Set<Long> merchants = hits.stream().map(Product::getMerchantId)
+                .filter(java.util.Objects::nonNull).collect(Collectors.toSet());
+        // 恰好属于一家商家 → 直接锁定；多商家同名商品 → 返回 null，由 matchCandidates 让用户选择
+        if (merchants.size() == 1) {
+            Long mid = merchants.iterator().next();
+            Merchant m = merchantMapper.selectById(mid);
+            return new MerchantCtx(mid, m == null ? "商家" + mid : m.getName(), true);
         }
         if (isFollowUp(question) && lastMerchantByUser.containsKey(userId)) {
             return new MerchantCtx(lastMerchantByUser.get(userId),
