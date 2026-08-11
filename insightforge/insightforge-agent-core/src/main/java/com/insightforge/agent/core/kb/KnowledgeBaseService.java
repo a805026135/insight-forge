@@ -125,11 +125,19 @@ public class KnowledgeBaseService {
 
     /** 检索：平台知识 + 本商家知识，相似度 topK。商家隔离在 Java 侧强制执行。 */
     public List<KbSearchHit> search(long merchantId, String query, int topK) {
+        return search(merchantId, query, topK, null);
+    }
+
+    /**
+     * 检索：平台知识 + 本商家知识，可按来源类型（PLAYBOOK/PRODUCT/DECISION/ACTIVITY/FAQ/BUYER_POLICY）过滤。
+     * 商家隔离在 Java 侧强制执行。
+     */
+    public List<KbSearchHit> search(long merchantId, String query, int topK, String sourceType) {
         if (!properties.isEnabled() || query == null || query.isBlank() || topK <= 0) {
             return List.of();
         }
         int fetchK = Math.max(24, topK * 8);
-        List<Document> candidates = fetchCandidates(merchantId, query, fetchK);
+        List<Document> candidates = fetchCandidates(query, fetchK);
         Map<String, KbSearchHit> hits = new LinkedHashMap<>();
         for (Document d : candidates) {
             if (hits.size() >= topK) {
@@ -138,12 +146,16 @@ public class KnowledgeBaseService {
             if (!visibleTo(d, merchantId)) {
                 continue;
             }
+            if (sourceType != null && !sourceType.isBlank()
+                    && !sourceType.equals(str(d.getMetadata().get("sourceType")))) {
+                continue;
+            }
             hits.putIfAbsent(d.getId(), toHit(d));
         }
         return List.copyOf(hits.values());
     }
 
-    private List<Document> fetchCandidates(long merchantId, String query, int fetchK) {
+    private List<Document> fetchCandidates(String query, int fetchK) {
         return vectorStore.similaritySearch(SearchRequest.builder()
                 .query(query)
                 .topK(fetchK)

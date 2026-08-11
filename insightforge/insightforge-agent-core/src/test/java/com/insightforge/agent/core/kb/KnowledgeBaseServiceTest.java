@@ -88,4 +88,20 @@ class KnowledgeBaseServiceTest {
     void blankQueryReturnsEmpty() {
         assertTrue(service.search(1L, "   ", 3).isEmpty());
     }
+
+    @Test
+    void searchFiltersBySourceType() {
+        service.ingestText("test/source/playbook", "平台运营手册", "PLAYBOOK", null,
+                "调价不得低于成本价，毛利低于 5% 会被风控拦截。");
+        service.ingestText("test/source/product", "商家商品", "PRODUCT", 1L,
+                "无线蓝牙耳机 主动降噪 超长续航");
+
+        List<KbSearchHit> playbook = service.search(1L, "调价成本价风控", 5, "PLAYBOOK");
+        assertFalse(playbook.isEmpty());
+        assertTrue(playbook.stream().allMatch(h -> "PLAYBOOK".equals(h.sourceType())));
+
+        List<KbSearchHit> product = service.search(1L, "蓝牙耳机降噪续航", 5, "PRODUCT");
+        assertFalse(product.isEmpty());
+        assertTrue(product.stream().allMatch(h -> "PRODUCT".equals(h.sourceType())));
+    }
 }

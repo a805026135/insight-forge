@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.insightforge.api.auth.AuthContextHolder;
 import com.insightforge.agent.core.kb.KnowledgeBaseService;
 import com.insightforge.agent.core.kb.KnowledgeBaseSeeder;
+import com.insightforge.agent.core.kb.MerchantKbRefresher;
 import com.insightforge.api.dto.MerchantProductRequest;
 import com.insightforge.api.dto.MerchantProductView;
 import com.insightforge.api.dto.AssistantReply;
@@ -57,13 +58,15 @@ public class MerchantController {
     private final MerchantActionService actionService;
     private final KnowledgeBaseService knowledgeBaseService;
     private final KnowledgeBaseSeeder knowledgeBaseSeeder;
+    private final MerchantKbRefresher merchantKbRefresher;
 
     public MerchantController(MerchantMapper merchantMapper, ProductMapper productMapper,
                               ActivitySkuMapper activitySkuMapper, OrdersMapper ordersMapper,
                               OrderItemMapper orderItemMapper, MerchantAssistantService assistantService,
                               MerchantActionService actionService,
                               KnowledgeBaseService knowledgeBaseService,
-                              KnowledgeBaseSeeder knowledgeBaseSeeder) {
+                              KnowledgeBaseSeeder knowledgeBaseSeeder,
+                              MerchantKbRefresher merchantKbRefresher) {
         this.merchantMapper = merchantMapper;
         this.productMapper = productMapper;
         this.activitySkuMapper = activitySkuMapper;
@@ -73,6 +76,7 @@ public class MerchantController {
         this.actionService = actionService;
         this.knowledgeBaseService = knowledgeBaseService;
         this.knowledgeBaseSeeder = knowledgeBaseSeeder;
+        this.merchantKbRefresher = merchantKbRefresher;
     }
 
     /** POST /api/merchant/kb/reindex 手动刷新当前商家的知识库（商品 + 历史决策） */
@@ -234,6 +238,7 @@ public class MerchantController {
         p.setMerchantId(mid);
         p.setStatus("ON_SALE");
         productMapper.insert(p);
+        merchantKbRefresher.schedule(mid);
         Merchant m = merchantMapper.selectById(mid);
         return ApiResult.ok(toView(p, mid, m != null ? m.getName() : ""));
     }
@@ -258,6 +263,7 @@ public class MerchantController {
         if (req.category() != null) p.setCategory(req.category());
         if (req.description() != null) p.setDescription(req.description());
         productMapper.updateById(p);
+        merchantKbRefresher.schedule(mid);
         Merchant m = merchantMapper.selectById(mid);
         return ApiResult.ok(toView(p, mid, m != null ? m.getName() : ""));
     }
@@ -272,6 +278,7 @@ public class MerchantController {
         }
         p.setStatus("ON_SALE".equals(p.getStatus()) ? "OFF_SHELF" : "ON_SALE");
         productMapper.updateById(p);
+        merchantKbRefresher.schedule(mid);
         Merchant m = merchantMapper.selectById(mid);
         return ApiResult.ok(toView(p, mid, m != null ? m.getName() : ""));
     }
@@ -285,6 +292,7 @@ public class MerchantController {
             return ApiResult.fail(403, "无权操作该商品");
         }
         productMapper.deleteById(id);
+        merchantKbRefresher.schedule(mid);
         return ApiResult.ok(null);
     }
 
@@ -304,6 +312,7 @@ public class MerchantController {
         }
         p.setStock(cur + delta);
         productMapper.updateById(p);
+        merchantKbRefresher.schedule(mid);
         Merchant m = merchantMapper.selectById(mid);
         return ApiResult.ok(toView(p, mid, m != null ? m.getName() : ""));
     }

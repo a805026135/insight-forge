@@ -1,6 +1,7 @@
 package com.insightforge.api.service;
 
 import com.insightforge.common.result.ApiResult;
+import com.insightforge.agent.core.kb.MerchantKbRefresher;
 import com.insightforge.persistence.entity.AuditLog;
 import com.insightforge.persistence.entity.Product;
 import com.insightforge.persistence.mapper.AuditLogMapper;
@@ -20,10 +21,13 @@ public class MerchantActionService {
 
     private final ProductMapper productMapper;
     private final AuditLogMapper auditLogMapper;
+    private final MerchantKbRefresher merchantKbRefresher;
 
-    public MerchantActionService(ProductMapper productMapper, AuditLogMapper auditLogMapper) {
+    public MerchantActionService(ProductMapper productMapper, AuditLogMapper auditLogMapper,
+                                 MerchantKbRefresher merchantKbRefresher) {
         this.productMapper = productMapper;
         this.auditLogMapper = auditLogMapper;
+        this.merchantKbRefresher = merchantKbRefresher;
     }
 
     @Transactional
@@ -72,6 +76,7 @@ public class MerchantActionService {
         log.setDetail("商家#" + merchantId + " 批准执行：" + detail);
         log.setCreatedAt(LocalDateTime.now());
         auditLogMapper.insert(log);
+        merchantKbRefresher.schedule(merchantId);
         return ApiResult.ok(detail);
     }
 }

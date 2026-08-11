@@ -9,6 +9,7 @@ import com.insightforge.agent.core.model.ModelRequest;
 import com.insightforge.agent.core.model.ModelResponse;
 import com.insightforge.agent.core.kb.KbSearchHit;
 import com.insightforge.agent.core.kb.KnowledgeBaseService;
+import com.insightforge.agent.core.memory.ShortTermMemory;
 import com.insightforge.api.dto.AssistantAction;
 import com.insightforge.api.dto.AssistantReply;
 import com.insightforge.persistence.entity.ActivitySku;
@@ -26,7 +27,11 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -41,6 +46,7 @@ public class MerchantAssistantService {
 
     private final ObjectProvider<DeepSeekModelClient> deepSeekModelClient;
     private final ObjectProvider<KnowledgeBaseService> knowledgeBaseProvider;
+    private final Map<Long, ShortTermMemory> conversations = new ConcurrentHashMap<>();
     private final MerchantMapper merchantMapper;
     private final ProductMapper productMapper;
     private final ActivitySkuMapper activitySkuMapper;
@@ -71,7 +77,7 @@ public class MerchantAssistantService {
         List<AssistantAction> actions = extractActions(merchantId, question);
         String answer;
         if (actions.isEmpty()) {
-            answer = generateAnswer(context, question);
+            answer = generateAnswer(merchantId, context, question);
             List<AssistantAction> fromLlm = parseLlmActions(merchantId, answer, context);
             if (!fromLlm.isEmpty()) {
                 actions = fromLlm;
@@ -79,7 +85,9 @@ public class MerchantAssistantService {
         } else {
             answer = "我理解你的意图，已准备好以下操作，请确认后执行：\n"
                     + actions.stream().map(a -> "- " + a.description()).collect(Collectors.joining("\n"));
+            answer = appendRuleHints(merchantId, actions, answer);
         }
+        remember(merchantId, question, answer);
         return new AssistantReply(answer, classifySuggestion(answer), answer, actions);
     }
 
@@ -91,14 +99,14 @@ public class MerchantAssistantService {
         if (ds != null) {
             // Spring AI M6 的流式端点与 DeepSeek 兼容性不稳定，改用非流式生成完整回答后分块推送
             ModelResponse resp = ds.generate(new ModelRequest(
-                    List.of(ChatMessage.system(SYSTEM_PROMPT),
-                            ChatMessage.user(context + "\n\n商家问题：" + question)),
+                    buildMessages(merchantId, context, question),
                     "merchant-assistant",
                     List.of()));
             text = resp.content() == null ? "（无回答）" : resp.content();
         } else {
             text = deterministicAnswer(context, question);
         }
+        remember(merchantId, question, text);
         // 按 6 字符分块模拟打字机效果
         for (int i = 0; i < text.length(); i += 6) {
             onChunk.accept(text.substring(i, Math.min(i + 6, text.length())));
@@ -111,12 +119,11 @@ public class MerchantAssistantService {
         }
     }
 
-    private String generateAnswer(String context, String question) {
+    private String generateAnswer(long merchantId, String context, String question) {
         DeepSeekModelClient ds = deepSeekModelClient.getIfAvailable();
         if (ds != null) {
             ModelResponse resp = ds.generate(new ModelRequest(
-                    List.of(ChatMessage.system(SYSTEM_PROMPT),
-                            ChatMessage.user(context + "\n\n商家问题：" + question)),
+                    buildMessages(merchantId, context, question),
                     "merchant-assistant",
                     List.of()));
             if (resp.toolCall() != null) {
@@ -126,6 +133,54 @@ public class MerchantAssistantService {
             return answer;
         }
         return deterministicAnswer(context, question);
+    }
+
+    /** 多轮对话记忆：system + 历史问答（最近 20 条）+ 最新经营上下文与问题。 */
+    private List<ChatMessage> buildMessages(long merchantId, String context, String question) {
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(ChatMessage.system(SYSTEM_PROMPT));
+        messages.add(ChatMessage.system("这是多轮对话：请结合用户前面的问题和你自己的回答理解本次问题，不要重复已答内容。"));
+        ShortTermMemory memory = conversations.computeIfAbsent(merchantId, k -> new ShortTermMemory(20));
+        for (ChatMessage m : memory.messages()) {
+            if (!"system".equals(m.role())) {
+                messages.add(m);
+            }
+        }
+        messages.add(ChatMessage.user(context + "\n\n商家问题：" + question));
+        return messages;
+    }
+
+    private void remember(long merchantId, String question, String answer) {
+        ShortTermMemory memory = conversations.computeIfAbsent(merchantId, k -> new ShortTermMemory(20));
+        memory.add(ChatMessage.user(question));
+        memory.add(ChatMessage.assistant(answer == null ? "" : answer));
+    }
+
+    /** 动作批准前规则校验：按动作类型检索运营手册，把约束拼进建议，违规操作不直接执行。 */
+    private String appendRuleHints(long merchantId, List<AssistantAction> actions, String answer) {
+        KnowledgeBaseService kb = knowledgeBaseProvider.getIfAvailable();
+        if (kb == null || actions.isEmpty()) {
+            return answer;
+        }
+        Set<String> queries = new LinkedHashSet<>();
+        for (AssistantAction a : actions) {
+            queries.add(switch (a.type()) {
+                case "ADD_STOCK" -> "库存 安全库存 补货 规则";
+                case "TOGGLE_SHELF" -> "上下架 活动 下架 规则";
+                case "REPRICE" -> "调价 成本价 毛利 风控 规则";
+                default -> "运营 规则";
+            });
+        }
+        StringBuilder sb = new StringBuilder(answer);
+        for (String q : queries) {
+            List<KbSearchHit> hits = kb.search(merchantId, q, 1, "PLAYBOOK");
+            if (!hits.isEmpty()) {
+                KbSearchHit h = hits.get(0);
+                sb.append("\n【规则提示】《").append(h.title()).append("》：")
+                  .append(h.content().replace("\n", " "));
+            }
+        }
+        return sb.toString();
     }
 
     private static final String SYSTEM_PROMPT = """
