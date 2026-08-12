@@ -89,10 +89,10 @@ public class DeepSeekModelClient implements ModelClient {
         // 这样 Trace、BudgetGate 和评测页不会把真实模型调用误报为 0 token。
         Usage usage = resp.getMetadata() == null ? null : resp.getMetadata().getUsage();
         if (usage != null) {
-            Long prompt = usage.getPromptTokens();
-            Long completion = usage.getCompletionTokens();
-            if (prompt != null && prompt >= 0) tokenIn = Math.toIntExact(prompt);
-            if (completion != null && completion >= 0) tokenOut = Math.toIntExact(completion);
+            Integer promptTokens = usage.getPromptTokens();
+            Integer completionTokens = usage.getCompletionTokens();
+            if (promptTokens != null && promptTokens >= 0) tokenIn = promptTokens;
+            if (completionTokens != null && completionTokens >= 0) tokenOut = completionTokens;
         }
 
         // 解析工具调用约定块
