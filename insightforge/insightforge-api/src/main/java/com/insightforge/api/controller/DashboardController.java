@@ -8,6 +8,11 @@ import com.insightforge.api.observability.dto.GuardrailView;
 import com.insightforge.api.observability.dto.SpanView;
 import com.insightforge.api.observability.dto.SkuView;
 import com.insightforge.api.observability.dto.TraceView;
+import com.insightforge.api.observability.dto.AgentOpsSummary;
+import com.insightforge.api.service.RagEvaluationService;
+import com.insightforge.api.service.PromptVersionService;
+import com.insightforge.agent.core.evaluation.EvaluationHarness;
+import com.insightforge.api.service.FailureReplayService;
 import com.insightforge.common.result.ApiResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -42,11 +47,23 @@ public class DashboardController {
 
     private final ObservabilityService observabilityService;
     private final ExplainabilityService explainabilityService;
+    private final RagEvaluationService ragEvaluationService;
+    private final PromptVersionService promptVersionService;
+    private final EvaluationHarness evaluationHarness;
+    private final FailureReplayService failureReplayService;
 
     public DashboardController(ObservabilityService observabilityService,
-                               ExplainabilityService explainabilityService) {
+                               ExplainabilityService explainabilityService,
+                               RagEvaluationService ragEvaluationService,
+                               PromptVersionService promptVersionService,
+                               EvaluationHarness evaluationHarness,
+                               FailureReplayService failureReplayService) {
         this.observabilityService = observabilityService;
         this.explainabilityService = explainabilityService;
+        this.ragEvaluationService = ragEvaluationService;
+        this.promptVersionService = promptVersionService;
+        this.evaluationHarness = evaluationHarness;
+        this.failureReplayService = failureReplayService;
     }
 
     @GetMapping("/overview")
@@ -57,6 +74,32 @@ public class DashboardController {
     @GetMapping("/traces")
     public ApiResult<List<TraceView>> traces(@RequestParam(defaultValue = "20") int limit) {
         return ApiResult.ok(observabilityService.recentTraces(limit));
+    }
+
+    @GetMapping("/agent-ops")
+    public ApiResult<AgentOpsSummary> agentOps() {
+        return ApiResult.ok(observabilityService.agentOpsSummary());
+    }
+
+    @GetMapping("/prompt-versions")
+    public ApiResult<?> promptVersions() {
+        return ApiResult.ok(promptVersionService.list());
+    }
+
+    @PostMapping("/rag-evaluation/run")
+    public ApiResult<RagEvaluationService.Report> runRagEvaluation() throws Exception {
+        return ApiResult.ok(ragEvaluationService.run());
+    }
+
+    @PostMapping("/failure-replay/run")
+    public ApiResult<?> replayFailures() throws Exception {
+        return ApiResult.ok(failureReplayService.start());
+    }
+
+    @GetMapping("/failure-replay/{jobId}")
+    public ApiResult<?> replayStatus(@PathVariable String jobId) {
+        try { return ApiResult.ok(failureReplayService.get(jobId)); }
+        catch (IllegalArgumentException e) { return ApiResult.fail(404, e.getMessage()); }
     }
 
     /** 某条 trace 的 span 树（前端 Trace 查看器点击某行后展开详情）。 */

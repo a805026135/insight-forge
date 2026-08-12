@@ -102,6 +102,7 @@ export default function SupportPage() {
   const [transferMerchants, setTransferMerchants] = useState<MerchantContact[]>([]);
   const [transferQuestion, setTransferQuestion] = useState('');
   const [lastQuestion, setLastQuestion] = useState('');
+  const [refundTarget, setRefundTarget] = useState<AfterSaleDraft | null>(null);
 
   const clearChat = async () => {
     try {
@@ -311,6 +312,11 @@ export default function SupportPage() {
       }).then((res) => res.json());
       if (r.code !== 0) throw new Error(r.message);
       setMsg(`✔ 退款申请已提交（工单 #${r.data.id}），状态：待审核`);
+      setRefundTarget(null);
+      setMessages((prev) => prev.map((m) => ({
+        ...m,
+        drafts: m.drafts?.filter((draft) => draft.orderId !== d.orderId),
+      })));
       loadAfterSales();
     } catch (e: any) {
       setMsg(e.message || '提交失败');
@@ -396,7 +402,7 @@ export default function SupportPage() {
   const submitAppeal = async () => {
     if (!appealTarget) return;
     if (!appealReason.trim()) {
-      setMsg('????????');
+      setMsg('请填写申诉理由');
       return;
     }
     setAppealing(true);
@@ -408,12 +414,12 @@ export default function SupportPage() {
         body: JSON.stringify({ reason: appealReason.trim() }),
       }).then((res) => res.json());
       if (r.code !== 0) throw new Error(r.message);
-      setMsg('???????????');
+      setMsg('✔ 申诉已提交，等待商家重新复核');
       setAppealTarget(null);
       setAppealReason('');
       loadAfterSales();
     } catch (e: any) {
-      setMsg(e.message || '????');
+      setMsg(e.message || '申诉提交失败');
     } finally {
       setAppealing(false);
     }
@@ -479,8 +485,8 @@ export default function SupportPage() {
                     {m.drafts.map((d, di) => (
                       <div key={di} className="action-card">
                         <span className="action-desc">💳 {d.description}（原因：{d.reason}）</span>
-                        <button disabled={submitting === d.orderId} onClick={() => submitRefund(d)}>
-                          {submitting === d.orderId ? '提交中…' : '提交退款申请'}
+                        <button disabled={submitting === d.orderId} onClick={() => setRefundTarget(d)}>
+                          申请退款
                         </button>
                       </div>
                     ))}
@@ -673,13 +679,32 @@ export default function SupportPage() {
           </div>
         ))}
 
+      </Modal>
+
       <Modal
-        title={'?? - ?? #' + (appealTarget?.id ?? '')}
+        title="确认提交退款申请"
+        open={refundTarget != null}
+        onCancel={() => setRefundTarget(null)}
+        onOk={() => refundTarget && submitRefund(refundTarget)}
+        okText="确认提交"
+        cancelText="暂不提交"
+        confirmLoading={refundTarget != null && submitting === refundTarget.orderId}
+      >
+        <div className="refund-confirm">
+          <p><span>订单号</span><b>{refundTarget?.orderId}</b></p>
+          <p><span>退款金额</span><b className="refund-amount">¥{refundTarget?.amount ?? '-'}</b></p>
+          <p><span>退款原因</span><b>{refundTarget?.reason}</b></p>
+        </div>
+        <p className="modal-hint">提交后会生成真实售后工单，可在下方“我的售后单”查看进度。</p>
+      </Modal>
+
+      <Modal
+        title={'退款申诉 - 工单 #' + (appealTarget?.id ?? '')}
         open={appealTarget != null}
         onCancel={() => setAppealTarget(null)}
         onOk={submitAppeal}
-        okText="????"
-        cancelText="??"
+        okText="提交申诉"
+        cancelText="取消"
         confirmLoading={appealing}
       >
         <p style={{ marginBottom: 12, color: '#888' }}>
@@ -692,7 +717,6 @@ export default function SupportPage() {
           onChange={(e) => setAppealReason(e.target.value)}
           placeholder="说明您的理由，如：商品有质量问题，附上证据描述…"
         />
-      </Modal>
       </Modal>
     </div>
   );

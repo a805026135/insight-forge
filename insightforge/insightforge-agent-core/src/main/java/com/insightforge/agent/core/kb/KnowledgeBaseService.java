@@ -3,8 +3,10 @@ package com.insightforge.agent.core.kb;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.insightforge.persistence.entity.AgentKbChunk;
 import com.insightforge.persistence.entity.AgentKbDocument;
+import com.insightforge.persistence.entity.AgentKbDocumentVersion;
 import com.insightforge.persistence.mapper.AgentKbChunkMapper;
 import com.insightforge.persistence.mapper.AgentKbDocumentMapper;
+import com.insightforge.persistence.mapper.AgentKbDocumentVersionMapper;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -12,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -34,17 +38,20 @@ public class KnowledgeBaseService {
 
     private final AgentKbDocumentMapper documentMapper;
     private final AgentKbChunkMapper chunkMapper;
+    private final AgentKbDocumentVersionMapper versionMapper;
     private final VectorStore vectorStore;
     private final EmbeddingProvider embeddingProvider;
     private final KnowledgeBaseProperties properties;
 
     public KnowledgeBaseService(AgentKbDocumentMapper documentMapper,
                                 AgentKbChunkMapper chunkMapper,
+                                AgentKbDocumentVersionMapper versionMapper,
                                 VectorStore vectorStore,
                                 EmbeddingProvider embeddingProvider,
                                 KnowledgeBaseProperties properties) {
         this.documentMapper = documentMapper;
         this.chunkMapper = chunkMapper;
+        this.versionMapper = versionMapper;
         this.vectorStore = vectorStore;
         this.embeddingProvider = embeddingProvider;
         this.properties = properties;
@@ -67,6 +74,14 @@ public class KnowledgeBaseService {
         AgentKbDocument doc = documentMapper.selectOne(
                 new QueryWrapper<AgentKbDocument>().eq("doc_key", docKey));
         int version = (doc == null || doc.getVersion() == null) ? 1 : doc.getVersion() + 1;
+        String checksum = sha256(text);
+
+        AgentKbDocumentVersion existingVersion = versionMapper.selectOne(
+                new QueryWrapper<AgentKbDocumentVersion>().eq("doc_key", docKey)
+                        .orderByDesc("version").last("LIMIT 1"));
+        if (existingVersion != null && doc != null && checksum.equals(existingVersion.getChecksum())) {
+            return doc.getChunkCount() == null ? chunks.size() : doc.getChunkCount();
+        }
 
         List<AgentKbChunk> rows = new ArrayList<>();
         LocalDateTime now = LocalDateTime.now();
@@ -120,6 +135,16 @@ public class KnowledgeBaseService {
             doc.setUpdatedAt(now);
             documentMapper.updateById(doc);
         }
+        AgentKbDocumentVersion snapshot = new AgentKbDocumentVersion();
+        snapshot.setDocKey(docKey);
+        snapshot.setVersion(version);
+        snapshot.setTitle(title);
+        snapshot.setSourceType(sourceType);
+        snapshot.setMerchantId(merchantId);
+        snapshot.setContent(text);
+        snapshot.setChecksum(checksum);
+        snapshot.setCreatedAt(now);
+        versionMapper.insert(snapshot);
         return rows.size();
     }
 
@@ -272,5 +297,15 @@ public class KnowledgeBaseService {
 
     public KnowledgeBaseProperties properties() {
         return properties;
+    }
+
+    private String sha256(String text) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest((text == null ? "" : text).getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (Exception e) {
+            throw new IllegalStateException("知识库版本校验失败", e);
+        }
     }
 }

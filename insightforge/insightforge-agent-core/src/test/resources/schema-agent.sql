@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS orders (
     order_id     VARCHAR(64) UNIQUE,
     user_id      BIGINT,
     activity_id  BIGINT,
+    activity_sku_id BIGINT,
     sku_id       BIGINT,
     qty          INT,
     price        DECIMAL(12, 2),
@@ -137,6 +138,30 @@ CREATE TABLE IF NOT EXISTS agent_kb_chunk (
     embedding   TEXT,
     dimension   INT,
     created_at  DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS agent_kb_document_version (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    doc_key     VARCHAR(128) NOT NULL,
+    version     INT NOT NULL,
+    title       VARCHAR(255),
+    source_type VARCHAR(32),
+    merchant_id BIGINT,
+    content     TEXT,
+    checksum    VARCHAR(64) NOT NULL,
+    created_at  DATETIME,
+    UNIQUE (doc_key, version)
+);
+
+CREATE TABLE IF NOT EXISTS agent_prompt_version (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    prompt_key  VARCHAR(64) NOT NULL,
+    version     VARCHAR(64) NOT NULL,
+    content     TEXT NOT NULL,
+    checksum    VARCHAR(64) NOT NULL,
+    status      VARCHAR(16) NOT NULL,
+    created_at  DATETIME,
+    UNIQUE (prompt_key, version)
 );
 
 -- Phase 19d：Agent 运行 checkpoint（暂停/继续）

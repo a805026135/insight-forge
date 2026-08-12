@@ -65,6 +65,7 @@ logging:
 # ============================================================
 insightforge:
   agent:
+    prompt-version: ${INSIGHTFORGE_AGENT_PROMPT_VERSION:insightforge-prompt-2.0}
     deepseek:
       enabled: ${INSIGHTFORGE_AGENT_DEEPSEEK_ENABLED:false}
       api-key: ${INSIGHTFORGE_AGENT_DEEPSEEK_API_KEY:}

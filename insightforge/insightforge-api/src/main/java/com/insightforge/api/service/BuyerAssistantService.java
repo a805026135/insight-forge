@@ -56,6 +56,7 @@ public class BuyerAssistantService {
     private final AfterSaleMapper afterSaleMapper;
     private final BuyerChatHistoryService chatHistory;
     private final SupportTicketService supportTicketService;
+    private final PromptVersionService promptVersionService;
 
     /** 用户 → 上一轮锁定的商家（用于追问沿用，一旦提到别家商品立即切换） */
     private final Map<Long, Long> lastMerchantByUser = new ConcurrentHashMap<>();
@@ -69,7 +70,8 @@ public class BuyerAssistantService {
                                  MerchantMapper merchantMapper,
                                  AfterSaleMapper afterSaleMapper,
                                  BuyerChatHistoryService chatHistory,
-                                 SupportTicketService supportTicketService) {
+                                 SupportTicketService supportTicketService,
+                                 PromptVersionService promptVersionService) {
         this.deepSeekModelClient = deepSeekModelClient;
         this.knowledgeBaseProvider = knowledgeBaseProvider;
         this.ordersMapper = ordersMapper;
@@ -79,6 +81,8 @@ public class BuyerAssistantService {
         this.afterSaleMapper = afterSaleMapper;
         this.chatHistory = chatHistory;
         this.supportTicketService = supportTicketService;
+        this.promptVersionService = promptVersionService;
+        this.promptVersionService.register("buyer-assistant", SYSTEM_PROMPT);
     }
 
     public BuyerAssistantReply ask(long userId, String question, Long explicitMerchantId) {

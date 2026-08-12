@@ -8,6 +8,8 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -45,14 +47,16 @@ public class AuthService {
                        MerchantMapper merchantMapper,
                        @Value("${insightforge.auth.jwt-secret}") String secret,
                        @Value("${insightforge.auth.token-ttl-hours:24}") long ttlHours,
-                       @Value("${spring.profiles.active:}") String activeProfiles) {
+                       Environment environment) {
         this.userMapper = userMapper;
         this.merchantMapper = merchantMapper;
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.ttlHours = ttlHours;
-        // 安全收尾：非 local 环境若仍用开发默认密钥，明显告警（生产应注入环境变量）
-        if (DEMO_SECRET.equals(secret) && !activeProfiles.contains("local")) {
-            log.warn("JWT 密钥仍为开发默认值！生产环境必须通过 INSIGHTFORGE_AUTH_JWT_SECRET 注入强密钥。");
+        // local/test 可使用开发密钥；其余环境必须显式注入，避免误把公开密钥带到生产。
+        boolean developmentProfile = environment.acceptsProfiles(Profiles.of("local", "test"));
+        if (DEMO_SECRET.equals(secret) && !developmentProfile) {
+            throw new IllegalStateException(
+                    "非 local/test 环境禁止使用默认 JWT 密钥，请配置 INSIGHTFORGE_AUTH_JWT_SECRET");
         }
     }
 

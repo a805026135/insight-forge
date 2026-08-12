@@ -4,25 +4,26 @@ import { useEffect, useState } from 'react';
 import { getToken } from '../auth/token';
 
 const MERCHANT_NAV = [
-  { to: '/merchant/agent', label: 'Agent 工作台' },
-  { to: '/merchant/kb', label: '知识库管理' },
-  { to: '/merchant/products', label: '商品管理' },
-  { to: '/merchant/inventory', label: '库存管理' },
-  { to: '/merchant/orders', label: '订单发货' },
-  { to: '/merchant/activities', label: '活动管理' },
-  { to: '/merchant/hitl', label: '人工审批' },
-  { to: '/merchant/support', label: '售后咨询' },
-  { to: '/merchant/after-sales', label: '售后处理' },
-  { to: '/merchant/traces', label: '调用轨迹' },
+  { to: '/merchant/agent', label: 'Agent 工作台', icon: '✦' },
+  { to: '/merchant/kb', label: '知识库管理', icon: '▤' },
+  { to: '/merchant/products', label: '商品管理', icon: '◇' },
+  { to: '/merchant/inventory', label: '库存管理', icon: '▦' },
+  { to: '/merchant/orders', label: '订单发货', icon: '▣' },
+  { to: '/merchant/activities', label: '活动管理', icon: '◷' },
+  { to: '/merchant/hitl', label: '人工审批', icon: '✓' },
+  { to: '/merchant/support', label: '售后咨询', icon: '◌' },
+  { to: '/merchant/after-sales', label: '售后处理', icon: '↺' },
+  { to: '/merchant/traces', label: '调用轨迹', icon: '⌁' },
+  { to: '/merchant/evaluation', label: 'Agent 评测', icon: '◎' },
 ];
 
 const USER_NAV = [
-  { to: '/user/home', label: '首页' },
-  { to: '/user/seckill', label: '限时秒杀' },
-  { to: '/user/cart', label: '购物车' },
-  { to: '/user/orders', label: '我的订单' },
-  { to: '/user/support', label: '在线客服' },
-  { to: '/user/profile', label: '个人中心' },
+  { to: '/user/home', label: '首页', icon: '⌂' },
+  { to: '/user/seckill', label: '限时秒杀', icon: 'ϟ' },
+  { to: '/user/cart', label: '购物车', icon: '▱' },
+  { to: '/user/orders', label: '我的订单', icon: '▣' },
+  { to: '/user/support', label: '在线客服', icon: '✦' },
+  { to: '/user/profile', label: '个人中心', icon: '○' },
 ];
 
 export default function Layout() {
@@ -80,7 +81,8 @@ export default function Layout() {
     <div className="app-layout">
       <aside className="sidebar">
         <Link to={isMerchant ? '/merchant/dashboard' : '/user/home'} className="sidebar-brand">
-          Deal Pulse
+          <span className="brand-mark">D</span>
+          <span><strong>Deal Pulse</strong><small>智能商业中枢</small></span>
         </Link>
         <nav className="sidebar-nav">
           {navItems.map((item) => (
@@ -89,6 +91,7 @@ export default function Layout() {
               to={item.to}
               className={`nav-item ${location.pathname === item.to ? 'active' : ''}`}
             >
+              <span className="nav-icon">{item.icon}</span>
               {item.label}
             </Link>
           ))}
@@ -112,7 +115,7 @@ export default function Layout() {
               window.location.reload();
             }}
           >
-            {document.documentElement.getAttribute('data-theme') === 'dark' ? '🌙 深色' : '☀️ 浅色'}
+            {document.documentElement.getAttribute('data-theme') === 'dark' ? '深色' : '浅色'}
           </button>
           <button onClick={handleLogout} className="logout-btn">
             退出登录

@@ -53,6 +53,7 @@ public class MerchantAssistantService {
     private final OrdersMapper ordersMapper;
     private final OrderItemMapper orderItemMapper;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final PromptVersionService promptVersionService;
 
     private static final Pattern ACTION_JSON = Pattern.compile("\\{\"action\"\\s*:\\s*\"([A-Z_]+)\"[^}]*}");
 
@@ -62,7 +63,8 @@ public class MerchantAssistantService {
                                     ProductMapper productMapper,
                                     ActivitySkuMapper activitySkuMapper,
                                     OrdersMapper ordersMapper,
-                                    OrderItemMapper orderItemMapper) {
+                                    OrderItemMapper orderItemMapper,
+                                    PromptVersionService promptVersionService) {
         this.deepSeekModelClient = deepSeekModelClient;
         this.knowledgeBaseProvider = knowledgeBaseProvider;
         this.merchantMapper = merchantMapper;
@@ -70,6 +72,8 @@ public class MerchantAssistantService {
         this.activitySkuMapper = activitySkuMapper;
         this.ordersMapper = ordersMapper;
         this.orderItemMapper = orderItemMapper;
+        this.promptVersionService = promptVersionService;
+        this.promptVersionService.register("merchant-assistant", SYSTEM_PROMPT);
     }
 
     public AssistantReply ask(long merchantId, String question) {

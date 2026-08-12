@@ -11,6 +11,7 @@
 
 services:
   mysql:
+    restart: unless-stopped
     image: mysql:8.0
     environment:
       MYSQL_DATABASE: insightforge
@@ -33,6 +34,7 @@ services:
         limits: { memory: 768m }
 
   redis:
+    restart: unless-stopped
     image: redis:7-alpine
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -43,6 +45,7 @@ services:
         limits: { memory: 128m }
 
   kafka:
+    restart: unless-stopped
     image: apache/kafka:3.7.0
     environment:
       KAFKA_CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
@@ -69,6 +72,7 @@ services:
         limits: { memory: 512m }
 
   api:
+    restart: unless-stopped
     build:
       context: ../insightforge
       dockerfile: ../deploy/Dockerfile.api
@@ -87,7 +91,7 @@ services:
       SPRING_DATASOURCE_USERNAME: insightforge
       SPRING_DATASOURCE_PASSWORD: insightforge
       SPRING_DATA_REDIS_HOST: redis
-      SPRING_KAFKA_BOOTSTRAP-SERVERS: kafka:9092
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       INSIGHTFORGE_AGENT_DEEPSEEK_ENABLED: ${INSIGHTFORGE_AGENT_DEEPSEEK_ENABLED:-true}
       INSIGHTFORGE_AGENT_DEEPSEEK_API_KEY: ${INSIGHTFORGE_AGENT_DEEPSEEK_API_KEY:-}
       INSIGHTFORGE_AGENT_DEEPSEEK_BASE_URL: ${INSIGHTFORGE_AGENT_DEEPSEEK_BASE_URL:-https://api.deepseek.com}
@@ -97,8 +101,8 @@ services:
       INSIGHTFORGE_AGENT_EMBEDDING_MODEL: ${INSIGHTFORGE_AGENT_EMBEDDING_MODEL:-qwen3.7-text-embedding}
       INSIGHTFORGE_AGENT_KNOWLEDGE_BASE_ENABLED: ${INSIGHTFORGE_AGENT_KNOWLEDGE_BASE_ENABLED:-true}
       INSIGHTFORGE_AGENT_VECTORSTORE_TYPE: ${INSIGHTFORGE_AGENT_VECTORSTORE_TYPE:-milvus}
-      INSIGHTFORGE_AGENT_VECTORSTORE_MILVUS_HOST: milvus
-      INSIGHTFORGE_AGENT_VECTORSTORE_MILVUS_PORT: "19530"
+      MILVUS_HOST: milvus
+      MILVUS_PORT: "19530"
       INSIGHTFORGE_AUTH_JWT_SECRET: ${INSIGHTFORGE_AUTH_JWT_SECRET:?JWT 密钥未设置：请在 deploy/.env 配置 INSIGHTFORGE_AUTH_JWT_SECRET}
       # 4G 机器：固定 Java 堆，避免 JVM 按宿主机内存自动放大导致 OOM
       JAVA_TOOL_OPTIONS: "-Xmx512m -XX:MaxMetaspaceSize=192m"
@@ -107,6 +111,7 @@ services:
         limits: { cpus: "1.5", memory: 768m }
 
   rule-engine-worker:
+    restart: unless-stopped
     build:
       context: ../insightforge
       dockerfile: ../deploy/Dockerfile.worker
@@ -119,13 +124,14 @@ services:
       SPRING_DATASOURCE_USERNAME: insightforge
       SPRING_DATASOURCE_PASSWORD: insightforge
       SPRING_DATA_REDIS_HOST: redis
-      SPRING_KAFKA_BOOTSTRAP-SERVERS: kafka:9092
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       JAVA_TOOL_OPTIONS: "-Xmx384m -XX:MaxMetaspaceSize=160m"
     deploy:
       resources:
         limits: { cpus: "1.0", memory: 640m }
 
   nginx:
+    restart: unless-stopped
     image: nginx:1.27-alpine
     depends_on: ["api"]
     volumes:
@@ -140,6 +146,7 @@ services:
   # 注意：2C4G 机器内存偏紧，若出现 OOM，可关闭 prometheus/grafana
   # （docker compose stop prometheus grafana）或升级到 4C8G。
   etcd:
+    restart: unless-stopped
     image: quay.io/coreos/etcd:v3.5.14
     environment:
       - ETCD_AUTO_COMPACTION_MODE=revision
@@ -159,6 +166,7 @@ services:
         limits: { memory: 192m }
 
   minio:
+    restart: unless-stopped
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z
     environment:
       MINIO_ACCESS_KEY: minioadmin
@@ -176,6 +184,7 @@ services:
         limits: { memory: 320m }
 
   milvus:
+    restart: unless-stopped
     image: milvusdb/milvus:v2.4.15
     command: ["milvus", "run", "standalone"]
     environment:
@@ -198,6 +207,7 @@ services:
         limits: { memory: 1.6g }
 
   prometheus:
+    restart: unless-stopped
     image: prom/prometheus:v2.54.0
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -209,6 +219,7 @@ services:
         limits: { memory: 384m }
 
   grafana:
+    restart: unless-stopped
     image: grafana/grafana:11.2.0
     depends_on: ["prometheus"]
     environment:

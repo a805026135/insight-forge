@@ -5,6 +5,7 @@ import com.insightforge.persistence.entity.Activity;
 import com.insightforge.persistence.entity.ActivitySku;
 import com.insightforge.persistence.entity.AgentTrace;
 import com.insightforge.persistence.entity.AgentSpan;
+import com.insightforge.persistence.entity.AgentKbDocument;
 import com.insightforge.persistence.entity.GuardrailPolicyEntity;
 import com.insightforge.persistence.entity.Orders;
 import com.insightforge.persistence.entity.Product;
@@ -12,6 +13,7 @@ import com.insightforge.persistence.mapper.ActivityMapper;
 import com.insightforge.persistence.mapper.ActivitySkuMapper;
 import com.insightforge.persistence.mapper.AgentTraceMapper;
 import com.insightforge.persistence.mapper.AgentSpanMapper;
+import com.insightforge.persistence.mapper.AgentKbDocumentMapper;
 import com.insightforge.persistence.mapper.GuardrailPolicyMapper;
 import com.insightforge.persistence.mapper.OrdersMapper;
 import com.insightforge.persistence.mapper.ProductMapper;
@@ -22,6 +24,7 @@ import com.insightforge.api.observability.dto.GuardrailView;
 import com.insightforge.api.observability.dto.SpanView;
 import com.insightforge.api.observability.dto.SkuView;
 import com.insightforge.api.observability.dto.TraceView;
+import com.insightforge.api.observability.dto.AgentOpsSummary;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
@@ -54,6 +57,7 @@ public class ObservabilityService {
     private final OrdersMapper ordersMapper;
     private final AgentTraceMapper agentTraceMapper;
     private final AgentSpanMapper agentSpanMapper;
+    private final AgentKbDocumentMapper agentKbDocumentMapper;
     private final GuardrailPolicyMapper guardrailPolicyMapper;
     private final ProductMapper productMapper;
     /** REPRICE 后实时价读取（local 下为 null，回退 DB 秒杀价）。 */
@@ -64,6 +68,7 @@ public class ObservabilityService {
                                 OrdersMapper ordersMapper,
                                 AgentTraceMapper agentTraceMapper,
                                 AgentSpanMapper agentSpanMapper,
+                                AgentKbDocumentMapper agentKbDocumentMapper,
                                 GuardrailPolicyMapper guardrailPolicyMapper,
                                 ProductMapper productMapper,
                                 ObjectProvider<RedisStockService> redisStockService) {
@@ -72,6 +77,7 @@ public class ObservabilityService {
         this.ordersMapper = ordersMapper;
         this.agentTraceMapper = agentTraceMapper;
         this.agentSpanMapper = agentSpanMapper;
+        this.agentKbDocumentMapper = agentKbDocumentMapper;
         this.guardrailPolicyMapper = guardrailPolicyMapper;
         this.productMapper = productMapper;
         this.redisStockService = redisStockService;
@@ -241,6 +247,40 @@ public class ObservabilityService {
                 s.getTokenIn(), s.getTokenOut(), s.getLatencyMs(), s.getRetryCount(),
                 s.getStatus(), s.getConfidence(), s.getArtifactRef()
         )).collect(Collectors.toList());
+    }
+
+    /** 聚合真实 trace/span：Prompt/模型/知识库版本分布、token、成本、P95 和失败回放候选。 */
+    public AgentOpsSummary agentOpsSummary() {
+        List<AgentTrace> traces = agentTraceMapper.selectList(
+                new QueryWrapper<AgentTrace>().orderByDesc("started_at"));
+        List<AgentSpan> spans = agentSpanMapper.selectList(new QueryWrapper<>());
+        long tokenIn = spans.stream().map(AgentSpan::getTokenIn).filter(java.util.Objects::nonNull)
+                .mapToLong(Integer::longValue).sum();
+        long tokenOut = spans.stream().map(AgentSpan::getTokenOut).filter(java.util.Objects::nonNull)
+                .mapToLong(Integer::longValue).sum();
+        BigDecimal totalCost = traces.stream().map(AgentTrace::getBudgetCostUsd)
+                .filter(java.util.Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal averageCost = traces.isEmpty() ? BigDecimal.ZERO
+                : totalCost.divide(BigDecimal.valueOf(traces.size()), 6, java.math.RoundingMode.HALF_UP);
+        List<Long> latency = traces.stream().map(AgentTrace::getTotalLatencyMs)
+                .filter(java.util.Objects::nonNull).sorted().toList();
+        long p95 = latency.isEmpty() ? 0L : latency.get(Math.max(0, (int) Math.ceil(latency.size() * .95) - 1));
+        Map<String, Long> promptVersions = traces.stream().filter(t -> t.getPromptVersion() != null)
+                .collect(Collectors.groupingBy(AgentTrace::getPromptVersion, LinkedHashMap::new, Collectors.counting()));
+        Map<String, Long> modelVersions = traces.stream().filter(t -> t.getModelVersion() != null)
+                .collect(Collectors.groupingBy(AgentTrace::getModelVersion, LinkedHashMap::new, Collectors.counting()));
+        Map<String, Long> kbVersions = agentKbDocumentMapper.selectList(new QueryWrapper<>()).stream()
+                .collect(Collectors.toMap(AgentKbDocument::getDocKey,
+                        d -> d.getVersion() == null ? 0L : d.getVersion().longValue(),
+                        Math::max, LinkedHashMap::new));
+        List<AgentOpsSummary.ReplayCandidate> replay = traces.stream()
+                .filter(t -> "FAILED".equals(t.getStatus()) || "CORRECT_FAILURE".equals(t.getStatus()))
+                .limit(20)
+                .map(t -> new AgentOpsSummary.ReplayCandidate(t.getTraceId(), t.getActivityId(), t.getStatus(),
+                        t.getFailureKind(), t.getPromptVersion(), t.getModelVersion(),
+                        t.getTotalLatencyMs(), t.getBudgetCostUsd())).toList();
+        return new AgentOpsSummary(traces.size(), spans.size(), tokenIn, tokenOut, totalCost,
+                averageCost, p95, promptVersions, modelVersions, kbVersions, replay);
     }
 
     /** HITL 审批通过：标记 trace 为 APPROVED。 */

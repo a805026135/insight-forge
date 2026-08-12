@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
-import { seckillApi, dashboardApi, activityApi, SkuView, ActivityView } from '../../api';
+import { seckillApi, dashboardApi, activityApi, orderApi, SkuView, ActivityView } from '../../api';
 
 export default function SeckillPage() {
   const { user } = useAuth();
@@ -10,6 +10,7 @@ export default function SeckillPage() {
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState<number | null>(null);
   const [orderId, setOrderId] = useState('');
+  const [purchasedSkuIds, setPurchasedSkuIds] = useState<Set<number>>(new Set());
 
   const activeActivity = activities.find((a) => a.id === activeId);
 
@@ -40,6 +41,17 @@ export default function SeckillPage() {
     loadSkus(activeId);
   }, [activeId]);
 
+  useEffect(() => {
+    if (!user) return;
+    orderApi.list(user.id)
+      .then((orders) => setPurchasedSkuIds(new Set(
+        orders
+          .filter((o) => o.activityId === activeId && o.activitySkuId != null)
+          .map((o) => Number(o.activitySkuId)),
+      )))
+      .catch(() => setPurchasedSkuIds(new Set()));
+  }, [user, activeId]);
+
   const handleSeckill = async (sku: SkuView) => {
     if (!user) return;
     setLoading(sku.activitySkuId);
@@ -53,6 +65,7 @@ export default function SeckillPage() {
       });
       setOrderId(oid);
       setMsg(`抢购成功！订单号：${oid}`);
+      setPurchasedSkuIds((prev) => new Set(prev).add(sku.activitySkuId));
       await loadSkus(activeId);
     } catch (ex: any) {
       setMsg(ex.message || '抢购失败');
@@ -105,7 +118,9 @@ export default function SeckillPage() {
         </div>
       )}
       <div className="product-grid">
-        {skus.map((p) => (
+        {skus.map((p) => {
+          const purchased = purchasedSkuIds.has(p.activitySkuId);
+          return (
           <div key={p.activitySkuId} className="product-card">
             <div className="product-img-wrap">
               <img
@@ -118,6 +133,7 @@ export default function SeckillPage() {
                 }}
               />
               {discount(p) > 0 && <span className="discount-badge">{discount(p)}% OFF</span>}
+              {purchased && <span className="purchased-badge">已限购</span>}
             </div>
             <div className="product-body">
               <h3 className="product-name" title={p.productName}>
@@ -144,10 +160,12 @@ export default function SeckillPage() {
               <button
                 onClick={() => handleSeckill(p)}
                 disabled={
-                  loading === p.activitySkuId || p.stock <= 0 || activeActivity?.status !== 'LIVE'
+                  purchased || loading === p.activitySkuId || p.stock <= 0 || activeActivity?.status !== 'LIVE'
                 }
               >
-                {loading === p.activitySkuId
+                {purchased
+                  ? '您已购买过'
+                  : loading === p.activitySkuId
                   ? '抢购中...'
                   : p.stock <= 0
                   ? '已售罄'
@@ -155,9 +173,11 @@ export default function SeckillPage() {
                   ? '立即抢购'
                   : '未开抢'}
               </button>
+              {purchased && <p className="purchase-limit-tip">同一活动同一商品每位用户限购 1 单</p>}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
       {skus.length === 0 && !msg && <p className="hint">加载商品中...</p>}
       {msg && (

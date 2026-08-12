@@ -43,8 +43,17 @@ public class PaymentTokenService {
 
     /** 消费：校验通过后作废，返回令牌信息（仅调用一次）。 */
     public PaymentToken consume(String token) {
-        PaymentToken pt = peek(token);
-        tokens.remove(token);
+        if (token == null || token.isBlank()) {
+            throw new IllegalArgumentException("支付令牌不能为空");
+        }
+        // ConcurrentHashMap.remove 是原子操作：同一个 token 只有一个并发请求能取到值。
+        PaymentToken pt = tokens.remove(token);
+        if (pt == null) {
+            throw new IllegalArgumentException("支付令牌无效、已过期或已使用");
+        }
+        if (System.currentTimeMillis() > pt.expireAt()) {
+            throw new IllegalArgumentException("支付令牌已过期，请重新发起支付");
+        }
         return pt;
     }
 }

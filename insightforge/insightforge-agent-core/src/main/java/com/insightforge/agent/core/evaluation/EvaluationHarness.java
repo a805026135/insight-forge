@@ -88,7 +88,7 @@ public class EvaluationHarness {
     }
 
     /** 失败样本回归重放：每个样本走「强制不合规」编排器，断言终态 == 期望的安全态。 */
-    private List<EvaluationReport.RegressionResult> replayFailureSamples() throws Exception {
+    public List<EvaluationReport.RegressionResult> replayFailureSamples() throws Exception {
         List<FailureSample.Item> samples = FailureSample.load();
         List<EvaluationReport.RegressionResult> out = new ArrayList<>();
         for (FailureSample.Item s : samples) {

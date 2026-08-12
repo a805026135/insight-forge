@@ -145,4 +145,14 @@ public class AgentController {
                 verdict
         ));
     }
+
+    /** 失败回放：从原 trace 的活动和首个工具输入恢复上下文，生成一条新 trace 对比修复效果。 */
+    @PostMapping("/replay/{traceId}")
+    public ApiResult<AgentPlanResponse> replay(@PathVariable String traceId) {
+        var original = checkpointService.load(traceId);
+        if (original.isPresent()) {
+            return resume(traceId);
+        }
+        return ApiResult.fail(409, "该 trace 已终结且未保留 checkpoint；请从评测失败样本执行确定性回放");
+    }
 }

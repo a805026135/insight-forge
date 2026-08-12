@@ -114,28 +114,39 @@ export default function ProductDetail() {
         </div>
       </div>
 
-      <section className="assistant-panel" style={{ marginTop: 20 }}>
-        <h3>????</h3>
+      <section className="review-panel">
+        <div className="review-heading">
+          <div>
+            <span className="section-eyebrow">BUYER REVIEWS</span>
+            <h3>商品评价</h3>
+          </div>
+          {reviewStat && reviewStat.ratingCount > 0 && (
+            <div className="review-score">
+              <strong>{(reviewStat.ratingTotal / reviewStat.ratingCount).toFixed(1)}</strong>
+              <span>分</span>
+            </div>
+          )}
+        </div>
         {reviewStat && reviewStat.ratingCount > 0 ? (
           <>
-            <p style={{ color: '#666', marginBottom: 12 }}>
-              ?????<b style={{ color: '#f59e0b', fontSize: 18 }}>
-                {(reviewStat.ratingTotal / reviewStat.ratingCount).toFixed(1)}
-              </b> / 5?{reviewStat.ratingCount} ????
-            </p>
+            <p className="review-summary">共 {reviewStat.ratingCount} 条真实评价</p>
             {reviews.map((r, idx) => (
-              <div key={idx} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <b>{r.userDisplayName ?? '????'}</b>
-                  <span style={{ color: '#f59e0b' }}>{'?'.repeat(Math.max(0, Math.min(5, r.rating ?? 0)))}</span>
-                  <span style={{ fontSize: 12, color: '#999' }}>{String(r.createdAt ?? '').replace('T', ' ').slice(0, 19)}</span>
+              <article key={idx} className="review-item">
+                <div className="review-meta">
+                  <b>{r.userDisplayName ?? '匿名用户'}</b>
+                  <span className="review-stars">{'★'.repeat(Math.max(0, Math.min(5, r.rating ?? 0)))}{'☆'.repeat(Math.max(0, 5 - Math.min(5, r.rating ?? 0)))}</span>
+                  <time>{String(r.createdAt ?? '').replace('T', ' ').slice(0, 19)}</time>
                 </div>
-                {r.content ? <p style={{ marginTop: 6, color: 'var(--text)' }}>{r.content}</p> : null}
-              </div>
+                <p>{r.content || '用户未填写文字评价'}</p>
+              </article>
             ))}
           </>
         ) : (
-          <p style={{ color: '#999' }}>????????????</p>
+          <div className="review-empty">
+            <span>☆</span>
+            <b>暂时还没有评价</b>
+            <p>购买并完成订单后，可以分享你的真实使用体验。</p>
+          </div>
         )}
       </section>
     </div>

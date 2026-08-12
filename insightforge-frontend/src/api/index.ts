@@ -95,7 +95,15 @@ export const dashboardApi = {
     const qs = new URLSearchParams(params).toString();
     return get<string>(`/dashboard/explain?${qs}`);
   },
+  agentOps: () => get<AgentOpsSummary>('/dashboard/agent-ops'),
+  runRagEvaluation: () => post<RagEvaluationReport>('/dashboard/rag-evaluation/run'),
+  replayFailures: () => post<FailureReplayJob>('/dashboard/failure-replay/run'),
+  failureReplayStatus: (jobId: string) => get<FailureReplayJob>(`/dashboard/failure-replay/${jobId}`),
 };
+export interface FailureReplayJob { jobId:string;status:string;startedAt:string;finishedAt:string|null;results:Array<{sample:{name:string;goal:string;expect:string};actualStatus:string;passed:boolean}>;error:string|null; }
+
+export interface AgentOpsSummary { traces:number; spans:number; inputTokens:number; outputTokens:number; totalCostUsd:number; averageCostUsd:number; p95LatencyMs:number; promptVersions:Record<string,number>; modelVersions:Record<string,number>; kbVersions:Record<string,number>; replayCandidates:Array<{traceId:string;activityId:number;status:string;failureKind:string|null;promptVersion:string;modelVersion:string;latencyMs:number;costUsd:number}>; }
+export interface RagEvaluationReport { datasetVersion:string;evaluatedAt:string;totalCases:number;answerableCases:number;refusalCases:number;recallAt4:number;answerAccuracy:number;refusalAccuracy:number;p95LatencyMs:number;embeddingProvider:string;vectorStore:string;documentCount:number;chunkCount:number;categories:Record<string,{cases:number;passRate:number}>;cases:Array<{id:string;category:string;question:string;answerable:boolean;retrievedDocKeys:string[];retrievedExpected:boolean;keywordsCovered:boolean;refused:boolean;latencyMs:number}>; }
 
 // ---- Agent 控制面 ----
 export const agentApi = {
@@ -268,7 +276,7 @@ export interface OrderView {
   activitySkuId?: number | null;
   skuId: number;
   qty: number;
-  /** ???????REPRICE ?????????? */
+  /** 下单时的成交价快照；Agent 调价后新订单会记录调整后的价格。 */
   price: number | null;
   status: string;
   createdAt: string;
