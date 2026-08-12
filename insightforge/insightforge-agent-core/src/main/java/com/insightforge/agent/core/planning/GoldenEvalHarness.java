@@ -48,7 +48,7 @@ public class GoldenEvalHarness {
             AgentTask task = new AgentTask(c.activityId(), c.goal(), null);
             PlanningResult r = orchestrator.plan(task);
             boolean accept = accept(c, r);
-            out.add(new GoldenResult(c, r.status(), r.published(), accept));
+            out.add(new GoldenResult(c, r.status(), r.published(), accept, r.trace()));
         }
         return out;
     }
@@ -71,6 +71,7 @@ public class GoldenEvalHarness {
     }
 
     /** 一条评估结果。 */
-    public record GoldenResult(GoldenCase c, AgentRunStatus status, GuardrailPolicy published, boolean accepted) {
+    public record GoldenResult(GoldenCase c, AgentRunStatus status, GuardrailPolicy published,
+                               boolean accepted, com.insightforge.agent.core.runtime.Trace trace) {
     }
 }

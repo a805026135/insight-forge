@@ -91,6 +91,18 @@ public class DashboardController {
         return ApiResult.ok(ragEvaluationService.run());
     }
 
+    @PostMapping("/agent-evaluation/run")
+    public ApiResult<?> runAgentEvaluation() throws Exception {
+        var report = evaluationHarness.run();
+        boolean gatePassed = report.gatePassed();
+        return ApiResult.ok(new AgentEvaluationView(report.taskMetrics(), gatePassed,
+                List.copyOf(report.gateFailures()), report.goldenResults(), report.regressionResults()));
+    }
+
+    public record AgentEvaluationView(
+            com.insightforge.agent.core.evaluation.EvaluationReport.TaskMetrics metrics,
+            boolean gatePassed, List<String> gateFailures, List<?> positiveCases, List<?> safetyCases) {}
+
     @PostMapping("/failure-replay/run")
     public ApiResult<?> replayFailures() throws Exception {
         return ApiResult.ok(failureReplayService.start());

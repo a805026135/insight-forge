@@ -5,6 +5,7 @@ import com.insightforge.agent.core.planning.GoldenEvalHarness;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Comparator;
 
 /**
  * 评估报告（大白话：一次评估闭环跑完，所有结论 + 「及格/不及格」都在这）。
@@ -118,9 +119,47 @@ public class EvaluationReport {
         return gateFailures;
     }
 
+    /** 面向评测页/面试报告的任务级汇总；正确成功与正确拒绝分开，避免一个模糊总分。 */
+    public TaskMetrics taskMetrics() {
+        List<com.insightforge.agent.core.runtime.Trace> traces = new ArrayList<>();
+        goldenResults.stream().map(GoldenEvalHarness.GoldenResult::trace).forEach(traces::add);
+        regressionResults.stream().map(RegressionResult::trace).forEach(traces::add);
+        List<Long> latencies = traces.stream().map(com.insightforge.agent.core.runtime.Trace::totalLatencyMs)
+                .sorted(Comparator.naturalOrder()).toList();
+        long tokens = traces.stream().mapToLong(t -> t.spans().stream()
+                .mapToLong(s -> (long) s.tokenIn() + s.tokenOut()).sum()).sum();
+        long steps = traces.stream().mapToLong(t -> t.spans().size()).sum();
+        BigDecimal cost = traces.stream().map(com.insightforge.agent.core.runtime.Trace::budgetCostUsd)
+                .filter(java.util.Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
+        long accepted = goldenResults.stream().filter(GoldenEvalHarness.GoldenResult::accepted).count();
+        long safe = regressionResults.stream().filter(RegressionResult::passed).count();
+        int total = goldenResults.size() + regressionResults.size();
+        return new TaskMetrics(goldenResults.size(), accepted, rate(accepted, goldenResults.size()),
+                regressionResults.size(), safe, rate(safe, regressionResults.size()),
+                rate(accepted + safe, total), percentile(latencies, .50), percentile(latencies, .95),
+                traces.isEmpty() ? 0d : Math.round(steps * 100d / traces.size()) / 100d,
+                traces.isEmpty() ? 0d : Math.round(tokens * 100d / traces.size()) / 100d,
+                traces.isEmpty() ? BigDecimal.ZERO : cost.divide(BigDecimal.valueOf(traces.size()), 8, java.math.RoundingMode.HALF_UP));
+    }
+
+    private double rate(long value, long total) {
+        return total == 0 ? 0d : Math.round(value * 10000d / total) / 10000d;
+    }
+
+    private long percentile(List<Long> sorted, double percentile) {
+        if (sorted.isEmpty()) return 0L;
+        return sorted.get(Math.max(0, (int) Math.ceil(sorted.size() * percentile) - 1));
+    }
+
+    public record TaskMetrics(int positiveTasks, long successfulTasks, double taskSuccessRate,
+                              int safetyTasks, long safeFailures, double safetyPassRate,
+                              double overallAcceptanceRate, long p50LatencyMs, long p95LatencyMs,
+                              double averageSteps, double averageTokens, BigDecimal averageCostUsd) {}
+
     /** 一条失败样本回归结果。 */
     public record RegressionResult(FailureSample.Item sample,
                                    com.insightforge.agent.core.runtime.AgentRunStatus actualStatus,
-                                   boolean passed) {
+                                   boolean passed,
+                                   com.insightforge.agent.core.runtime.Trace trace) {
     }
 }

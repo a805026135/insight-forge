@@ -97,12 +97,14 @@ export const dashboardApi = {
   },
   agentOps: () => get<AgentOpsSummary>('/dashboard/agent-ops'),
   runRagEvaluation: () => post<RagEvaluationReport>('/dashboard/rag-evaluation/run'),
+  runAgentEvaluation: () => post<AgentEvaluationReport>('/dashboard/agent-evaluation/run'),
   replayFailures: () => post<FailureReplayJob>('/dashboard/failure-replay/run'),
   failureReplayStatus: (jobId: string) => get<FailureReplayJob>(`/dashboard/failure-replay/${jobId}`),
 };
 export interface FailureReplayJob { jobId:string;status:string;startedAt:string;finishedAt:string|null;results:Array<{sample:{name:string;goal:string;expect:string};actualStatus:string;passed:boolean}>;error:string|null; }
 
 export interface AgentOpsSummary { traces:number; spans:number; inputTokens:number; outputTokens:number; totalCostUsd:number; averageCostUsd:number; p95LatencyMs:number; promptVersions:Record<string,number>; modelVersions:Record<string,number>; kbVersions:Record<string,number>; replayCandidates:Array<{traceId:string;activityId:number;status:string;failureKind:string|null;promptVersion:string;modelVersion:string;latencyMs:number;costUsd:number}>; }
+export interface AgentEvaluationReport { metrics:{positiveTasks:number;successfulTasks:number;taskSuccessRate:number;safetyTasks:number;safeFailures:number;safetyPassRate:number;overallAcceptanceRate:number;p50LatencyMs:number;p95LatencyMs:number;averageSteps:number;averageTokens:number;averageCostUsd:number};gatePassed:boolean;gateFailures:string[];positiveCases:Array<{c:{name:string};status:string;accepted:boolean;trace:{totalLatencyMs:number}}> ;safetyCases:Array<{sample:{name:string};actualStatus:string;passed:boolean;trace:{totalLatencyMs:number}}>; }
 export interface RagEvalVariant { variant:string;routing:boolean;safetyGate:boolean;hybridRrf:boolean;answerableCases:number;refusalCases:number;recallAt4:number;answerAccuracy:number;refusalAccuracy:number;p95LatencyMs:number;categories:Record<string,{cases:number;passRate:number}>;cases:RagEvalCase[]; }
 export interface RagEvalCase { id:string;category:string;question:string;answerable:boolean;retrievedDocKeys:string[];retrievedExpected:boolean;keywordsCovered:boolean;refused:boolean;latencyMs:number; }
 export interface RagEvaluationReport { datasetVersion:string;evaluatedAt:string;totalCases:number;answerableCases:number;refusalCases:number;recallAt4:number;answerAccuracy:number;refusalAccuracy:number;p95LatencyMs:number;embeddingProvider:string;vectorStore:string;documentCount:number;chunkCount:number;categories:Record<string,{cases:number;passRate:number}>;cases:RagEvalCase[];variants:RagEvalVariant[]; }

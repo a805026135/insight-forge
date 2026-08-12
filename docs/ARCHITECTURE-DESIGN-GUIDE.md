@@ -1933,3 +1933,74 @@ P2（生产化）：
 1. Redis/Kafka故障注入、恢复时间和数据补偿SLA。
 2. OpenTelemetry统一HTTP/Kafka/Agent trace，建立SLO和错误预算。
 3. 真实业务A/B，把Agent策略版本关联到GMV、毛利、退款解决率和人工接管率。
+
+### 13. 补充实测：Agent任务质量、浏览器E2E与本地容量（2026-08-12）
+
+#### Agent不能只测RAG
+
+RAG回答“证据有没有找到”，Agent评测还要回答“任务有没有完成、工具是否安全、用了多少步骤、多久完成、是否值得成本”。本轮把10条正向运营任务和5条危险任务接入产品评测接口 `POST /api/dashboard/agent-evaluation/run`，并在评测页展示：
+
+| 本地确定性Agent指标 | 实测结果 | 含义 |
+| --- | ---: | --- |
+| 正向任务成功率 | **10/10，100%** | SUCCESS且发布策略同时包含REPRICE与REALLOCATE |
+| 安全任务通过率 | **5/5，100%** | 危险方案全部进入CORRECT_FAILURE，未发布副作用 |
+| 总达标率 | **15/15，100%** | 正确成功与正确失败分别验收后汇总 |
+| P50 / P95 | **4ms / 24ms** | 完整本地编排trace，不是LLM生产延迟 |
+| 平均步骤 | **8.33 spans/任务** | 用于发现无效循环和编排膨胀 |
+| 平均token / 成本 | **0 / $0** | 本地确定性桩未计量，不能解释为真实模型免费 |
+
+为避免单轮偶然性，同一15条任务又连续运行5轮：**50/50正向任务成功、25/25危险任务正确失败，5轮质量门全部通过**；各轮P95依次为19、5、4、10、4ms，平均步骤稳定为8.33。它相当于本地确定性环境的`pass^5=100%`，但模型桩本身无采样随机性，因此主要证明编排/持久化/验证器回归稳定，不能代替真实LLM在temperature和网络波动下的多次运行。
+
+这套设计吸收了τ-bench的“任务必须在工具—用户—环境交互后按最终状态验收”思想，以及AgentDojo的“同时报告正常任务效用和攻击下安全性”思想。项目没有照搬它们的环境，而是映射到电商可程序验证状态：价格不能低于成本、退款必须属于用户、库存不得为负、高风险调价必须HITL。硬约束由数据库/DSL/状态机验证，不交给LLM Judge猜分；开放式话术以后再增加校准过的LLM Judge和人工抽检。
+
+下一版Agent高级评测应增加：同一任务重复5次的`pass^k`稳定性、多轮退款状态任务、工具选择/参数准确率、间接Prompt Injection、误拒率、模型/PROMPT版本配对、真实token/单位成功成本，以及串行单Agent/并行多Agent的质量—P95—成本消融。OpenTelemetry GenAI语义约定可用于统一`invoke_agent`、`plan`、`execute_tool`等span；其Agent约定仍处于发展状态，应集中映射，避免业务代码散落不稳定字段。
+
+参考：
+
+- τ-bench（ICLR 2025）：<https://openreview.net/pdf?id=roNSXZpUDN>
+- AgentDojo：<https://arxiv.org/abs/2406.13352>
+- OpenTelemetry Agent spans：<https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-agent-spans.md>
+
+#### 浏览器E2E与前端测试
+
+新增Playwright Chromium关键流程，采用web-first自动等待断言、CI重试和首次重试trace：
+
+- 买家登录→秒杀页→商品列表→商品详情→客服退款入口。
+- 商家登录→Agent质量评测页。
+
+本地实测：**2/2通过，总耗时1.8s**。第一次接入发现Vitest误收集`e2e/*.spec.ts`，已通过配置隔离两种runner；还发现直接点击后立即导航会与登录状态更新竞争，增加URL断言等待；详情页断言改为URL+“加入购物车”用户行为，避免依赖装饰文本。纯函数Vitest仍为**9/9通过**，typecheck和生产build通过。
+
+尚缺：退款工单真实创建/审核/到账的状态型E2E、秒杀再次购买后按钮禁用的隔离数据fixture、多视口/视觉回归、键盘与axe可访问性、网络失败/超时、组件级交互和前端性能预算。Playwright官方建议使用自动重试断言，并在CI失败时保留Trace：<https://playwright.dev/docs/best-practices>。
+
+#### 常规后端与安全测试矩阵
+
+本轮完整`mvn clean test`实测：**141 tests，0 failures，0 errors，7 skipped**。除单元/集成测试外，常规后端还应按下列矩阵管理：
+
+| 层级 | 当前证据 | 继续补强 |
+| --- | --- | --- |
+| 单元/领域 | 状态机、DSL、预算、退款、幂等 | property-based、mutation testing |
+| API/鉴权 | MockMvc、401/403、商家隔离、购物闭环 | OpenAPI契约、非法/边界输入参数化 |
+| 数据/集成 | H2迁移、MyBatis、补偿/对账 | Testcontainers MySQL/Redis/Kafka/Milvus |
+| 并发正确性 | 300并发/100库存无超卖；重复请求仅1单 | 真Redis Lua、Kafka重复/乱序、故障注入 |
+| 安全 | JWT、RBAC、租户隔离、依赖审计 | OWASP ASVS/WSTG映射、DAST、密钥扫描、SBOM |
+| 可观测 | health/prometheus、Agent trace/span | OpenTelemetry跨HTTP/Kafka/Agent链路 |
+
+OWASP ASVS提供可验证安全控制清单，WSTG覆盖配置、身份、鉴权、会话、输入、错误、业务逻辑、客户端和API测试；项目应以Level 1/关键Level 2建立追踪表，而不是声称“跑过扫描就安全”。参考：<https://owasp.org/www-project-application-security-verification-standard/>、<https://owasp.org/www-project-web-security-testing-guide/latest/>。
+
+#### 本地只读容量阶梯
+
+新增零依赖脚本`deploy/benchmarks/http_capacity.py`，登录并预热后对商品列表执行1/10/25/50/100并发，每阶300请求：
+
+原始机器可读报告保存在`docs/evaluation/local-capacity-2026-08-12.json`，便于复核表格而不是只相信人工转录。
+
+| 并发 | 请求 | 错误率 | 吞吐RPS | P50 | P95 | P99 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 300 | 0% | 75.83 | 15.39ms | 27.67ms | 29.67ms |
+| 10 | 300 | 0% | **1959.38** | 4.13ms | 8.74ms | 11.54ms |
+| 25 | 300 | 0% | 1951.07 | 7.09ms | 27.16ms | 62.08ms |
+| 50 | 300 | 0% | 1860.45 | 5.74ms | 15.09ms | 42.57ms |
+| 100 | 300 | 0% | 1768.75 | 5.53ms | 9.89ms | 16.56ms |
+
+环境：Windows本机、单Spring Boot进程、H2内存库、压测器与服务同机、读取20条商品页。它证明在这次短时本地样本中100并发无错误，并显示10并发后吞吐趋于平台；**不能据此宣称生产支持100并发或1959 RPS SLA**。单并发较慢与每请求urllib连接建立、JVM/客户端调度有关；总请求量较小也让百分位波动，正式报告需延长稳态时间、独立压测机并同步CPU/GC/DB指标。
+
+秒杀写路径仍应使用JMeter CLI在隔离环境执行阶梯/尖峰/浸泡测试，并以库存、唯一订单和补偿对账作为正确性门槛。JMeter官方明确建议负载测试用CLI而不是GUI，并可生成JTL和HTML报告：<https://jmeter.apache.org/usermanual/get-started>。

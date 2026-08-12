@@ -8,6 +8,8 @@ target/
 # Node / frontend
 node_modules/
 dist/
+playwright-report/
+test-results/
 web/dist/
 # Env & local
 .env

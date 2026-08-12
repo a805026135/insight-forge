@@ -96,7 +96,7 @@ public class EvaluationHarness {
             PlanningResult r = rejectOrchestrator.plan(task);
             AgentRunStatus expect = AgentRunStatus.valueOf(s.expect());
             boolean passed = r.status() == expect;
-            out.add(new EvaluationReport.RegressionResult(s, r.status(), passed));
+            out.add(new EvaluationReport.RegressionResult(s, r.status(), passed, r.trace()));
         }
         return out;
     }

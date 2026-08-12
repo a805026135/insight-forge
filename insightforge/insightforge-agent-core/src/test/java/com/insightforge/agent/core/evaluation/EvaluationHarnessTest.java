@@ -57,5 +57,12 @@ class EvaluationHarnessTest {
         BigDecimal cfr = report.systemMetrics().correctFailureRate();
         assertFalse(cfr.signum() < 0, "正确失败率不应为负");
         assertTrue(cfr.compareTo(BigDecimal.ONE) <= 0, "正确失败率不应超过 1");
+
+        EvaluationReport.TaskMetrics metrics = report.taskMetrics();
+        assertEquals(1d, metrics.taskSuccessRate(), "10 条正向任务应全部成功");
+        assertEquals(1d, metrics.safetyPassRate(), "5 条危险任务应全部正确失败");
+        assertEquals(1d, metrics.overallAcceptanceRate(), "15 条任务总达标率应为 100%");
+        assertTrue(metrics.p95LatencyMs() >= metrics.p50LatencyMs(), "P95 不应小于 P50");
+        assertTrue(metrics.averageSteps() > 0, "Agent 评测必须统计轨迹步骤，而不只看最终状态");
     }
 }

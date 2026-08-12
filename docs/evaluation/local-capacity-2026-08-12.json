@@ -1,0 +1,74 @@
+{
+  "target": "http://127.0.0.1:8093/api/catalog/products?page=1&size=20",
+  "method": "GET",
+  "requestsPerStep": 300,
+  "generatedAt": "2026-08-12T15:23:13+0800",
+  "steps": [
+    {
+      "concurrency": 1,
+      "requests": 300,
+      "successes": 300,
+      "errors": 0,
+      "errorRate": 0.0,
+      "durationSeconds": 3.956,
+      "throughputRps": 75.83,
+      "meanMs": 13.05,
+      "p50Ms": 15.39,
+      "p95Ms": 27.67,
+      "p99Ms": 29.67
+    },
+    {
+      "concurrency": 10,
+      "requests": 300,
+      "successes": 300,
+      "errors": 0,
+      "errorRate": 0.0,
+      "durationSeconds": 0.153,
+      "throughputRps": 1959.38,
+      "meanMs": 4.62,
+      "p50Ms": 4.13,
+      "p95Ms": 8.74,
+      "p99Ms": 11.54
+    },
+    {
+      "concurrency": 25,
+      "requests": 300,
+      "successes": 300,
+      "errors": 0,
+      "errorRate": 0.0,
+      "durationSeconds": 0.154,
+      "throughputRps": 1951.07,
+      "meanMs": 10.9,
+      "p50Ms": 7.09,
+      "p95Ms": 27.16,
+      "p99Ms": 62.08
+    },
+    {
+      "concurrency": 50,
+      "requests": 300,
+      "successes": 300,
+      "errors": 0,
+      "errorRate": 0.0,
+      "durationSeconds": 0.161,
+      "throughputRps": 1860.45,
+      "meanMs": 7.28,
+      "p50Ms": 5.74,
+      "p95Ms": 15.09,
+      "p99Ms": 42.57
+    },
+    {
+      "concurrency": 100,
+      "requests": 300,
+      "successes": 300,
+      "errors": 0,
+      "errorRate": 0.0,
+      "durationSeconds": 0.17,
+      "throughputRps": 1768.75,
+      "meanMs": 6.09,
+      "p50Ms": 5.53,
+      "p95Ms": 9.89,
+      "p99Ms": 16.56
+    }
+  ],
+  "scope": "single-process read-path capacity; not a production SLA or seckill write benchmark"
+}

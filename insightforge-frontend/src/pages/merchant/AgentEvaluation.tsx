@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { dashboardApi, AgentOpsSummary, RagEvaluationReport } from '../../api';
+import { dashboardApi, AgentEvaluationReport, AgentOpsSummary, RagEvaluationReport } from '../../api';
 
 export default function AgentEvaluation() {
   const [ops, setOps] = useState<AgentOpsSummary | null>(null);
   const [report, setReport] = useState<RagEvaluationReport | null>(null);
+  const [agentReport, setAgentReport] = useState<AgentEvaluationReport | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
   const [replaying, setReplaying] = useState(false);
@@ -12,7 +13,10 @@ export default function AgentEvaluation() {
   useEffect(() => { dashboardApi.agentOps().then(setOps).catch((e) => setError(e.message)); }, []);
   const run = async () => {
     setRunning(true); setError('');
-    try { setReport(await dashboardApi.runRagEvaluation()); }
+    try {
+      const [rag, agent] = await Promise.all([dashboardApi.runRagEvaluation(), dashboardApi.runAgentEvaluation()]);
+      setReport(rag); setAgentReport(agent);
+    }
     catch (e: any) { setError(e.message || '评测执行失败'); }
     finally { setRunning(false); }
   };
@@ -33,7 +37,7 @@ export default function AgentEvaluation() {
   return <div className="evaluation-page">
     <div className="page-head">
       <div><span className="section-eyebrow">AGENT QUALITY GATE</span><h2>Agent 评测与成本</h2></div>
-      <button className="btn btn-primary" disabled={running} onClick={run}>{running ? '评测运行中…' : '运行 40 条 RAG 评测'}</button>
+      <button className="btn btn-primary" disabled={running} onClick={run}>{running ? '评测运行中…' : '运行 RAG + Agent 任务评测'}</button>
     </div>
     {error && <div className="toast error">{error}</div>}
     {ops && <>
@@ -55,6 +59,16 @@ export default function AgentEvaluation() {
         </section>
       </div>
     </>}
+    {agentReport && <section className="eval-report">
+      <div className="eval-report-head"><div><h3>Agent 任务级评测</h3><p>10 条正向任务 + 5 条安全失败任务 · 轨迹级确定性验收</p></div><span className={`badge ${agentReport.gatePassed ? 'badge-live' : ''}`}>{agentReport.gatePassed ? '质量门通过' : '质量门失败'}</span></div>
+      <div className="metrics-grid">
+        <div className="metric-tile green"><div className="label">任务成功率</div><div className="value">{pct(agentReport.metrics.taskSuccessRate)}</div></div>
+        <div className="metric-tile purple"><div className="label">安全通过率</div><div className="value">{pct(agentReport.metrics.safetyPassRate)}</div></div>
+        <div className="metric-tile cyan"><div className="label">Agent P95</div><div className="value">{agentReport.metrics.p95LatencyMs}ms</div></div>
+        <div className="metric-tile amber"><div className="label">平均步骤</div><div className="value">{agentReport.metrics.averageSteps}</div></div>
+      </div>
+      <p className="hint">平均 token {agentReport.metrics.averageTokens} / 任务 · 平均成本 ${Number(agentReport.metrics.averageCostUsd).toFixed(6)}。本地桩为 0 表示未计量，不代表真实模型零成本。</p>
+    </section>}
     {report && <section className="eval-report">
       <div className="eval-report-head"><div><h3>RAG 离线评测结果</h3><p>{report.datasetVersion} · {report.totalCases} 条 · {report.embeddingProvider} / {report.vectorStore}</p></div><span className="badge badge-live">本次实测</span></div>
       <div className="metrics-grid">

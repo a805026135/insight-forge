@@ -1,10 +1,13 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 // 开发时把 /api 和 /ws 反向代理到后端（默认 8080），免去跨域配置。
 // 生产由 Nginx 统一反代（见 deploy/nginx/nginx.conf）。
 export default defineConfig({
   plugins: [react()],
+  test: {
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
+  },
   server: {
     port: 5173,
     proxy: {
