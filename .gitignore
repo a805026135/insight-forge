@@ -22,3 +22,6 @@ web/dist/
 
 # Surefire cross-drive temp dir (JDK21 sandbox fix)
 tmp/
+
+# 本机完整交接文档（含密钥/服务器密码，不提交）
+PROJECT-HANDOVER.md

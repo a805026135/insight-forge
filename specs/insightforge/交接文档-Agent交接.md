@@ -1,3 +1,4 @@
+> ✅ **本机完整版交接（含云服务器/域名/密钥/本地环境/踩坑记录）**：`C:\Users\z\Documents\ChatGPT\project11\insight-forge\PROJECT-HANDOVER.md`（已 gitignore ，不随仓库提交）。本文档为摘要版。
 # InsightForge（智析）项目交接文档
 
 > 写给接手此项目的另一个 Agent 或开发者。本文档覆盖所有你需要的上下文：项目是什么、代码在哪、环境怎么搭、怎么构建运行、哪些坑踩过了、当前真实状态如何。
