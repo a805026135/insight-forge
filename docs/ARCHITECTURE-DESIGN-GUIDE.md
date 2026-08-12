@@ -21,6 +21,7 @@
 - Java/Spring、安全、可观测、Docker：第十六章。
 - 容量、故障和从零建设：第十七～十九章。
 - 自测、连续拷问和回答模板：第二十～二十三章。
+- 完整质量证据、测试结果和待测项：第二十四章。
 
 第一次建议顺序阅读；面试前按技术专题复习“基础 → 项目优化 → 连续追问”。
 
@@ -1566,3 +1567,338 @@ SETNX可能过期、淘汰或故障丢失；唯一索引是永久业务事实的
 > 秒杀库存是少数key的瞬时并发写，要求不超卖且快速失败。MySQL条件更新保证最终正确，但全部请求直达热点行会耗尽连接和锁等待。因此我们把活动库存预热到Redis，用短Lua原子完成检查和扣减，用SETNX快速幂等、按用户+活动滑动窗口限流；订单仍通过Kafka异步落MySQL，并由orderId唯一索引和条件更新最终兜底。缓存侧还有Caffeine L1、空值哨兵、单飞和TTL抖动。Redis故障时限流降级DB或关闭活动。当前单Redis容器没有Sentinel/Cluster和fencing token，所以只能称演示级部署，生产还需高可用、hot key监控、hash tag和故障演练。
 
 能用这种结构回答MySQL、Kafka、RAG、Agent和部署问题，才算真正经得起项目拷问。
+
+## 二十四、完整测评体系：我们为什么测、怎样测、结果是什么
+
+架构设计回答“理论上为什么可行”，测评回答“当前实现有没有证据支持”。如果没有测试、评测和观测数据，Redis、Kafka、RAG、多Agent都只能算技术名词。
+
+本章数据口径：代码与本地测试结果截至 **2026-08-12**；RAG线上结果来自同日云端 Milvus真实配置。所有数字都带范围和局限，没有执行过的压测不会写成已经通过。
+
+### 1. 为什么不能只看一个“测试通过率”
+
+InsightForge同时有确定性代码、并发交易、前端状态、概率模型和外部中间件，不同风险需要不同证据：
+
+```mermaid
+flowchart TB
+    RISK[系统风险] --> CODE[代码回归]
+    RISK --> BIZ[业务不变量]
+    RISK --> AI[Agent / RAG 质量]
+    RISK --> PERF[性能与容量]
+    RISK --> SEC[安全与供应链]
+    RISK --> OPS[部署与故障恢复]
+    CODE --> UNIT[单元 / 集成 / 类型 / 构建]
+    BIZ --> INV[无超卖 / 幂等 / 状态机 / 隔离]
+    AI --> EVAL[召回 / 答案 / 拒答 / 轨迹]
+    PERF --> LAT[P95/P99 / QPS / Lag / Token / Cost]
+    SEC --> AUDIT[鉴权 / 越权 / npm audit]
+    OPS --> HEALTH[Health / 日志 / 回放 / 对账]
+```
+
+例如，141条后端测试全绿不能证明真实Milvus召回效果；Recall@4高不能证明退款事务正确；前端build成功不能证明用户点击退款真的创建工单；JMeter脚本存在也不能证明服务器承受过10万请求。
+
+### 2. 测评金字塔与发布门槛
+
+| 层级 | 运行频率 | 回答的问题 | 当前证据 |
+| --- | --- | --- | --- |
+| 静态检查 | 每次提交 | 类型、语法、依赖是否可构建 | Maven编译、TypeScript typecheck |
+| 单元测试 | 每次提交 | 单个规则、状态和算法是否正确 | Java 141条中的大部分；前端9条 |
+| 组件/集成测试 | 每次合并 | Spring、H2、Redis Lua、Drools、消费者能否协作 | API/Agent/规则测试；部分Redis测试跳过 |
+| 业务不变量 | 每次合并 | 是否超卖、重复建单、越权、非法状态 | NoOversell、Idempotency、Isolation、状态机测试 |
+| Agent离线评测 | Prompt/知识/模型变更 | 召回、答案、拒答是否回归 | 40条RAG数据集、失败回放 |
+| 构建与供应链 | 每次发布 | 前端能否生产构建、依赖是否有已知漏洞 | Vite build、npm audit |
+| 端到端/浏览器 | 每次发布 | 用户真实操作是否闭环 | 历史人工验收；本轮复验超时，自动E2E缺失 |
+| 性能/故障 | 重大版本/容量变化 | P95/P99、极限吞吐、积压和恢复 | 有JMeter计划；缺本轮实跑报告 |
+
+一个成熟发布门槛应是多维的：代码测试为零失败、关键业务不变量为零破坏、Agent安全错误为零、质量指标不低于基线、构建成功、严重供应链漏洞清零、性能SLO满足目标。不能让某一项高分抵消另一项安全红线。
+
+### 3. 后端自动化测试：141条真实结果
+
+执行方法：
+
+```powershell
+cd insightforge
+mvn clean test
+```
+
+本次结果：Maven `BUILD SUCCESS`，**141 tests、0 failures、0 errors、7 skipped**。模块拆分：
+
+| 模块 | 测试数 | Failures | Errors | Skipped | Surefire用例耗时合计 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| agent-core | 46 | 0 | 0 | 0 | 5.438s |
+| api | 62 | 0 | 0 | 7 | 12.273s |
+| rule-engine | 30 | 0 | 0 | 0 | 4.315s |
+| seckill-core | 3 | 0 | 0 | 0 | 1.262s |
+| 合计 | 141 | 0 | 0 | 7 | 23.288s |
+
+这里的用例耗时是各XML testsuite记录之和，不等于Maven完整墙钟时间；完整构建还包含编译、启动测试上下文等，本轮墙钟约40秒。
+
+#### 后端主要测了什么
+
+交易与并发：
+
+- `SeckillNoOversellTest`：并发请求后库存不能为负。
+- `SeckillIdempotencyTest`：相同业务键重复请求不能重复扣减/建单。
+- `SeckillRedisLuaTest`：Lua扣减返回语义与原子路径。
+- `SeckillRateLimitTest`：入口滑动窗口放行/拒绝。
+- `OrderCreatedConsumerStatusTest`：Kafka消费者幂等建单与状态。
+- `OrderCompensationTaskTest`：预扣未落库的补偿巡检。
+- `ReconcileRedisCrossCheckTest`：Redis、DB和订单销量交叉对账。
+- `ActivityStateMachineTest`：活动非法状态迁移被拒绝。
+
+商城与售后：
+
+- `ShoppingFlowTest`：购物车、结算和订单主链路。
+- `AfterSaleFlowTest`：申请、审核、驳回/申诉、退款状态。
+- `SupportTicketFlowTest`：专属客服与人工工单。
+- `PaymentTokenServiceTest`：支付令牌一次性消费、过期和错误订单校验。
+- `AuthFlowTest`：登录、角色和认证流程。
+
+Agent/RAG/规则：
+
+- `KnowledgeBaseServiceTest`、`TextChunkerTest`、`LocalLexicalEmbeddingProviderTest`：知识切块、检索和本地兜底。
+- `MerchantIsolationTest`：商家知识不能跨租户召回。
+- `DslCompilerTest`、`DslToDroolsTranslatorTest`：非法DSL Fail-Close和规则翻译。
+- `MultiAgentOrchestratorTest/RejectTest`：多Agent成功与正确拒绝。
+- `AgentRuntimeBudgetTest`、`BudgetGateTest`：步骤/token/成本预算。
+- `CheckpointPauseResumeTest`、`InterruptGateTest`：暂停、恢复、取消。
+- `EvaluationHarnessTest`、`GoldenEvalHarnessTest`：golden/失败样本回归与评测门槛。
+- `ControlInstructionExecutorTest`、`SalesTickConsumerTest`：规则指令与销量事件闭环。
+
+#### 这些测试的意义
+
+普通CRUD测试主要防代码回归；NoOversell、Idempotency、Isolation和状态机测试保护的是业务不变量，即使未来替换Redis/Kafka实现也不能破坏。Agent拒绝测试证明“应该拒绝时拒绝”也属于正确结果。对账和补偿测试处理的是异步系统无法由单次事务覆盖的故障窗口。
+
+#### 后端测试的局限
+
+- 7条跳过项不能当通过：其中3条是Redis滑动窗口用例，4条是Redis Lua用例（包括300线程抢100库存）。本轮测试环境没有启用真实Redis集成条件，所以明确记录为未执行。
+- H2测试不能完全代表MySQL锁、索引和SQL方言。
+- Mock Kafka/Redis测试不能替代真实broker和故障切换。
+- 当前没有JaCoCo覆盖率报告；测试数量不等于覆盖率和断言质量。
+- 真实并发规模、GC、连接池和consumer lag需要独立压测。
+
+### 4. 前端测评：从“能编译”补到业务规则回归
+
+执行方法：
+
+```powershell
+cd insightforge-frontend
+npm run test
+npm run typecheck
+npm run build
+```
+
+本次结果：
+
+- Vitest：**1个测试文件、9条测试全部通过**，测试执行约3ms，完整Vitest运行约0.44s。
+- TypeScript：`tsc --noEmit`通过。
+- Vite生产构建：通过，转换2168个模块，约4.92s。
+- 主Dashboard chunk：约**1,056.26KB**，gzip约**351.42KB**，超过500KB警告线。
+
+新增的9条测试覆盖：
+
+- 只把当前活动的历史订单识别为已购买SKU。
+- “已购买”优先于加载、售罄和未开抢，按钮必须禁用。
+- 抢购中、售罄、未开抢、立即抢购文案的优先级。
+- 折扣计算的有效/无效边界。
+- 退款成功后只移除对应订单草稿，防止重复点击。
+- HTTP成功但业务code失败不能展示成“退款已提交”。
+
+这些用例直接对应真实缺陷：限购后仍可点击、退款聊天文本与真实事务混淆。我们把页面中的纯业务规则抽成函数测试，但后端仍是最终鉴权、状态和幂等边界。
+
+#### 为什么还要typecheck和build
+
+单元测试只执行被导入的逻辑，不能发现所有组件的类型连接和生产打包问题。本轮第一次测试后，typecheck实际发现“导入函数与React state同名”的遮蔽错误；修复后测试、typecheck、build才全部通过。这证明三道门互补。
+
+#### 前端性能与供应链结果
+
+Dashboard chunk过大可能增加首屏下载、解析和执行时间。下一步应拆ECharts/商家大屏为动态import或manual chunks，并使用浏览器Lighthouse/Web Vitals重新测LCP、INP、CLS；当前没有这些真实结果，不能声称前端性能优秀。
+
+`npm audit`结果：
+
+- 初始4项：2 moderate、1 high、1 critical。
+- Vitest从3.2.4升级到3.2.6后，critical已清除。
+- 生产依赖剩余 **1个moderate**：ECharts `<6.1.0` XSS公告，需要升级ECharts 6并回归图表。
+- 完整依赖仍有 **1个high + 2个moderate**：其中Vite/esbuild主要影响开发服务器，需要Vite主版本升级和兼容验证。
+
+没有执行 `npm audit fix --force`，因为强制主版本升级可能破坏构建。正确做法是建立升级分支、阅读迁移说明、测试图表和构建后再合并。生产由Nginx提供静态文件，不运行Vite开发服务器，这降低Vite漏洞的线上暴露，但不等于可以忽略开发供应链风险。
+
+#### 前端仍缺什么
+
+- 没有React组件级交互测试和可访问性测试。
+- 没有Playwright/Cypress自动E2E。
+- 本轮线上浏览器复验连接超时，不能记为通过。
+- 需要固定买家/商家E2E：登录→商品→秒杀限购→订单→客服退款→商家审核→状态同步。
+- 需要视觉回归和多视口布局测试，防止中文乱码和布局退化再次出现。
+
+### 5. Agent/RAG离线评测：40条云端真实结果
+
+数据集：`rag-cn-commerce-v1.0`，共40条；覆盖35条可回答和5条应拒答样本。Embedding为DashScope `qwen3.7-text-embedding`，向量库为Milvus，Top-K=4。
+
+执行入口：商家端Agent评测页或：
+
+```text
+POST /api/dashboard/rag-evaluation/run
+```
+
+每条样本包含：问题、merchantId、类别、是否可回答、期望docKey和关键事实。运行时先做安全门槛与意图路由，再带商家过滤检索Top-4；用期望文档和关键事实覆盖做确定性判分，并记录单条检索延迟。
+
+| 指标 | 初始基线 | 路由+安全门槛后 | 当前结果说明 |
+| --- | ---: | ---: | --- |
+| Recall@4 | 85.71% | **97.14%** | 35条可回答中期望文档进入Top-4的比例 |
+| 答案正确率 | 68.57% | **88.57%** | 命中文档且上下文覆盖全部标注关键事实 |
+| 拒答准确率 | 20.00% | **100.00%** | 5条秘密/越权/未知/绕审批样本均Fail-Close |
+| 检索P95 | 632ms | **617ms** | 40条检索耗时的第95百分位，不含完整LLM生成 |
+
+优化的意义：初始通用向量搜索会把发票问题命中错误FAQ，也会让敏感问题被低相关知识“勉强支持”。加入业务意图路由缩小来源空间，加入安全门槛让秘密、跨商家、未知实时事实和绕审批请求不进入生成。
+
+当前仍有4条失败：1条FAQ召回失败，3条虽然命中文档但关键事实没有落入返回chunk。它们没有从数据集删除，而是成为下一轮结构切块、parent-child上下文或reranker实验的回归样本。
+
+#### 这些指标为什么有意义
+
+- Recall@4低：生成模型根本看不到正确证据，Prompt再好也难回答。
+- 答案正确率低但Recall高：可能是chunk事实覆盖、排序或生成忠实性问题。
+- 拒答准确率：验证安全边界和正确失败，但还必须增加误拒率防止“全部拒答”。
+- P95：约束尾延迟；平均值会掩盖少数很慢请求。
+
+#### 当前评测的局限
+
+- 40条足够建立工程闭环，不足以代表生产长尾。
+- 当前“答案正确”判的是检索上下文事实覆盖，不是完整自然语言回答质量。
+- 5条拒答样本过少，需要扩展prompt injection、编码绕过和跨租户变体。
+- 617ms仅为检索P95，不是完整Agent端到端延迟，也不是并发SLA。
+- 数据集参与过调优，下一步要建立未参与调参的隐藏保留集。
+
+### 6. Agent轨迹、Token、成本和延迟观测
+
+为什么需要：模型调用按token计费，长上下文、多Agent和重试会放大成本；平均成本低也可能有少数异常高费用。延迟要区分检索、首token、完整回答和完整任务。没有trace关联版本，就无法解释某次成本/错误来自哪个Prompt、模型或知识版本。
+
+系统已经记录：
+
+- trace级：状态、正确失败类型、modelVersion、promptVersion、总budgetTokens、预估costUsd、totalLatencyMs、HITL结果和终止原因。
+- span级：角色/步骤、工具、tokenIn、tokenOut、latencyMs、retryCount、状态和置信度。
+- 聚合接口：trace/span数量、输入/输出token总量、总/平均美元成本、trace P95、Prompt/模型/KB版本分布和失败回放候选。
+
+```text
+GET /api/dashboard/agent-ops
+```
+
+#### 正确统计口径
+
+如果把一次trace定义为一个用户问题/Agent任务：
+
+```text
+平均输入 token / trace = Σ span.tokenIn / trace数
+平均输出 token / trace = Σ span.tokenOut / trace数
+平均总 token / trace = (Σ tokenIn + Σ tokenOut) / trace数
+平均成本 / trace = Σ trace.costUsd / trace数
+P95任务延迟 = trace.totalLatencyMs排序后的95%分位
+```
+
+必须注意：多Agent一次trace包含多个模型span，因此“每个问题平均token”不能用单次模型调用token代替；客服简单问题和商家规划也不应混在一个平均值里。生产应按scene/model/prompt/status分组，并同时报告median/P95和单位成功任务成本。
+
+#### 当前真实数值状态
+
+本轮尝试从云端 `agent-ops`只读导出聚合值，但由于需要将演示管理员凭据发送到公网并读取运营数据，安全策略未获得该具体授权，因此**本文不填伪造或本地桩的token/成本数字**。仓库已有完整采集与计算实现，但“具备观测能力”不等于“已有经授权导出的当前生产结果”。
+
+目前可以确认的延迟数字只有RAG检索P95 **617ms**；它不能代表完整问题回答。要补全真实表格，应在明确授权后导出：统计时间窗、trace数、成功/正确失败/失败分布、场景、输入/输出token均值与P95、成本均值/P95、端到端延迟P50/P95/P99。
+
+这项缺失本身有面试价值：我们拒绝把估算价格、种子trace或单次调用冒充生产平均值。正确的数据报告必须带时间窗、样本量、场景和版本。
+
+#### 本地确定性 Agent 开发基线
+
+为了验证观测链路和端到端编排，本轮在 H2、本地确定性模型、本地词法Embedding环境执行5个固定运营任务：保守调价、库存调拨、成本检查、销量提升和风险护栏。
+
+结果：**5/5 SUCCESS、5 traces、35 spans、trace P95=22ms**；HTTP墙钟耗时依次为82ms（首次请求）、11ms、9ms、9ms、8ms。首请求包含Dispatcher等一次性初始化，因此明显高于后续请求。
+
+本地聚合的input/output token和cost均为0。这不表示“一个问题真的消耗0 token”，而表示确定性桩没有调用真实分词/计费模型，当前span没有可计量token。将0当真实模型均值会严重误导，因此它只验证状态、版本、span和延迟聚合管道，不参与云端成本结论。
+
+这次基准还发现本地关闭DeepSeek后trace版本仍可能继承`deepseek-chat`默认名，已在local profile覆盖为`local-deterministic-stub`，防止将桩运行误归因到真实模型。
+
+### 7. Agent运行时与规则执行测试
+
+除了40条RAG问答，Agent还需要评估“执行过程是否正确”：
+
+- Budget/步骤门槛：超过token、成本、重试或步骤上限应停止。
+- 正确失败：ASK/REFUSE/ESCALATE不应计为普通系统失败。
+- 工具schema：错误字段、越权参数和未知工具被拒绝。
+- DSL Fail-Close：低于成本、负调拨或非法动作不能发布。
+- HITL：高风险策略未批准不能执行，拒绝后状态可追踪。
+- 暂停/恢复/取消：长任务能在检查点安全终止或继续。
+- 失败回放：历史失败在新版本下重跑，写操作必须dry-run/隔离。
+- Drools/Worker：销售事件能匹配规则并产生确定指令，异常不阻塞交易热路径。
+
+这些能力由agent-core和rule-engine的76条测试（46+30）提供代码级回归。它们的意义是防止“RAG回答正确但Agent工具越权”这种只看答案指标无法发现的问题。
+
+下一步应增加轨迹级量化：tool selection accuracy、argument accuracy、平均步骤、重试率、HITL率、unsafe action=0，以及单Agent/多Agent/Workflow的质量-成本对照。
+
+### 8. 秒杀并发与性能测评
+
+当前自动化测试证明“在测试并发下库存不为负、重复请求幂等”，但不能回答生产吞吐极限。仓库有JMeter计划：**2,000线程、300秒ramp-up、每线程50次**，理论请求计划为10万次，目标接口 `/api/seckill`。
+
+这只是测试计划，不是结果。本轮没有在隔离压测环境执行，因此不能写“10万请求成功”或“P99<10ms”。不能直接压公网演示服务器，因为会改变订单/库存、产生外部负载并影响其他用户。
+
+正式压测至少要报告：
+
+- 环境：CPU/内存、JVM、MySQL/Redis/Kafka拓扑、分区、副本、数据规模。
+- 负载：并发、到达率、ramp-up、持续时间、用户/活动/SKU分布。
+- 性能：吞吐、P50/P95/P99、系统错误率、业务售罄/限流比例。
+- 资源：API CPU/GC/线程池、DB连接/慢SQL、Redis延迟、Kafka producer/consumer lag。
+- 正确性：库存不为负、唯一订单、初始库存 = 剩余 + 有效销量 ± 合法补偿。
+- 恢复：压测后积压清零时间、补偿完成时间和数据对账。
+
+建议分阶段：单接口基线 → Redis热点 → Kafka/DB端到端 → 重复请求 → 多SKU → Redis/Kafka故障注入。目标不是把QPS数字做大，而是找出第一个饱和点和正确降级行为。
+
+### 9. 端到端业务验收
+
+端到端测试验证组件连接后用户是否真的完成目标。至少需要两套：
+
+买家链路：登录 → 商品详情 → 加购/下单 → 支付 → 物流 → 确认收货 → 评价；秒杀成功后再次进入应显示“您已购买过”且按钮禁用；专属客服生成退款草稿，用户确认后必须出现真实售后工单。
+
+商家链路：登录 → 商品/活动 → Agent建议 → HITL → 规则执行 → 订单价格快照；售后审核/驳回 → 买家申诉 → 复核退款；Agent评测页显示版本、指标和失败回放。
+
+仓库交接记录曾有浏览器人工验收，但本轮自动浏览器连接云端超时，没有取得新的可复现报告。因此当前状态应写为：**功能曾人工验证，自动E2E质量门尚未建立，本轮线上复验未完成**。
+
+下一步最值得补的是Playwright：为种子账号准备隔离数据，每次测试重置/创建独立订单，断言UI与API/DB状态，而不是只断言出现成功toast。退款E2E必须检查售后列表中的真实工单ID。
+
+### 10. 测试结果总表：通过、警告和未测
+
+| 领域 | 当前结果 | 状态 | 能证明 | 不能证明 |
+| --- | --- | --- | --- | --- |
+| Java后端 | 141，0 failure/error，7 skipped | 通过/有跳过 | 代码与关键业务回归 | 生产规模与真实集群高可用 |
+| 前端业务规则 | 9/9通过 | 通过 | 限购、按钮、折扣、退款结果处理 | 完整React DOM/E2E |
+| 前端类型/构建 | typecheck、build通过 | 通过/有警告 | 类型连接和生产可打包 | 浏览器性能与视觉正确 |
+| 前端bundle | Dashboard 1.06MB，gzip351KB | 警告 | 发现拆包优化目标 | 尚无Web Vitals |
+| npm生产依赖 | 1 moderate ECharts XSS | 未达安全门槛 | 已知供应链风险可追踪 | 尚未升级回归 |
+| RAG 40条 | 97.14%/88.57%/100%/617ms | 有基线/4条失败 | 当前数据集检索与安全门槛 | 完整生成、长尾和并发SLA |
+| Agent token/成本 | 云端采集已实现；本地桩5任务为0（未计量） | 缺真实模型授权导出 | 管道、口径和本地延迟可验证 | 无可披露真实模型平均token/成本 |
+| Agent运行时 | Agent+规则76条测试 | 通过 | 预算、拒绝、DSL、执行回归 | 大模型漂移和线上业务收益 |
+| 秒杀 | 并发不超卖/幂等测试通过 | 代码级通过 | 关键不变量 | 10万请求性能数字 |
+| JMeter | 2000×50计划 | 未执行 | 压测模型已准备 | 不是性能结果 |
+| 浏览器E2E | 本轮连接超时 | 未通过 | 暴露自动验收缺口 | 不能声称本轮线上全流程通过 |
+
+### 11. 为什么保留失败和未测项
+
+面试官真正关注的不只是“你有多少绿色数字”，而是你是否知道数字边界。保留4条RAG失败能驱动切块优化；报告bundle警告能驱动前端拆包；报告ECharts漏洞能驱动依赖升级；承认JMeter未跑能避免虚假性能声明；不伪造token均值体现观测工程的严谨性。
+
+一个可信项目应该做到：每个架构卖点都有对应证据，每个数字都有样本量和口径，每个失败都有归因和下一步，每个未测项都不会被包装成已完成。
+
+### 12. 下一轮测评优先级
+
+P0（发布前）：
+
+1. 升级ECharts并回归全部图表，清除生产依赖已知漏洞。
+2. 建立买家退款与秒杀限购Playwright E2E，断言真实工单/订单状态。
+3. 在获得明确授权后导出分场景Agent token、成本、P50/P95/P99。
+
+P1（面试作品增强）：
+
+1. 扩RAG到100～200条，增加隐藏集、误拒率、prompt injection和工具轨迹指标。
+2. 做BM25+向量、reranker、切块策略的消融实验，比较质量/P95/token。
+3. 在隔离环境执行JMeter并生成HTML报告、资源曲线和对账SQL结果。
+4. 接入JaCoCo和前端coverage，但以关键路径/变异测试解释覆盖率，不追求空洞百分比。
+
+P2（生产化）：
+
+1. Redis/Kafka故障注入、恢复时间和数据补偿SLA。
+2. OpenTelemetry统一HTTP/Kafka/Agent trace，建立SLO和错误预算。
+3. 真实业务A/B，把Agent策略版本关联到GMV、毛利、退款解决率和人工接管率。

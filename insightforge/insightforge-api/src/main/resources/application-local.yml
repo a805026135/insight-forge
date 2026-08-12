@@ -40,3 +40,8 @@ management:
 logging:
   level:
     com.insightforge: INFO
+
+# 本地 profile 不调用真实 DeepSeek；trace 必须明确标识为确定性桩，避免版本归因误导。
+insightforge:
+  agent:
+    model-version: local-deterministic-stub

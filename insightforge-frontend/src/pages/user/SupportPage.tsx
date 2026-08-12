@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { marked } from 'marked';
 import { Modal, Input } from 'antd';
 import { getToken } from '../../auth/token';
+import { removeSubmittedRefundDraft, unwrapApiResult } from '../../domain/commerceRules';
 
 interface ChatMsg {
   role: 'user' | 'assistant';
@@ -310,12 +311,12 @@ export default function SupportPage() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify({ orderId: d.orderId, reason: d.reason }),
       }).then((res) => res.json());
-      if (r.code !== 0) throw new Error(r.message);
-      setMsg(`✔ 退款申请已提交（工单 #${r.data.id}），状态：待审核`);
+      const submitted = unwrapApiResult<{ id: number }>(r);
+      setMsg(`✔ 退款申请已提交（工单 #${submitted.id}），状态：待审核`);
       setRefundTarget(null);
       setMessages((prev) => prev.map((m) => ({
         ...m,
-        drafts: m.drafts?.filter((draft) => draft.orderId !== d.orderId),
+        drafts: removeSubmittedRefundDraft(m.drafts, d.orderId),
       })));
       loadAfterSales();
     } catch (e: any) {

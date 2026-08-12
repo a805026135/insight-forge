@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { seckillApi, dashboardApi, activityApi, orderApi, SkuView, ActivityView } from '../../api';
+import { collectPurchasedSkuIds, discountPercent, isSeckillDisabled, seckillButtonLabel } from '../../domain/commerceRules';
 
 export default function SeckillPage() {
   const { user } = useAuth();
@@ -44,11 +45,7 @@ export default function SeckillPage() {
   useEffect(() => {
     if (!user) return;
     orderApi.list(user.id)
-      .then((orders) => setPurchasedSkuIds(new Set(
-        orders
-          .filter((o) => o.activityId === activeId && o.activitySkuId != null)
-          .map((o) => Number(o.activitySkuId)),
-      )))
+      .then((orders) => setPurchasedSkuIds(collectPurchasedSkuIds(orders, activeId)))
       .catch(() => setPurchasedSkuIds(new Set()));
   }, [user, activeId]);
 
@@ -85,10 +82,7 @@ export default function SeckillPage() {
     }
   };
 
-  const discount = (p: SkuView) =>
-    p.marketPrice != null && p.marketPrice > 0 && p.seckillPrice < p.marketPrice
-      ? Math.round((1 - p.seckillPrice / p.marketPrice) * 100)
-      : 0;
+  const discount = (p: SkuView) => discountPercent(p.marketPrice, p.seckillPrice);
 
   return (
     <div className="seckill-page">
@@ -159,19 +153,11 @@ export default function SeckillPage() {
               </div>
               <button
                 onClick={() => handleSeckill(p)}
-                disabled={
-                  purchased || loading === p.activitySkuId || p.stock <= 0 || activeActivity?.status !== 'LIVE'
-                }
+                disabled={isSeckillDisabled({ purchased, loading: loading === p.activitySkuId,
+                  stock: p.stock, live: activeActivity?.status === 'LIVE' })}
               >
-                {purchased
-                  ? '您已购买过'
-                  : loading === p.activitySkuId
-                  ? '抢购中...'
-                  : p.stock <= 0
-                  ? '已售罄'
-                  : activeActivity?.status === 'LIVE'
-                  ? '立即抢购'
-                  : '未开抢'}
+                {seckillButtonLabel({ purchased, loading: loading === p.activitySkuId,
+                  stock: p.stock, live: activeActivity?.status === 'LIVE' })}
               </button>
               {purchased && <p className="purchase-limit-tip">同一活动同一商品每位用户限购 1 单</p>}
             </div>
