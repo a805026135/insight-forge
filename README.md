@@ -7,8 +7,9 @@
 ## 第一次来这里，从这三份文档开始
 
 1. [零基础搭建与验收](docs/SETUP-GUIDE.md)：从安装 Git/JDK/Node/Docker，到本地启动、登录、接口验证、完整 Docker 部署和排错。
-2. [项目学习路线](docs/LEARNING-PATH.md)：按“先跑通、再读懂、最后能改”的顺序学习代码，每阶段都有练习和验收标准。
-3. [面试题与回答](docs/INTERVIEW-QA.md)：项目介绍、Agent/RAG、高并发、工程化追问，以及不能夸大的边界。
+2. [架构设计与技术选型](docs/ARCHITECTURE-DESIGN-GUIDE.md)：不讲具体代码，从业务约束出发解释为什么需要 Redis、Kafka、RAG、规则引擎，以及为什么暂不使用 GraphRAG。
+3. [项目学习路线](docs/LEARNING-PATH.md)：按“先跑通、再读懂、最后能改”的顺序学习代码，每阶段都有练习和验收标准。
+4. [面试题与回答](docs/INTERVIEW-QA.md)：项目介绍、Agent/RAG、高并发、工程化追问，以及不能夸大的边界。
 
 已有的 40 条评测和三个完整案例在这里：
 
