@@ -7,6 +7,7 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.api.OpenAiApi;
@@ -84,6 +85,15 @@ public class DeepSeekModelClient implements ModelClient {
 
         String text = resp.getResult().getOutput().getText();
         int tokenOut = LocalDeterministicModelClient.estimateTokens(text);
+        // DeepSeek/OpenAI 返回 usage 时使用真实 prompt/completion token；只有 provider 未返回 usage 才估算。
+        // 这样 Trace、BudgetGate 和评测页不会把真实模型调用误报为 0 token。
+        Usage usage = resp.getMetadata() == null ? null : resp.getMetadata().getUsage();
+        if (usage != null) {
+            Long prompt = usage.getPromptTokens();
+            Long completion = usage.getCompletionTokens();
+            if (prompt != null && prompt >= 0) tokenIn = Math.toIntExact(prompt);
+            if (completion != null && completion >= 0) tokenOut = Math.toIntExact(completion);
+        }
 
         // 解析工具调用约定块
         Matcher mt = TOOL_CALL.matcher(text);
