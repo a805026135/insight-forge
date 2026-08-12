@@ -23,6 +23,9 @@ public class KnowledgeBaseProperties {
     /** 命中置信度阈值：低于该相似度视为不可靠，不算命中（防幻觉第 5 道防线） */
     private double minScore = 0.1;
 
+    /** 向量 + 轻量词法召回后用 RRF 融合；可关闭以复现实验基线或快速回滚。 */
+    private boolean hybridEnabled = true;
+
     /** 启动时自动入库平台手册/FAQ/商品/决策 */
     private boolean seedOnStartup = true;
 
@@ -64,6 +67,14 @@ public class KnowledgeBaseProperties {
 
     public void setMinScore(double minScore) {
         this.minScore = minScore;
+    }
+
+    public boolean isHybridEnabled() {
+        return hybridEnabled;
+    }
+
+    public void setHybridEnabled(boolean hybridEnabled) {
+        this.hybridEnabled = hybridEnabled;
     }
 
     public boolean isSeedOnStartup() {

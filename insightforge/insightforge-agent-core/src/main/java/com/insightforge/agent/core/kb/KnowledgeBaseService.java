@@ -18,8 +18,12 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 商家知识库（RAG 核心，Phase 19 / Milvus）。
@@ -158,6 +162,13 @@ public class KnowledgeBaseService {
      * 商家隔离在 Java 侧强制执行。
      */
     public List<KbSearchHit> search(long merchantId, String query, int topK, String sourceType) {
+        return properties.isHybridEnabled()
+                ? searchHybrid(merchantId, query, topK, sourceType)
+                : searchDense(merchantId, query, topK, sourceType);
+    }
+
+    /** 仅稠密向量检索，保留为消融实验基线和混合检索的第一路召回。 */
+    public List<KbSearchHit> searchDense(long merchantId, String query, int topK, String sourceType) {
         if (!properties.isEnabled() || query == null || query.isBlank() || topK <= 0) {
             return List.of();
         }
@@ -182,6 +193,78 @@ public class KnowledgeBaseService {
             hits.putIfAbsent(d.getId(), toHit(d));
         }
         return List.copyOf(hits.values());
+    }
+
+    /**
+     * 轻量混合检索：向量召回负责语义近似，字符二元组/精确词召回负责型号、数字和专有名词，
+     * 最后用 RRF 融合两个排名。当前知识库规模小，词法候选直接来自切块表；数据量增长后应把
+     * 词法通道替换为 Elasticsearch/OpenSearch BM25，RRF 接口和评测口径无需变化。
+     */
+    public List<KbSearchHit> searchHybrid(long merchantId, String query, int topK, String sourceType) {
+        if (!properties.isEnabled() || query == null || query.isBlank() || topK <= 0) {
+            return List.of();
+        }
+        int candidateK = Math.max(24, topK * 8);
+        List<KbSearchHit> dense = searchDense(merchantId, query, candidateK, sourceType);
+        List<KbSearchHit> lexical = lexicalCandidates(merchantId, query, candidateK, sourceType);
+
+        Map<String, Double> rrf = new HashMap<>();
+        Map<String, KbSearchHit> byKey = new LinkedHashMap<>();
+        addRrfRanking(dense, rrf, byKey);
+        addRrfRanking(lexical, rrf, byKey);
+        return byKey.entrySet().stream()
+                .sorted((a, b) -> Double.compare(rrf.get(b.getKey()), rrf.get(a.getKey())))
+                .limit(topK)
+                .map(e -> {
+                    KbSearchHit h = e.getValue();
+                    return new KbSearchHit(h.docKey(), h.title(), h.content(), h.sourceType(), rrf.get(e.getKey()));
+                })
+                .toList();
+    }
+
+    private List<KbSearchHit> lexicalCandidates(long merchantId, String query, int limit, String sourceType) {
+        Set<String> queryTerms = lexicalTerms(query);
+        if (queryTerms.isEmpty()) return List.of();
+        return chunkMapper.selectList(new QueryWrapper<AgentKbChunk>()
+                        .and(w -> w.isNull("merchant_id").or().eq("merchant_id", 0L)
+                                .or().eq("merchant_id", merchantId)))
+                .stream()
+                .filter(c -> sourceType == null || sourceType.isBlank() || sourceType.equals(c.getSourceType()))
+                .map(c -> Map.entry(c, lexicalScore(queryTerms, c.getTitle() + " " + c.getContent())))
+                .filter(e -> e.getValue() > 0d)
+                .sorted((a, b) -> Double.compare(b.getValue(), a.getValue()))
+                .limit(limit)
+                .map(e -> new KbSearchHit(e.getKey().getDocKey(), e.getKey().getTitle(),
+                        e.getKey().getContent(), e.getKey().getSourceType(), e.getValue()))
+                .toList();
+    }
+
+    private double lexicalScore(Set<String> queryTerms, String candidate) {
+        Set<String> candidateTerms = lexicalTerms(candidate);
+        long overlap = queryTerms.stream().filter(candidateTerms::contains).count();
+        return overlap == 0 ? 0d : overlap / Math.sqrt((double) queryTerms.size() * candidateTerms.size());
+    }
+
+    private Set<String> lexicalTerms(String text) {
+        String normalized = text == null ? "" : text.toLowerCase(Locale.ROOT)
+                .replaceAll("[^\\p{IsHan}a-z0-9]+", " ").trim();
+        Set<String> terms = new HashSet<>();
+        for (String part : normalized.split("\\s+")) {
+            if (part.isBlank()) continue;
+            terms.add(part);
+            for (int i = 0; i + 2 <= part.length(); i++) terms.add(part.substring(i, i + 2));
+        }
+        return terms;
+    }
+
+    private void addRrfRanking(List<KbSearchHit> ranking, Map<String, Double> scores,
+                               Map<String, KbSearchHit> hits) {
+        for (int i = 0; i < ranking.size(); i++) {
+            KbSearchHit hit = ranking.get(i);
+            String key = hit.docKey() + "\u0000" + hit.content();
+            hits.putIfAbsent(key, hit);
+            scores.merge(key, 1d / (60d + i + 1), Double::sum);
+        }
     }
 
     private List<Document> fetchCandidates(String query, int fetchK) {

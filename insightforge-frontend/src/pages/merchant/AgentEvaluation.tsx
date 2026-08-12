@@ -63,6 +63,7 @@ export default function AgentEvaluation() {
         <div className="metric-tile purple"><div className="label">拒答准确率</div><div className="value">{pct(report.refusalAccuracy)}</div></div>
         <div className="metric-tile amber"><div className="label">检索 P95</div><div className="value">{report.p95LatencyMs}ms</div></div>
       </div>
+      {report.variants?.length > 0 && <div className="order-table-wrap"><table className="data-table"><thead><tr><th>消融方案</th><th>Recall@4</th><th>答案正确率</th><th>拒答准确率</th><th>P95</th></tr></thead><tbody>{report.variants.map(v => <tr key={v.variant}><td>{v.variant}</td><td>{pct(v.recallAt4)}</td><td>{pct(v.answerAccuracy)}</td><td>{pct(v.refusalAccuracy)}</td><td>{v.p95LatencyMs}ms</td></tr>)}</tbody></table></div>}
       <div className="category-bars">{Object.entries(report.categories).map(([name,m]) => <div key={name}><span>{name}</span><div><i style={{width:pct(m.passRate)}} /></div><b>{pct(m.passRate)}</b></div>)}</div>
       <details><summary>查看逐条结果</summary><div className="order-table-wrap"><table className="data-table"><thead><tr><th>ID</th><th>类别</th><th>问题</th><th>命中文档</th><th>延迟</th><th>结果</th></tr></thead><tbody>{report.cases.map(c => <tr key={c.id}><td>{c.id}</td><td>{c.category}</td><td>{c.question}</td><td>{c.retrievedDocKeys.join(', ') || '拒答'}</td><td>{c.latencyMs}ms</td><td>{c.answerable ? (c.retrievedExpected && c.keywordsCovered ? '通过' : '失败') : (c.refused ? '正确拒答' : '误答')}</td></tr>)}</tbody></table></div></details>
     </section>}

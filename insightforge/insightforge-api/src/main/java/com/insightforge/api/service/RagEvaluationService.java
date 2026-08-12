@@ -25,6 +25,20 @@ public class RagEvaluationService {
 
     public Report run() throws Exception {
         List<RagEvalDataset.Item> dataset = RagEvalDataset.load();
+        List<VariantReport> variants = List.of(
+                evaluate(dataset, "A_DENSE_ONLY", false, false, false),
+                evaluate(dataset, "B_DENSE_ROUTE", true, false, false),
+                evaluate(dataset, "C_DENSE_ROUTE_GUARD", true, true, false),
+                evaluate(dataset, "D_HYBRID_RRF_ROUTE_GUARD", true, true, true));
+        VariantReport current = variants.get(variants.size() - 1);
+        return new Report(DATASET_VERSION, Instant.now().toString(), dataset.size(), current.answerableCases(),
+                current.refusalCases(), current.recallAt4(), current.answerAccuracy(),
+                current.refusalAccuracy(), current.p95LatencyMs(), kb.providerName(), kb.vectorStoreName(),
+                kb.documentCount(), kb.chunkCount(), current.categories(), current.cases(), variants);
+    }
+
+    private VariantReport evaluate(List<RagEvalDataset.Item> dataset, String variant,
+                                   boolean useRouting, boolean useSafetyGate, boolean useHybrid) {
         List<CaseResult> cases = new ArrayList<>();
         List<Long> latencies = new ArrayList<>();
         int recallOk = 0, answerOk = 0, refusalOk = 0;
@@ -32,10 +46,12 @@ public class RagEvaluationService {
 
         for (RagEvalDataset.Item item : dataset) {
             long start = System.nanoTime();
-            boolean blockedBySafetyGate = shouldRefuse(item.question());
-            String sourceType = routeSource(item.category());
+            boolean blockedBySafetyGate = useSafetyGate && shouldRefuse(item.question());
+            String sourceType = useRouting ? routeSource(item.category()) : null;
             List<KbSearchHit> hits = blockedBySafetyGate ? List.of()
-                    : kb.search(item.merchantId(), item.question(), 4, sourceType);
+                    : useHybrid
+                    ? kb.searchHybrid(item.merchantId(), item.question(), 4, sourceType)
+                    : kb.searchDense(item.merchantId(), item.question(), 4, sourceType);
             long latencyMs = Math.max(0L, (System.nanoTime() - start) / 1_000_000L);
             latencies.add(latencyMs);
 
@@ -61,10 +77,9 @@ public class RagEvaluationService {
         latencies.sort(Comparator.naturalOrder());
         long p95 = percentile95(latencies);
         Map<String, CategoryMetrics> categories = aggregateCategories(cases);
-        return new Report(DATASET_VERSION, Instant.now().toString(), dataset.size(), answerableCount,
+        return new VariantReport(variant, useRouting, useSafetyGate, useHybrid, answerableCount,
                 refusalCount, rate(recallOk, answerableCount), rate(answerOk, answerableCount),
-                rate(refusalOk, refusalCount), p95, kb.providerName(), kb.vectorStoreName(),
-                kb.documentCount(), kb.chunkCount(), categories, cases);
+                rate(refusalOk, refusalCount), p95, categories, cases);
     }
 
     private Map<String, CategoryMetrics> aggregateCategories(List<CaseResult> cases) {
@@ -119,10 +134,14 @@ public class RagEvaluationService {
     public record CaseResult(String id, String category, String question, boolean answerable,
                              List<String> retrievedDocKeys, boolean retrievedExpected,
                              boolean keywordsCovered, boolean refused, long latencyMs) {}
+    public record VariantReport(String variant, boolean routing, boolean safetyGate, boolean hybridRrf,
+                                int answerableCases, int refusalCases, double recallAt4,
+                                double answerAccuracy, double refusalAccuracy, long p95LatencyMs,
+                                Map<String, CategoryMetrics> categories, List<CaseResult> cases) {}
     public record Report(String datasetVersion, String evaluatedAt, int totalCases,
                          int answerableCases, int refusalCases, double recallAt4,
                          double answerAccuracy, double refusalAccuracy, long p95LatencyMs,
                          String embeddingProvider, String vectorStore, long documentCount,
                          long chunkCount, Map<String, CategoryMetrics> categories,
-                         List<CaseResult> cases) {}
+                         List<CaseResult> cases, List<VariantReport> variants) {}
 }
