@@ -2,6 +2,16 @@
 
 `http_capacity.py` 用Python标准库执行分阶并发，只测登录后的只读API。它回答“单实例在当前机器、当前数据量下，随并发提高，吞吐和尾延迟如何变化”，不能替代秒杀写路径JMeter、Redis/Kafka故障演练或云端SLA。
 
+`redis_lua_fault.py` 使用 Python 标准库直连一个隔离 Redis，对真实 Lua 扣减做并发无超卖测试，并在容器重启后验证 AOF 数据仍在。它是组件热路径基准，不包含 HTTP、JWT、Kafka 和 MySQL，不得称为整站 QPS。
+
+```powershell
+docker run -d --name if-eval-redis -p 127.0.0.1:16379:6379 redis:7-alpine redis-server --appendonly yes
+python deploy/benchmarks/redis_lua_fault.py --port 16379 --requests 300 --stock 100 --workers 100 --output redis-lua.json
+docker restart if-eval-redis
+python deploy/benchmarks/redis_lua_fault.py --port 16379 --verify-restart-only --output redis-recovery.json
+docker rm -f if-eval-redis
+```
+
 ```powershell
 python deploy/benchmarks/http_capacity.py `
   --base-url http://127.0.0.1:8080 `

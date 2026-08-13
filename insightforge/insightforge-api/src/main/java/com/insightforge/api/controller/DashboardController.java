@@ -12,6 +12,7 @@ import com.insightforge.api.observability.dto.AgentOpsSummary;
 import com.insightforge.api.service.RagEvaluationService;
 import com.insightforge.api.service.PromptVersionService;
 import com.insightforge.agent.core.evaluation.EvaluationHarness;
+import com.insightforge.agent.core.evaluation.SingleAgentEvaluationService;
 import com.insightforge.api.service.FailureReplayService;
 import com.insightforge.common.result.ApiResult;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -50,6 +51,7 @@ public class DashboardController {
     private final RagEvaluationService ragEvaluationService;
     private final PromptVersionService promptVersionService;
     private final EvaluationHarness evaluationHarness;
+    private final SingleAgentEvaluationService singleAgentEvaluationService;
     private final FailureReplayService failureReplayService;
 
     public DashboardController(ObservabilityService observabilityService,
@@ -57,12 +59,14 @@ public class DashboardController {
                                RagEvaluationService ragEvaluationService,
                                PromptVersionService promptVersionService,
                                EvaluationHarness evaluationHarness,
+                               SingleAgentEvaluationService singleAgentEvaluationService,
                                FailureReplayService failureReplayService) {
         this.observabilityService = observabilityService;
         this.explainabilityService = explainabilityService;
         this.ragEvaluationService = ragEvaluationService;
         this.promptVersionService = promptVersionService;
         this.evaluationHarness = evaluationHarness;
+        this.singleAgentEvaluationService = singleAgentEvaluationService;
         this.failureReplayService = failureReplayService;
     }
 
@@ -102,6 +106,12 @@ public class DashboardController {
     public record AgentEvaluationView(
             com.insightforge.agent.core.evaluation.EvaluationReport.TaskMetrics metrics,
             boolean gatePassed, List<String> gateFailures, List<?> positiveCases, List<?> safetyCases) {}
+
+    /** Single-Prompt Single Agent baseline; evaluation-only and never used by the trading path. */
+    @PostMapping("/single-agent-evaluation/run")
+    public ApiResult<SingleAgentEvaluationService.Report> runSingleAgentEvaluation() throws Exception {
+        return ApiResult.ok(singleAgentEvaluationService.run());
+    }
 
     @PostMapping("/failure-replay/run")
     public ApiResult<?> replayFailures() throws Exception {

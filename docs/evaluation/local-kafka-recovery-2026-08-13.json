@@ -1,0 +1,8 @@
+﻿{
+    "measuredAt":  "2026-08-13T06:01:50.2600646Z",
+    "scope":  "isolated single-node Kafka 3.8 restart durability; not an application failover SLA",
+    "recoveryMs":  2761,
+    "topic":  "if-recovery",
+    "message":  "refund-approved-event",
+    "messageRecovered":  true
+}

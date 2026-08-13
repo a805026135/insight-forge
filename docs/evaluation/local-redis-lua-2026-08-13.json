@@ -1,0 +1,19 @@
+{
+  "measuredAt": "2026-08-13T05:56:37.310524+00:00",
+  "scope": "isolated real Redis 7 Lua component benchmark; not end-to-end HTTP capacity",
+  "requests": 300,
+  "workers": 100,
+  "initialStock": 100,
+  "success": 100,
+  "soldOut": 200,
+  "remainingStock": 0,
+  "oversold": false,
+  "throughputRps": 3114.82,
+  "latencyMs": {
+    "mean": 13.484,
+    "p50": 8.778,
+    "p95": 35.33,
+    "max": 41.847
+  },
+  "restartRecovery": "run container restart, then use --verify-restart-only"
+}

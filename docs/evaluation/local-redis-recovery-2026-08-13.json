@@ -1,0 +1,8 @@
+{
+  "measuredAt": "2026-08-13T05:56:37.963177+00:00",
+  "scope": "isolated Redis restart recovery verification",
+  "restartRecovery": {
+    "readyMs": 3.633,
+    "persistedValue": "survives-restart"
+  }
+}
