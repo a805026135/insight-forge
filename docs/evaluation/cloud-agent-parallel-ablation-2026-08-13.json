@@ -1,0 +1,18 @@
+{
+  "method": "span-derived serial scheduling counterfactual",
+  "scope": "latency-only ablation; not a single-Agent quality comparison",
+  "source": "cloud-agent-2026-08-13.json",
+  "cases": 15,
+  "parallelActual": {
+    "p50Ms": 19905,
+    "p95Ms": 51571
+  },
+  "serialCounterfactual": {
+    "p50Ms": 33959,
+    "p95Ms": 97836
+  },
+  "meanSavedMs": 16686.8,
+  "meanSpeedup": 1.9943,
+  "totalTokensInBothVariants": 61076,
+  "totalCostUsdInBothVariants": 0.030538
+}
