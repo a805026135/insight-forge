@@ -1,0 +1,25 @@
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.462 s -- in com.insightforge.seckill.core.kafka.SalesTickProducerTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.159 s -- in com.insightforge.seckill.core.kafka.OrderCreatedConsumerStatusTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 35.57 s <<< FAILURE! -- in com.insightforge.agent.core.planning.GoldenEvalHarnessTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.304 s -- in com.insightforge.agent.core.planning.MultiAgentOrchestratorTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.743 s -- in com.insightforge.agent.core.planning.CheckpointPauseResumeTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.211 s -- in com.insightforge.agent.core.planning.GuardrailPolicyRepositoryTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 7.343 s -- in com.insightforge.agent.core.planning.MultiAgentOrchestratorRejectTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.073 s -- in com.insightforge.agent.core.planning.DslCompilerTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.159 s -- in com.insightforge.agent.core.AgentRuntimeBudgetTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.091 s -- in com.insightforge.agent.core.evaluation.SingleAgentEvaluatorTest
+[ERROR] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 12.55 s <<< FAILURE! -- in com.insightforge.agent.core.evaluation.EvaluationHarnessTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.160 s -- in com.insightforge.agent.core.evaluation.EvaluationReportTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.118 s -- in com.insightforge.agent.core.memory.CompactingMemoryTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.410 s -- in com.insightforge.agent.core.BudgetGateTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.482 s -- in com.insightforge.agent.core.AgentRuntimeTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 14.78 s -- in com.insightforge.agent.core.AgentRuntimeRejectTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.498 s -- in com.insightforge.agent.core.ToolRegistryTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.667 s -- in com.insightforge.agent.core.kb.TextChunkerTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 17.38 s -- in com.insightforge.agent.core.kb.LocalLexicalEmbeddingProviderTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 154.9 s -- in com.insightforge.agent.core.kb.KnowledgeBaseServiceTest
+[ERROR] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 247.2 s <<< FAILURE! -- in com.insightforge.agent.core.kb.MerchantKbRefresherTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.374 s -- in com.insightforge.agent.core.runtime.InterruptGateTest
+[ERROR] Tests run: 49, Failures: 3, Errors: 0, Skipped: 0
+[INFO] BUILD FAILURE
