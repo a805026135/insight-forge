@@ -55,6 +55,11 @@ public class DeepSeekRoleAgent implements RoleAgent {
 
     @Override
     public Artifact run(SubTask task, PlanningContext ctx) {
+        return runMeasured(task, ctx).artifact();
+    }
+
+    @Override
+    public RoleAgentResult runMeasured(SubTask task, PlanningContext ctx) {
         try {
             ModelRequest req = new ModelRequest(List.of(
                     ChatMessage.system("你是 InsightForge 的离线运营规划角色 Agent。"
@@ -64,13 +69,14 @@ public class DeepSeekRoleAgent implements RoleAgent {
             JsonNode node = objectMapper.readTree(stripFences(resp.content()));
             Map<String, Object> out = toMap(node);
             log.info("DeepSeekRoleAgent[{}] 模型 {} 产出: {}", task.role(), modelName, out);
-            return Artifact.of(task.role().name().toLowerCase() + "-" + task.activityId(),
+            Artifact artifact = Artifact.of(task.role().name().toLowerCase() + "-" + task.activityId(),
                     task.role().name().toLowerCase(), out);
+            return new RoleAgentResult(artifact, resp.tokenIn(), resp.tokenOut(), resp.latencyMs());
         } catch (Exception e) {
             // LLM 抖动 / 输出不合规 JSON：降级确定性启发式（DSL 编译与 Critic 仍兜底，绝不裸奔）
             log.warn("DeepSeekRoleAgent[{}] 调用或解析失败，降级确定性产物: {}",
                     task.role(), e.getMessage());
-            return deterministicFallback(task, ctx);
+            return new RoleAgentResult(deterministicFallback(task, ctx), 0, 0, 0);
         }
     }
 

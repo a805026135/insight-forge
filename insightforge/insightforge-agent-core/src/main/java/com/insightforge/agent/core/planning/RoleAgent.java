@@ -9,4 +9,11 @@ import com.insightforge.agent.core.memory.Artifact;
 public interface RoleAgent {
     /** 执行一个子任务，返回结构化产物（Artifact），供 Guardrail Policy Agent 汇编。 */
     Artifact run(SubTask task, PlanningContext ctx);
+
+    /** 带模型计量信息的执行结果；本地角色默认没有模型消耗。 */
+    default RoleAgentResult runMeasured(SubTask task, PlanningContext ctx) {
+        return new RoleAgentResult(run(task, ctx), 0, 0, 0);
+    }
+
+    record RoleAgentResult(Artifact artifact, int tokenIn, int tokenOut, long latencyMs) {}
 }

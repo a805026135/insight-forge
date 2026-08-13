@@ -62,6 +62,7 @@ public class MultiAgentOrchestrator {
 
     private final String modelVersion;
     private final String promptVersion;
+    private final BigDecimal tokenPriceUsdPer1k;
 
     public MultiAgentOrchestrator(RoleAgent roleAgent,
                                   GuardrailPolicyAgent policyAgent,
@@ -75,7 +76,8 @@ public class MultiAgentOrchestrator {
                                   @Value("${insightforge.agent.planning.max-retry:3}") int maxRetry,
                                   @Value("${insightforge.agent.planning.force-invalid-policy:false}") boolean forceInvalidPolicy,
                                   @Value("${insightforge.agent.model-version:local-det-1.0}") String modelVersion,
-                                  @Value("${insightforge.agent.prompt-version:insightforge-prompt-1.0}") String promptVersion) {
+                                  @Value("${insightforge.agent.prompt-version:insightforge-prompt-1.0}") String promptVersion,
+                                  @Value("${insightforge.agent.budget.token-price-usd-per-1k:0.0005}") BigDecimal tokenPriceUsdPer1k) {
         this.roleAgent = roleAgent;
         this.policyAgent = policyAgent;
         this.dslCompiler = dslCompiler;
@@ -89,6 +91,7 @@ public class MultiAgentOrchestrator {
         this.forceInvalidPolicy = forceInvalidPolicy;
         this.modelVersion = modelVersion;
         this.promptVersion = promptVersion;
+        this.tokenPriceUsdPer1k = tokenPriceUsdPer1k;
     }
 
     /** 执行一次离线规划（新任务），返回结果（已落库 Trace）。 */
@@ -265,23 +268,27 @@ public class MultiAgentOrchestrator {
     /** 4 个角色并行执行（每个子任务独立调模型），逐个收结果并记录 span。 */
     private Map<Role, Artifact> runRoleAgentsParallel(List<SubTask> plan, PlanningContext ctx,
                                                       String traceId, Trace.Builder tb) {
-        Map<Role, CompletableFuture<Artifact>> futures = new LinkedHashMap<>();
+        Map<Role, CompletableFuture<RoleAgent.RoleAgentResult>> futures = new LinkedHashMap<>();
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(plan.size(), 4));
         try {
             for (SubTask st : plan) {
-                futures.put(st.role(), CompletableFuture.supplyAsync(() -> roleAgent.run(st, ctx), pool));
+                futures.put(st.role(), CompletableFuture.supplyAsync(() -> roleAgent.runMeasured(st, ctx), pool));
             }
             Map<Role, Artifact> artifacts = new LinkedHashMap<>();
-            for (Map.Entry<Role, CompletableFuture<Artifact>> e : futures.entrySet()) {
+            for (Map.Entry<Role, CompletableFuture<RoleAgent.RoleAgentResult>> e : futures.entrySet()) {
                 try {
-                    Artifact a = e.getValue().get(90, TimeUnit.SECONDS);
+                    RoleAgent.RoleAgentResult measured = e.getValue().get(90, TimeUnit.SECONDS);
+                    Artifact a = measured.artifact();
                     if (a == null) {
                         metrics.invalidSteps().incrementAndGet();
                         tb.addSpan(span(traceId, e.getKey(), "produce", "null", SpanStatus.FAIL));
                     } else {
                         artifacts.put(e.getKey(), a);
-                        tb.addSpan(span(traceId, e.getKey(), "produce",
-                                objectMapper.writeValueAsString(a.content()), SpanStatus.OK));
+                        tb.addTokens(measured.tokenIn(), measured.tokenOut());
+                        tb.addSpan(new Span(uuid(), traceId, null, e.getKey().name(), "produce", null,
+                                null, truncate(objectMapper.writeValueAsString(a.content())),
+                                measured.tokenIn(), measured.tokenOut(), measured.latencyMs(),
+                                0, SpanStatus.OK, null, a.id()));
                     }
                 } catch (Exception ex) {
                     metrics.invalidSteps().incrementAndGet();
@@ -302,7 +309,9 @@ public class MultiAgentOrchestrator {
         tb.status(status).failureKind(kind).correctFailure(correctFailure).finishedAt(now)
                 .terminationReason(reason)
                 .totalLatencyMs(java.time.Duration.between(startedAt, now).toMillis())
-                .budget(0, BigDecimal.ZERO);
+                .budget(tb.budgetTokens(), tokenPriceUsdPer1k
+                        .multiply(BigDecimal.valueOf(tb.budgetTokens()))
+                        .divide(BigDecimal.valueOf(1000)));
         metrics.terminal(status, kind).incrementAndGet();
         Trace trace = tb.build();
         traceRecorder.persistTrace(trace);

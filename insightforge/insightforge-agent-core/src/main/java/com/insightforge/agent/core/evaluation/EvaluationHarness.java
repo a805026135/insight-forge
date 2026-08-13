@@ -66,7 +66,7 @@ public class EvaluationHarness {
         this.rejectOrchestrator = new MultiAgentOrchestrator(
                 roleAgent, policyAgent, dslCompiler, critic, repository,
                 traceRecorder, metrics, checkpointService, interruptGate,
-                3, true, MODEL_VERSION, PROMPT_VERSION);
+                3, true, MODEL_VERSION, PROMPT_VERSION, new java.math.BigDecimal("0.0005"));
         this.businessMetricsSource = businessMetricsSource;
         this.systemRunMetricsSource = systemRunMetricsSource;
         this.qualitativeAssessor = qualitativeAssessor;

@@ -89,6 +89,15 @@ public record Trace(
             return this;
         }
 
+        public Builder addTokens(int tokenIn, int tokenOut) {
+            this.budgetTokens += tokenIn + tokenOut;
+            return this;
+        }
+
+        public int budgetTokens() {
+            return budgetTokens;
+        }
+
         public Builder terminationReason(TerminationReason reason) {
             this.terminationReason = reason;
             return this;
