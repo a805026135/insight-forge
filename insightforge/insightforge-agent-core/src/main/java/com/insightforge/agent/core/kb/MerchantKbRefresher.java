@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * 商家知识库异步刷新器（Phase 19c）：
@@ -24,6 +25,7 @@ public class MerchantKbRefresher {
     private final KnowledgeBaseSeeder seeder;
     private final long debounceMs;
     private final ConcurrentHashMap<Long, Long> lastRefreshAt = new ConcurrentHashMap<>();
+    private final ConcurrentLinkedQueue<CompletableFuture<Void>> pending = new ConcurrentLinkedQueue<>();
 
     @Autowired
     public MerchantKbRefresher(KnowledgeBaseSeeder seeder) {
@@ -42,9 +44,18 @@ public class MerchantKbRefresher {
             if (prev != null && now - prev < debounceMs) {
                 return prev;
             }
-            CompletableFuture.runAsync(() -> refresh(mid));
+            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> refresh(mid));
+            pending.add(future);
+            future.whenComplete((ignored, error) -> pending.remove(future));
             return now;
         });
+    }
+
+    /** Package-private deterministic synchronization point for tests and controlled shutdown. */
+    void awaitIdle() {
+        for (CompletableFuture<Void> future : pending.toArray(CompletableFuture[]::new)) {
+            future.join();
+        }
     }
 
     private void refresh(long merchantId) {

@@ -4,10 +4,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -24,7 +22,8 @@ class MerchantKbRefresherTest {
         refresher.schedule(1L);
         refresher.schedule(1L);
 
-        verify(seeder, timeout(5000).times(1)).reindexMerchant(1L);
+        refresher.awaitIdle();
+        verify(seeder).reindexMerchant(1L);
     }
 
     @Test
@@ -35,9 +34,10 @@ class MerchantKbRefresherTest {
         MerchantKbRefresher refresher = new MerchantKbRefresher(seeder, 10L);
 
         refresher.schedule(2L);
-        verify(seeder, timeout(5000).times(1)).reindexMerchant(2L);
-        assertDoesNotThrow(() -> Thread.sleep(30));
+        refresher.awaitIdle();
+        try { Thread.sleep(30); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         refresher.schedule(2L);
-        verify(seeder, timeout(5000).times(2)).reindexMerchant(2L);
+        refresher.awaitIdle();
+        verify(seeder, org.mockito.Mockito.times(2)).reindexMerchant(2L);
     }
 }
