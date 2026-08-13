@@ -18,10 +18,12 @@ public class TraceRecorder {
 
     private final AgentTraceMapper traceMapper;
     private final AgentSpanMapper spanMapper;
+    private final LangfuseTraceExporter langfuse;
 
-    public TraceRecorder(AgentTraceMapper traceMapper, AgentSpanMapper spanMapper) {
+    public TraceRecorder(AgentTraceMapper traceMapper, AgentSpanMapper spanMapper, LangfuseTraceExporter langfuse) {
         this.traceMapper = traceMapper;
         this.spanMapper = spanMapper;
+        this.langfuse = langfuse;
     }
 
     public void persistTrace(Trace trace) {
@@ -60,6 +62,7 @@ public class TraceRecorder {
             se.setArtifactRef(s.artifactRef());
             spanMapper.insert(se);
         }
+        langfuse.export(trace);
     }
 
     /** 删除一次运行的全部 trace/span（resume 前清理旧快照，避免主键冲突）。 */

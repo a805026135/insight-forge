@@ -65,6 +65,12 @@ logging:
 # ============================================================
 insightforge:
   agent:
+    langfuse:
+      enabled: ${LANGFUSE_ENABLED:false}
+      base-url: ${LANGFUSE_BASE_URL:https://cloud.langfuse.com}
+      public-key: ${LANGFUSE_PUBLIC_KEY:}
+      secret-key: ${LANGFUSE_SECRET_KEY:}
+      environment: ${LANGFUSE_TRACING_ENVIRONMENT:production}
     prompt-version: ${INSIGHTFORGE_AGENT_PROMPT_VERSION:insightforge-prompt-2.0}
     deepseek:
       enabled: ${INSIGHTFORGE_AGENT_DEEPSEEK_ENABLED:false}
