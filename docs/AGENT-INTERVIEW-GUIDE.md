@@ -25,7 +25,7 @@ flowchart LR
     WORKER --> REDIS
     API --> DB[(MySQL 订单 / 售后)]
     ORCH --> TRACE[(Trace / Span / Token / Cost)]
-    TRACE --> EVAL[40 条 RAG 评测 + 失败回放]
+    TRACE --> EVAL[50 条 Agent + 40 条 RAG 评测]
 ```
 
 ## 案例一：Agent 调价闭环
@@ -63,9 +63,13 @@ flowchart LR
 - `Recall@4`：可回答样本的期望文档是否出现在前四个检索结果。
 - `答案正确率`：命中期望文档且上下文覆盖所有关键事实；这是无 LLM 漂移的确定性离线判分。
 - `拒答准确率`：不可回答/越权问题没有检索到可支撑知识。
-- `P95 延迟`：40 条评测中 RAG 检索耗时的第 95 百分位。
+- `P95 延迟`：分别统计 RAG 检索和 Agent 端到端耗时，不能用检索延迟代替完整任务延迟。
 - Prompt 版本保存完整内容和 SHA-256；知识文档每次正文变化保存不可变快照；trace 记录实际 prompt/model 版本、token 和成本。
+
+云端 50 条 Agent 集的当前证据：Single-Agent 与 Multi-Agent 均为 30/30 正向成功、20/20 安全拦截；Single P95 6.887 秒、平均 475.22 token，Multi P95 55.008 秒、平均 4237.02 token。因此当前默认应使用 Single-Agent/确定性工作流，只有复杂规划才路由 Multi-Agent。20 条对抗样本仍属于同一种非法低价 DSL 的表达变体，不能包装成覆盖 20 类安全风险。
 
 ## 简历表达（可直接精简使用）
 
-设计并实现智能秒杀运营平台 InsightForge：自研多 Agent 编排、Critic 护栏及 HITL 审批，基于 Milvus/MySQL 构建商家隔离 RAG；将 LLM 隔离在离线控制面，通过版本化 DSL 驱动 Kafka 规则引擎。建设 40 条 Agent/RAG 评测集与失败样本回放，量化 Recall@4、答案/拒答准确率和 P95，并实现 Prompt/KB 版本、Trace/Span、token 与成本观测。秒杀链路采用 Redis Lua + Kafka + DB 唯一约束，实现防超卖和全链路幂等。
+设计并实现智能秒杀运营平台 InsightForge：自研多 Agent 编排、Critic 护栏及 HITL 审批，基于 Milvus/MySQL 构建商家隔离 RAG；将 LLM 隔离在离线控制面，通过版本化 DSL 驱动 Kafka 规则引擎。建设 50 条 Agent 与 40 条 RAG 云端评测及失败样本回放，对比任务成功、安全拦截、P95、token 与成本，并实现 Prompt/KB 版本和 Trace/Span 观测。秒杀链路采用 Redis Lua + Kafka + DB 唯一/条件更新实现防超卖和业务幂等。
+
+Java/Spring/MySQL/Redis/Kafka/JVM 的项目化追问见 [后端面试答辩手册](BACKEND-INTERVIEW-DEFENSE.md)。

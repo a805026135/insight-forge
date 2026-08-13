@@ -10,6 +10,7 @@
 2. [架构设计与技术选型](docs/ARCHITECTURE-DESIGN-GUIDE.md)：不讲具体代码，从业务约束出发解释为什么需要 Redis、Kafka、RAG、规则引擎，以及为什么暂不使用 GraphRAG。
 3. [项目学习路线](docs/LEARNING-PATH.md)：按“先跑通、再读懂、最后能改”的顺序学习代码，每阶段都有练习和验收标准。
 4. [面试题与回答](docs/INTERVIEW-QA.md)：项目介绍、Agent/RAG、高并发、工程化追问，以及不能夸大的边界。
+5. [后端面试答辩手册](docs/BACKEND-INTERVIEW-DEFENSE.md)：把 Java、Spring、MySQL、Redis、Kafka、JVM 与分布式八股映射到本项目，并提供压力追问和诚实边界。
 
 已有的 40 条评测和三个完整案例在这里：
 
@@ -94,8 +95,9 @@ insight-forge/
 ## 评测与质量证据
 
 - RAG 数据集：40 条，覆盖可回答、不可回答、跨商家越权和敏感请求。
-- 云端实测：Recall@4 `97.14%`、答案正确率 `88.57%`、拒答准确率 `100%`、检索 P95 约 `617ms`。详细口径见评测报告。
-- 2026-08-12 本地全量测试：141 tests、0 failures、0 errors、7 skipped，Maven `BUILD SUCCESS`。数字会随代码变化，请以你本机最新一次 `mvn clean test` 输出为准。
+- RAG 云端连续三轮：当前受控集 Recall、事实判定和拒答判定均为 `100%`，P95 为 `778/638/654ms`；这不是独立隐藏集或生产准确率。
+- Agent 云端对照：50 条同集上 Single/Multi 均为 30/30 正向成功、20/20 安全拦截；P95 为 `6.887s/55.008s`，平均 token 为 `475.22/4237.02`，当前默认 Single-Agent。
+- 2026-08-13 最近一次云端 Maven 全量运行超过 66 分钟，未取得完整绿灯报告；只能引用已完成的专项报告，不能声称最新全套已通过。
 - 前端质量门：`npm run typecheck` 与 `npm run build`。
 
 ## 安全与诚实边界

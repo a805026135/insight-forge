@@ -25,6 +25,8 @@
 
 第一次建议顺序阅读；面试前按技术专题复习“基础 → 项目优化 → 连续追问”。
 
+如果已经理解总体架构，准备后端面试时可直接进入 [后端面试答辩手册](BACKEND-INTERVIEW-DEFENSE.md)，按 Java、Spring、MySQL、Redis、Kafka、JVM 和分布式一致性进行项目化复习。
+
 ## 一、先定义问题，而不是先选技术
 
 InsightForge 同时包含三类业务：
