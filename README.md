@@ -11,6 +11,7 @@
 3. [项目学习路线](docs/LEARNING-PATH.md)：按“先跑通、再读懂、最后能改”的顺序学习代码，每阶段都有练习和验收标准。
 4. [面试题与回答](docs/INTERVIEW-QA.md)：项目介绍、Agent/RAG、高并发、工程化追问，以及不能夸大的边界。
 5. [后端面试答辩手册](docs/BACKEND-INTERVIEW-DEFENSE.md)：把 Java、Spring、MySQL、Redis、Kafka、JVM 与分布式八股映射到本项目，并提供压力追问和诚实边界。
+6. [可直接复制的简历项目成稿](docs/RESUME-PROJECT.md)：提供一页简历、Agent 岗、Java 后端岗和招聘平台精简版本，并标明每项数据的使用边界。
 
 已有的 40 条评测和三个完整案例在这里：
 
