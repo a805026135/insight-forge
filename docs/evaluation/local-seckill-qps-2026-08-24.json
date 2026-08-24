@@ -1,0 +1,67 @@
+{
+  "generatedAt": "2026-08-24T18:01:33+08:00",
+  "environment": {
+    "hostCpu": "AMD Ryzen 5 9600X",
+    "hostCores": 6,
+    "hostLogicalProcessors": 12,
+    "hostMemoryGiB": 15.11,
+    "dockerMemoryGiB": 7.318,
+    "apiLimit": {"cpu": 4, "memoryGiB": 1.5, "heapGiB": 1.0},
+    "deploymentCommit": "a81ded7",
+    "deployment": "Docker Desktop; API, MySQL 8, Redis 7 and Kafka on one host; unrelated Dify containers stopped during timed rounds"
+  },
+  "scope": "authenticated end-to-end seckill admission; 3000 distinct JWT users per round; login and one Producer warm-up request excluded from timed phase",
+  "design": {
+    "roundsPerVariant": 3,
+    "requestsPerRound": 3000,
+    "concurrency": 200,
+    "stockPerRound": 3000,
+    "baseline": "sync Kafka ACK + per-request activity DB read",
+    "optimized": "recoverable async Reservation + 2-second Caffeine activity metadata cache",
+    "common": "same image, 4-vCPU/1.5-GiB API limit, 128 Tomcat threads, 20 Hikari connections, 3 Kafka consumer threads, Redis Lua inventory"
+  },
+  "baseline": {
+    "rounds": [
+      {"acceptedQps": 945.37, "accepted": 3000, "infrastructureError": 0, "meanMs": 201.70, "p50Ms": 188.87, "p95Ms": 327.41, "p99Ms": 420.17},
+      {"acceptedQps": 1027.99, "accepted": 3000, "infrastructureError": 0, "meanMs": 144.20, "p50Ms": 124.12, "p95Ms": 223.93, "p99Ms": 303.23},
+      {"acceptedQps": 1422.09, "accepted": 3000, "infrastructureError": 0, "meanMs": 132.22, "p50Ms": 114.72, "p95Ms": 210.99, "p99Ms": 268.22}
+    ],
+    "median": {"acceptedQps": 1027.99, "meanMs": 144.20, "p50Ms": 124.12, "p95Ms": 223.93, "p99Ms": 303.23}
+  },
+  "optimized": {
+    "rounds": [
+      {"acceptedQps": 1074.69, "accepted": 3000, "infrastructureError": 0, "meanMs": 179.07, "p50Ms": 131.66, "p95Ms": 316.04, "p99Ms": 1126.16},
+      {"acceptedQps": 1573.20, "accepted": 3000, "infrastructureError": 0, "meanMs": 117.75, "p50Ms": 103.94, "p95Ms": 206.02, "p99Ms": 255.49},
+      {"acceptedQps": 1489.61, "accepted": 3000, "infrastructureError": 0, "meanMs": 121.83, "p50Ms": 100.93, "p95Ms": 238.80, "p99Ms": 275.81}
+    ],
+    "median": {"acceptedQps": 1489.61, "meanMs": 121.83, "p50Ms": 103.94, "p95Ms": 238.80, "p99Ms": 275.81}
+  },
+  "deltaPercent": {"acceptedQps": 44.91, "meanLatency": -15.51, "p50Latency": -16.26, "p95Latency": 6.64, "p99Latency": -9.04},
+  "settlementAudit": {
+    "baselineOrders": 9000,
+    "optimizedOrders": 9000,
+    "baselineRemainingStock": 0,
+    "optimizedRemainingStock": 0,
+    "duplicateBusinessKeys": 0,
+    "reservationPending": 0,
+    "oversell": false
+  },
+  "ablation": {
+    "description": "with activity cache enabled in both variants, changing only sync ACK to async Reservation did not help on the same-host Kafka setup",
+    "syncMedianAcceptedQps": 1455.67,
+    "asyncMedianAcceptedQps": 1321.78,
+    "asyncDeltaPercent": -9.20,
+    "interpretation": "local broker ACK was cheap; faster admission increased instantaneous MySQL consumer contention, so the cache was the material part of the combined gain"
+  },
+  "coldStartRecovery": {
+    "observation": "before topics and Producer metadata were warmed, 110 Kafka send errors were logged in the first async round because max.block.ms was 50 ms",
+    "result": "all 3000 accepted reservations converged to 3000 database orders; stock reached zero and reservation pending returned to zero",
+    "lesson": "pre-create topics and warm Producer metadata before steady-state capacity tests; keep the cold-start run as recovery evidence, not as capacity evidence"
+  },
+  "limitations": [
+    "Each timed round was a short 3000-request burst lasting about 2-3 seconds, not a 3-5 minute soak test or production SLO.",
+    "Load generator and services shared one physical host; the result is a local engineering A/B, not a cloud or distributed production benchmark.",
+    "The optimized P95 median increased by 6.64% and the third optimized round had a high P99 outlier; do not claim that every latency percentile improved.",
+    "Use the three-round median and preserve every raw round; do not present the 1573.20-QPS or 1489.61-QPS single round as a stable capacity ceiling."
+  ]
+}
