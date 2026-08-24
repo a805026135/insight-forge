@@ -9,6 +9,7 @@ import com.insightforge.agent.core.planning.IndependentCritic;
 import com.insightforge.agent.core.planning.MultiAgentOrchestrator;
 import com.insightforge.agent.core.planning.PlanningResult;
 import com.insightforge.agent.core.planning.RoleAgent;
+import com.insightforge.agent.core.planning.TaskComplexityRouter;
 import com.insightforge.agent.core.runtime.AgentMetrics;
 import com.insightforge.agent.core.runtime.CheckpointService;
 import com.insightforge.agent.core.runtime.InterruptGate;
@@ -56,16 +57,17 @@ public class EvaluationHarness {
                               AgentMetrics metrics,
                               CheckpointService checkpointService,
                               InterruptGate interruptGate,
+                              TaskComplexityRouter complexityRouter,
                               BusinessMetricsSource businessMetricsSource,
                              SystemRunMetricsSource systemRunMetricsSource,
                              QualitativeAssessor qualitativeAssessor,
                              EvaluationThresholds thresholds) {
         // ① golden 回归复用既有 harness（走正常编排器，期望全 SUCCESS）
-        this.goldenHarness = new GoldenEvalHarness(orchestrator);
+        this.goldenHarness = new GoldenEvalHarness(orchestrator, complexityRouter);
         // ② 失败样本回归用的「强制不合规」编排器（期望全 CORRECT_FAILURE）
         this.rejectOrchestrator = new MultiAgentOrchestrator(
                 roleAgent, policyAgent, dslCompiler, critic, repository,
-                traceRecorder, metrics, checkpointService, interruptGate,
+                traceRecorder, metrics, checkpointService, interruptGate, complexityRouter,
                 3, true, MODEL_VERSION, PROMPT_VERSION, new java.math.BigDecimal("0.0005"));
         this.businessMetricsSource = businessMetricsSource;
         this.systemRunMetricsSource = systemRunMetricsSource;

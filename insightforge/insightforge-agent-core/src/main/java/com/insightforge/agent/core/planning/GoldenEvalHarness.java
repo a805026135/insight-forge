@@ -25,9 +25,11 @@ public class GoldenEvalHarness {
 
     private final MultiAgentOrchestrator orchestrator;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final TaskComplexityRouter complexityRouter;
 
-    public GoldenEvalHarness(MultiAgentOrchestrator orchestrator) {
+    public GoldenEvalHarness(MultiAgentOrchestrator orchestrator, TaskComplexityRouter complexityRouter) {
         this.orchestrator = orchestrator;
+        this.complexityRouter = complexityRouter;
     }
 
     /** 加载 golden 评估集（classpath: golden/phase8-cases.json）。 */
@@ -58,10 +60,14 @@ public class GoldenEvalHarness {
             return false;
         }
         if (r.status() == AgentRunStatus.SUCCESS) {
-            // 验收准则：SUCCESS 必须产出含 REPRICE 与 REALLOCATE 的 DSL（否则控盘不完整）
+            RoutingDecision routing = complexityRouter.route(
+                    new AgentTask(c.activityId(), c.goal(), null));
             boolean hasReprice = r.published().rules().stream().anyMatch(x -> x.action() == Action.REPRICE);
             boolean hasAlloc = r.published().rules().stream().anyMatch(x -> x.action() == Action.REALLOCATE);
-            return hasReprice && hasAlloc;
+            boolean hasAlert = r.published().rules().stream().anyMatch(x -> x.action() == Action.ALERT);
+            boolean expectedPrice = !routing.roles().contains(Role.PRICER) || hasReprice;
+            boolean expectedStock = !routing.roles().contains(Role.WARMUP) || hasAlloc;
+            return expectedPrice && expectedStock && hasAlert;
         }
         return true;
     }

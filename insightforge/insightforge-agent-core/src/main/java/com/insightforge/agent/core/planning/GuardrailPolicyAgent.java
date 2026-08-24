@@ -25,20 +25,24 @@ public class GuardrailPolicyAgent {
         // 调价不得低于成本由 DslCompiler 把关）。用 STOCK_RATIO 做触发条件是为了在真实闭环里
         // 让 REPRICE 能被 SalesTickConsumer 计算出的 ratio 驱动——PRICE_GAP 需要价差信号源，
         // 当前消费者未聚合该信号，保持诚实：该变体规则由 ratio 驱动、语义为「畅销提价」。
-        Map<String, Object> pm = LocalRoleAgent.asMap(artifacts.get(Role.PRICER));
-        BigDecimal repriceTo = bd(pm, "repriceTo");
-        BigDecimal costFloor = bd(pm, "costFloor");
-        rules.add(new GuardrailRule("r_price",
-                Metric.STOCK_RATIO, Operator.LT, new BigDecimal("0.5"),
-                Action.REPRICE, Map.of("repriceTo", repriceTo, "costFloor", costFloor)));
+        if (artifacts.containsKey(Role.PRICER)) {
+            Map<String, Object> pm = LocalRoleAgent.asMap(artifacts.get(Role.PRICER));
+            BigDecimal repriceTo = bd(pm, "repriceTo");
+            BigDecimal costFloor = bd(pm, "costFloor");
+            rules.add(new GuardrailRule("r_price",
+                    Metric.STOCK_RATIO, Operator.LT, new BigDecimal("0.5"),
+                    Action.REPRICE, Map.of("repriceTo", repriceTo, "costFloor", costFloor)));
+        }
 
         // 预热产物 → REALLOCATE 规则（库存比例过低就调拨，调拨只建新段由 Phase 9 热路径保证）
-        Map<String, Object> wm = LocalRoleAgent.asMap(artifacts.get(Role.WARMUP));
-        BigDecimal amount = bd(wm, "reallocateAmount");
-        rules.add(new GuardrailRule("r_alloc",
-                Metric.STOCK_RATIO, Operator.LT, new BigDecimal("0.2"),
-                Action.REALLOCATE, Map.of("amount", amount,
-                        "targetSegment", wm.getOrDefault("targetSegment", "seg_hot"))));
+        if (artifacts.containsKey(Role.WARMUP)) {
+            Map<String, Object> wm = LocalRoleAgent.asMap(artifacts.get(Role.WARMUP));
+            BigDecimal amount = bd(wm, "reallocateAmount");
+            rules.add(new GuardrailRule("r_alloc",
+                    Metric.STOCK_RATIO, Operator.LT, new BigDecimal("0.2"),
+                    Action.REALLOCATE, Map.of("amount", amount,
+                            "targetSegment", wm.getOrDefault("targetSegment", "seg_hot"))));
+        }
 
         // 风控产物 → ALERT 规则（销售速度骤降只告警，不写共享状态）
         rules.add(new GuardrailRule("r_risk",

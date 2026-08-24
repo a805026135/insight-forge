@@ -39,14 +39,23 @@ public class RedisConfig {
         return script;
     }
 
+    @Bean
+    public RedisScript<Long> seckillReserveScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setLocation(new ClassPathResource("lua/seckill_reserve.lua"));
+        script.setResultType(Long.class);
+        return script;
+    }
+
     /**
      * 库存服务 Bean：注入 Spring 自动配好的 StringRedisTemplate（来自 RedisAutoConfiguration）
-     * 与我们刚定义的脚本 Bean。
+     * 与扣减、可恢复预留两个脚本 Bean。
      */
     @Bean
     public RedisStockService redisStockService(StringRedisTemplate stringRedisTemplate,
-                                               @Qualifier("seckillDeductScript") RedisScript<Long> deductScript) {
-        return new RedisStockService(stringRedisTemplate, deductScript);
+                                               @Qualifier("seckillDeductScript") RedisScript<Long> deductScript,
+                                               @Qualifier("seckillReserveScript") RedisScript<Long> reserveScript) {
+        return new RedisStockService(stringRedisTemplate, deductScript, reserveScript);
     }
 
     /**

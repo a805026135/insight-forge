@@ -7,6 +7,7 @@ import com.insightforge.persistence.entity.Orders;
 import com.insightforge.persistence.mapper.ActivitySkuMapper;
 import com.insightforge.persistence.mapper.OrdersMapper;
 import com.insightforge.seckill.core.dto.OrderCreatedEvent;
+import com.insightforge.seckill.core.redis.RedisStockService;
 import com.insightforge.seckill.core.service.OrderCompensationTask;
 import com.insightforge.seckill.core.state.OrderStatus;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,22 +15,19 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.Set;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Phase 14.5 补偿巡检测试：Redis 幂等键存在但订单未落库时，任务应读取载荷重建订单并扣 DB 库存；
+ * 可恢复库存预留测试：到期预留尚未落库时，任务应读取载荷重建订单并扣 DB 库存；
  * 已落库的键应跳过。
  */
 @SpringBootTest
@@ -49,7 +47,7 @@ class OrderCompensationTaskTest {
     private JdbcTemplate jdbc;
 
     @MockBean
-    private StringRedisTemplate redis;
+    private RedisStockService stockService;
 
     private static final long ACT_ID = 97001L;
     private static final long SKU_PK_ID = 97001L;
@@ -68,10 +66,9 @@ class OrderCompensationTaskTest {
     }
 
     private void stubRedisWithPayload(String payload) {
-        ValueOperations<String, String> ops = mock(ValueOperations.class);
-        when(redis.opsForValue()).thenReturn(ops);
-        when(redis.keys("order:idemp:*")).thenReturn(Set.of("order:idemp:" + ORDER_ID));
-        when(ops.get("order:idemp:" + ORDER_ID)).thenReturn(payload);
+        when(stockService.dueReservations(org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.eq(100))).thenReturn(List.of(ORDER_ID));
+        when(stockService.reservationPayload(ORDER_ID)).thenReturn(payload);
     }
 
     @Test
@@ -81,6 +78,7 @@ class OrderCompensationTaskTest {
         evt.setUserId(70001L);
         evt.setActivityId(ACT_ID);
         evt.setSkuId(SKU_PK_ID);
+        evt.setProductId(97001L);
         evt.setQty(1);
         evt.setPrice(BigDecimal.TEN);
         stubRedisWithPayload(objectMapper.writeValueAsString(evt));

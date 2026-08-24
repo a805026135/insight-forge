@@ -5,6 +5,7 @@ import com.insightforge.persistence.mapper.ActivitySkuMapper;
 import com.insightforge.persistence.mapper.OrdersMapper;
 import com.insightforge.seckill.core.dto.SeckillRequest;
 import com.insightforge.seckill.core.service.OrderCreationService;
+import com.insightforge.seckill.core.service.InventoryConsistencyException;
 import com.insightforge.seckill.core.state.OrderStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +18,7 @@ import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -74,5 +76,15 @@ class OrderCreatedConsumerStatusTest {
 
         assertFalse(inserted, "重复订单不应视为新插入");
         verify(activitySkuMapper, never()).decrementStock(anyLong(), anyInt());
+    }
+
+    @Test
+    void stockConflictFailsFastSoTransactionCanRollback() {
+        when(ordersMapper.insert(any(Orders.class))).thenReturn(1);
+        when(activitySkuMapper.decrementStock(1L, 2)).thenReturn(0);
+
+        assertThrows(InventoryConsistencyException.class,
+                () -> orderCreationService.createOrderIdempotent(
+                        req(), "OF-1-1-1001", BigDecimal.ONE));
     }
 }

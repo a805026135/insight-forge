@@ -5,7 +5,9 @@ import org.springframework.data.redis.core.script.RedisScript;
 
 import java.math.BigDecimal;
 import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Redis 库存服务（Phase 3 的主路径）。
@@ -24,10 +26,75 @@ public class RedisStockService {
 
     private final StringRedisTemplate redis;
     private final RedisScript<Long> deductScript;
+    private final RedisScript<Long> reserveScript;
+
+    private static final long RESERVATION_TTL_SECONDS = 24 * 60 * 60;
+    private static final long MAX_PENDING_RESERVATIONS = 10_000;
+    private static final long FIRST_COMPENSATION_DELAY_MS = 5_000;
 
     public RedisStockService(StringRedisTemplate redis, RedisScript<Long> deductScript) {
+        this(redis, deductScript, null);
+    }
+
+    public RedisStockService(StringRedisTemplate redis,
+                             RedisScript<Long> deductScript,
+                             RedisScript<Long> reserveScript) {
         this.redis = redis;
         this.deductScript = deductScript;
+        this.reserveScript = reserveScript;
+    }
+
+    /**
+     * 原子创建可恢复库存预留。重复请求、扣减、恢复载荷与补偿索引不会再出现中间故障窗口。
+     */
+    public ReservationResult reserve(long activityId, long skuId, int qty,
+                                     String orderId, String payload) {
+        if (reserveScript == null) {
+            return ReservationResult.ERROR;
+        }
+        List<String> keys = List.of(RedisKeys.stock(activityId, skuId),
+                RedisKeys.orderIdempotent(orderId), RedisKeys.ORDER_RESERVATION_PENDING);
+        long deadline = System.currentTimeMillis() + FIRST_COMPENSATION_DELAY_MS;
+        Long result;
+        try {
+            result = redis.execute(reserveScript, keys, String.valueOf(qty), payload,
+                    String.valueOf(RESERVATION_TTL_SECONDS), String.valueOf(deadline), orderId,
+                    String.valueOf(MAX_PENDING_RESERVATIONS));
+        } catch (RuntimeException e) {
+            return ReservationResult.ERROR;
+        }
+        if (result == null) {
+            return ReservationResult.ERROR;
+        }
+        return switch (result.intValue()) {
+            case 2 -> ReservationResult.DUPLICATE;
+            case 1 -> ReservationResult.SUCCESS;
+            case 0 -> ReservationResult.SOLD_OUT;
+            case -1 -> ReservationResult.NOT_PREHEATED;
+            default -> ReservationResult.ERROR;
+            case -3 -> ReservationResult.OVERLOADED;
+        };
+    }
+
+    /** 按截止时间分批领取待收敛预留；复杂度 O(logN+M)，替代生产危险的 KEYS 全量扫描。 */
+    public List<String> dueReservations(long nowEpochMs, int batchSize) {
+        Set<String> ids = redis.opsForZSet().rangeByScore(
+                RedisKeys.ORDER_RESERVATION_PENDING, 0, nowEpochMs, 0, batchSize);
+        return ids == null ? List.of() : new ArrayList<>(ids);
+    }
+
+    public String reservationPayload(String orderId) {
+        return redis.opsForValue().get(RedisKeys.orderIdempotent(orderId));
+    }
+
+    /** DB 已收敛后仅移出待补偿索引；保留幂等凭证至 TTL，继续阻止重复购买。 */
+    public void acknowledgeReservation(String orderId) {
+        redis.opsForZSet().remove(RedisKeys.ORDER_RESERVATION_PENDING, orderId);
+    }
+
+    /** 本轮失败时后移截止时间，避免坏记录形成无间隔热循环。 */
+    public void rescheduleReservation(String orderId, long nextEpochMs) {
+        redis.opsForZSet().add(RedisKeys.ORDER_RESERVATION_PENDING, orderId, nextEpochMs);
     }
 
     /**

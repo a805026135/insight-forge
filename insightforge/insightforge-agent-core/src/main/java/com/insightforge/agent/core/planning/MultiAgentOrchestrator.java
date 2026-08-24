@@ -55,6 +55,7 @@ public class MultiAgentOrchestrator {
     private final AgentMetrics metrics;
     private final CheckpointService checkpointService;
     private final InterruptGate interruptGate;
+    private final TaskComplexityRouter complexityRouter;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final int maxRetry;
@@ -73,6 +74,7 @@ public class MultiAgentOrchestrator {
                                   AgentMetrics metrics,
                                   CheckpointService checkpointService,
                                   InterruptGate interruptGate,
+                                  TaskComplexityRouter complexityRouter,
                                   @Value("${insightforge.agent.planning.max-retry:3}") int maxRetry,
                                   @Value("${insightforge.agent.planning.force-invalid-policy:false}") boolean forceInvalidPolicy,
                                   @Value("${insightforge.agent.model-version:local-det-1.0}") String modelVersion,
@@ -87,6 +89,7 @@ public class MultiAgentOrchestrator {
         this.metrics = metrics;
         this.checkpointService = checkpointService;
         this.interruptGate = interruptGate;
+        this.complexityRouter = complexityRouter;
         this.maxRetry = maxRetry;
         this.forceInvalidPolicy = forceInvalidPolicy;
         this.modelVersion = modelVersion;
@@ -131,15 +134,16 @@ public class MultiAgentOrchestrator {
             Map<Role, Artifact> artifacts = new LinkedHashMap<>();
             GuardrailPolicy policy = null;
             int startAttempt = 1;
-            List<SubTask> plan = List.of(
-                    new SubTask(Role.SELECTOR, "选品", task.activityId()),
-                    new SubTask(Role.PRICER, "定价", task.activityId()),
-                    new SubTask(Role.WARMUP, "库存预热", task.activityId()),
-                    new SubTask(Role.RISK, "风控", task.activityId()));
+            RoutingDecision routing = forceInvalidPolicy ? complexityRouter.fullDecision("安全回放强制完整角色图")
+                    : complexityRouter.route(task);
+            List<SubTask> plan = routing.roles().stream()
+                    .map(role -> new SubTask(role, roleLabel(role), task.activityId()))
+                    .toList();
 
             // —— 阶段 DAG ——
             if (!after(resumeCp, "DAG")) {
-                tb.addSpan(span(traceId, Role.PLANNER, "buildDag", objectMapper.writeValueAsString(plan), SpanStatus.OK));
+                tb.addSpan(span(traceId, Role.PLANNER, "adaptiveRoute",
+                        objectMapper.writeValueAsString(routing), SpanStatus.OK));
                 checkpoint(traceId, task, "DAG", 0, Map.of());
                 interruptGate.throwIfPaused(traceId);
             }
@@ -321,6 +325,16 @@ public class MultiAgentOrchestrator {
     private Span span(String traceId, Role role, String stepName, String output, SpanStatus status) {
         return new Span(uuid(), traceId, null, role.name(), stepName, null,
                 null, truncate(output), 0, 0, 0, 0, status, null, null);
+    }
+
+    private String roleLabel(Role role) {
+        return switch (role) {
+            case SELECTOR -> "选品";
+            case PRICER -> "定价";
+            case WARMUP -> "库存预热";
+            case RISK -> "风控";
+            default -> role.name();
+        };
     }
 
     private static String truncate(String s) {

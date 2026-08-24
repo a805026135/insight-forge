@@ -1,6 +1,8 @@
 package com.insightforge.api;
 
 import com.insightforge.seckill.core.redis.DeductResult;
+import com.insightforge.seckill.core.redis.RedisKeys;
+import com.insightforge.seckill.core.redis.ReservationResult;
 import com.insightforge.seckill.core.redis.RedisStockService;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -77,7 +79,33 @@ class SeckillRedisLuaTest {
         script.setLocation(new ClassPathResource("lua/seckill_deduct.lua"));
         script.setResultType(Long.class);
 
-        stockService = new RedisStockService(redis, script);
+        DefaultRedisScript<Long> reserveScript = new DefaultRedisScript<>();
+        reserveScript.setLocation(new ClassPathResource("lua/seckill_reserve.lua"));
+        reserveScript.setResultType(Long.class);
+
+        stockService = new RedisStockService(redis, script, reserveScript);
+    }
+
+    /** 同一 Lua 同时保证去重、扣减、恢复载荷和超时索引，重复请求不能再次扣库存。 */
+    @Test
+    void recoverable_reservation_is_atomic_and_idempotent() {
+        long activityId = 11L;
+        long skuId = 11L;
+        String orderId = "OF-11-11-1001";
+        redis.delete(RedisKeys.orderIdempotent(orderId));
+        redis.opsForZSet().remove(RedisKeys.ORDER_RESERVATION_PENDING, orderId);
+        stockService.preheat(activityId, skuId, 5);
+
+        ReservationResult first = stockService.reserve(
+                activityId, skuId, 1, orderId, "{\"orderId\":\"OF-11-11-1001\"}");
+        ReservationResult duplicate = stockService.reserve(
+                activityId, skuId, 1, orderId, "{\"orderId\":\"OF-11-11-1001\"}");
+
+        assertEquals(ReservationResult.SUCCESS, first);
+        assertEquals(ReservationResult.DUPLICATE, duplicate);
+        assertEquals(4, stockService.getStock(activityId, skuId), "重复请求不能二次扣库存");
+        assertEquals("{\"orderId\":\"OF-11-11-1001\"}",
+                redis.opsForValue().get(RedisKeys.orderIdempotent(orderId)));
     }
 
     /** 单线程：预热 100 → 扣 1 成功 → 剩 99。 */

@@ -6,15 +6,14 @@ import com.insightforge.persistence.entity.Orders;
 import com.insightforge.persistence.mapper.OrdersMapper;
 import com.insightforge.seckill.core.dto.OrderCreatedEvent;
 import com.insightforge.seckill.core.dto.SeckillRequest;
-import com.insightforge.seckill.core.redis.RedisKeys;
+import com.insightforge.seckill.core.redis.RedisStockService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.util.Set;
+import java.util.List;
 
 /**
  * 订单补偿巡检（Phase 14.5：堵住「Redis 已扣减但订单没落库」的最后一公里）。
@@ -22,58 +21,59 @@ import java.util.Set;
  * 背景：异步路径先扣 Redis、再经 Kafka 落库。若消费者异常（进程挂/消息坏），
  * Redis 扣了但订单永远不来，且幂等键 TTL（10 分钟）过期后用户重试还会再扣一次。
  *
- * 方案：把订单载荷写进幂等键 value（见 {@link RedisIdempotentService#tryAcquire(String, String)}），
- * 本任务每 30s 扫一遍 `order:idemp:*`：凡是「键存在但 DB 无对应订单」的，用载荷重建订单
- * （幂等建单 + 扣 DB 库存，唯一约束天然防并发重放）。补单后窗口从「消费者故障时长」收敛到 ≤30s。
- *
- * 诚实边界：生产建议用 SCAN 替代 KEYS（量小时 KEYS 足够）；演示环境每 30s 全量扫开销可忽略。
+ * Lua 在扣库存时同步把 orderId 放入按截止时间排序的 ZSET。本任务每轮只拉取到期的固定批次，
+ * DB 已有订单则清理索引；缺单则用预留载荷重建。失败项后移重试，避免热循环。
  */
 @Component
 public class OrderCompensationTask {
 
     private static final Logger log = LoggerFactory.getLogger(OrderCompensationTask.class);
+    private static final int BATCH_SIZE = 100;
+    private static final long RETRY_DELAY_MS = 5_000;
 
-    private final ObjectProvider<StringRedisTemplate> redisProvider;
+    private final ObjectProvider<RedisStockService> stockServiceProvider;
     private final OrdersMapper ordersMapper;
     private final OrderCreationService orderCreationService;
     private final ObjectMapper objectMapper;
 
-    public OrderCompensationTask(ObjectProvider<StringRedisTemplate> redisProvider,
+    public OrderCompensationTask(ObjectProvider<RedisStockService> stockServiceProvider,
                                  OrdersMapper ordersMapper,
                                  OrderCreationService orderCreationService,
                                  ObjectMapper objectMapper) {
-        this.redisProvider = redisProvider;
+        this.stockServiceProvider = stockServiceProvider;
         this.ordersMapper = ordersMapper;
         this.orderCreationService = orderCreationService;
         this.objectMapper = objectMapper;
     }
 
-    @Scheduled(fixedDelayString = "${insightforge.compensation.interval-ms:30000}")
+    @Scheduled(fixedDelayString = "${insightforge.compensation.interval-ms:1000}")
     public void sweep() {
-        StringRedisTemplate redis = redisProvider.getIfAvailable();
-        if (redis == null) {
+        RedisStockService stockService = stockServiceProvider.getIfAvailable();
+        if (stockService == null) {
             return; // local 无 Redis：主路径是同步建单，无需补偿
         }
-        Set<String> keys;
+        long now = System.currentTimeMillis();
+        List<String> orderIds;
         try {
-            keys = redis.keys(RedisKeys.ORDER_IDEMPOTENT_PREFIX + "*");
+            orderIds = stockService.dueReservations(now, BATCH_SIZE);
         } catch (Exception e) {
-            log.warn("补偿巡检扫描失败（跳过本轮）", e);
+            log.warn("补偿巡检读取到期预留失败（跳过本轮）", e);
             return;
         }
-        if (keys == null || keys.isEmpty()) {
+        if (orderIds.isEmpty()) {
             return;
         }
 
         int compensated = 0;
-        for (String key : keys) {
-            String orderId = key.substring(RedisKeys.ORDER_IDEMPOTENT_PREFIX.length());
+        for (String orderId : orderIds) {
             Long existing = ordersMapper.selectCount(new QueryWrapper<Orders>().eq("order_id", orderId));
             if (existing != null && existing > 0) {
-                continue; // 订单已落库，无需补偿
+                stockService.acknowledgeReservation(orderId);
+                continue;
             }
-            String payload = redis.opsForValue().get(key);
+            String payload = stockService.reservationPayload(orderId);
             if (payload == null) {
+                stockService.rescheduleReservation(orderId, now + RETRY_DELAY_MS);
                 continue;
             }
             try {
@@ -83,12 +83,15 @@ public class OrderCompensationTask {
                 req.setActivityId(evt.getActivityId());
                 req.setSkuId(evt.getSkuId());
                 req.setQty(evt.getQty());
-                if (orderCreationService.createOrderIdempotent(req, evt.getOrderId(), evt.getPrice())) {
+                if (orderCreationService.createOrderIdempotent(
+                        req, evt.getOrderId(), evt.getPrice(), evt.getProductId())) {
                     compensated++;
                     log.warn("补偿补单成功（原异步落库丢失）：orderId={}", orderId);
                 }
+                stockService.acknowledgeReservation(orderId);
             } catch (Exception e) {
                 log.warn("补偿补单失败 orderId={}", orderId, e);
+                stockService.rescheduleReservation(orderId, now + RETRY_DELAY_MS);
             }
         }
         if (compensated > 0) {

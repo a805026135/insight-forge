@@ -3,15 +3,19 @@ package com.insightforge.seckill.core.kafka;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.insightforge.seckill.core.dto.OrderCreatedEvent;
 import com.insightforge.seckill.core.dto.SeckillRequest;
+import com.insightforge.seckill.core.redis.RedisStockService;
 import com.insightforge.seckill.core.service.OrderCreationService;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Profile;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 订单事件消费者（Phase 4）。
@@ -36,15 +40,22 @@ public class OrderCreatedConsumer {
     private static final Logger log = LoggerFactory.getLogger(OrderCreatedConsumer.class);
 
     private final ObjectMapper objectMapper;
+    private final ObjectProvider<RedisStockService> redisStockService;
     private final OrderCreationService orderCreationService;
 
     public OrderCreatedConsumer(ObjectMapper objectMapper,
-                                OrderCreationService orderCreationService) {
+                                OrderCreationService orderCreationService,
+                                ObjectProvider<RedisStockService> redisStockService) {
         this.objectMapper = objectMapper;
         this.orderCreationService = orderCreationService;
+        this.redisStockService = redisStockService;
     }
 
-    @KafkaListener(topics = KafkaTopicConfig.ORDER_CREATED, groupId = "insightforge-order-consumer")
+    // 并发数默认等于 order.created 的 3 个分区。每个分区只会被组内一个线程消费，
+    // 因此提高到 3 才能真正利用已创建的分区；生产环境按 DB 连接池和写入能力调节，不能盲目加大。
+    @KafkaListener(topics = KafkaTopicConfig.ORDER_CREATED,
+            groupId = "insightforge-order-consumer",
+            concurrency = "${insightforge.seckill.order-consumer-concurrency:3}")
     @Transactional
     public void onOrderCreated(ConsumerRecord<String, String> record) {
         OrderCreatedEvent evt;
@@ -59,6 +70,7 @@ public class OrderCreatedConsumer {
         MDC.put("traceId", evt.getTraceId());
         try {
             process(evt);
+            acknowledgeAfterCommit(evt.getOrderId());
         } finally {
             MDC.remove("traceId");
         }
@@ -73,8 +85,27 @@ public class OrderCreatedConsumer {
         req.setQty(evt.getQty());
 
         // —— 异步建单（幂等：order_id 唯一约束兜底）——
-        boolean inserted = orderCreationService.createOrderIdempotent(req, evt.getOrderId(), evt.getPrice());
+        boolean inserted = orderCreationService.createOrderIdempotent(
+                req, evt.getOrderId(), evt.getPrice(), evt.getProductId());
 
         log.info("异步建单完成：orderId={}, inserted={}", evt.getOrderId(), inserted);
+    }
+
+    /** DB 提交后才删除恢复凭证，避免“先 ACK、后回滚”造成永久丢单。 */
+    private void acknowledgeAfterCommit(String orderId) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                RedisStockService stockService = redisStockService.getIfAvailable();
+                if (stockService == null) {
+                    return;
+                }
+                try {
+                    stockService.acknowledgeReservation(orderId);
+                } catch (RuntimeException e) {
+                    log.warn("订单已提交但 Reservation ACK 失败，交给补偿器清理：orderId={}", orderId, e);
+                }
+            }
+        });
     }
 }

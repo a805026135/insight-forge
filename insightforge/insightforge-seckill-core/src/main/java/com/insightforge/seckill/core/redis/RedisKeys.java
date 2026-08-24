@@ -9,6 +9,9 @@ public final class RedisKeys {
     /** 订单幂等键前缀（补偿巡检按此扫描） */
     public static final String ORDER_IDEMPOTENT_PREFIX = "order:idemp:";
 
+    /** 可恢复库存预留的超时索引：score=补偿截止时间，member=orderId。 */
+    public static final String ORDER_RESERVATION_PENDING = "order:reservation:pending";
+
     private RedisKeys() {
     }
 

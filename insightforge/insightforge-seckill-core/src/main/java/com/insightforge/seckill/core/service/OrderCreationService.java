@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -33,12 +34,21 @@ public class OrderCreationService {
     }
 
     /** 幂等建单 + 扣 DB 库存；返回是否真正插入新订单。 */
+    @Transactional
     public boolean createOrderIdempotent(SeckillRequest req, String orderId, BigDecimal price) {
+        return createOrderIdempotent(req, orderId, price, req.getSkuId());
+    }
+
+    /** productId 与 activitySkuId 显式分离，避免异步消息中的双重 SKU 语义污染订单。 */
+    @Transactional
+    public boolean createOrderIdempotent(SeckillRequest req, String orderId,
+                                         BigDecimal price, Long productId) {
         Orders order = new Orders();
         order.setOrderId(orderId);
         order.setUserId(req.getUserId());
         order.setActivityId(req.getActivityId());
-        order.setSkuId(req.getSkuId());
+        order.setActivitySkuId(req.getSkuId());
+        order.setSkuId(productId == null ? req.getSkuId() : productId);
         order.setQty(req.getQty());
         order.setPrice(price);
         // 与同步建单路径保持同一持久初态 CREATE_ORDER（状态机可解析）
@@ -51,7 +61,11 @@ public class OrderCreationService {
             return false;
         }
         // 仅新单才扣 DB 库存（Redis 已先扣，这里补齐 DB；条件更新绝不为负）
-        activitySkuMapper.decrementStock(req.getSkuId(), req.getQty());
+        int affected = activitySkuMapper.decrementStock(req.getSkuId(), req.getQty());
+        if (affected != 1) {
+            throw new InventoryConsistencyException(
+                    "数据库库存无法收敛，回滚订单并保留 Redis 预留：orderId=" + orderId);
+        }
         return true;
     }
 }

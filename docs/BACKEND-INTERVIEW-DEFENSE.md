@@ -18,13 +18,13 @@
 
 ### 30 秒版本
 
-InsightForge 是 Java 21 与 Spring Boot 3.3 实现的智能电商和秒杀平台。交易侧使用 Redis Lua、Kafka 和 MySQL 唯一约束解决热点库存、削峰与幂等；智能侧把 LLM 放在离线控制面，用商家隔离 RAG、多 Agent、Critic 和 HITL 生成受限策略，再由规则引擎确定性执行。项目还建设了云端 Agent/RAG 评测、Prompt/知识版本、失败回放以及 token、成本和链路追踪。
+InsightForge 是 Java 21 与 Spring Boot 3.3 实现的智能电商和秒杀平台。交易侧实现可恢复库存预留协议，用一段 Redis Lua 同时完成幂等、扣库存、恢复载荷与超时索引，Kafka 负责削峰，MySQL 短事务和 ZSET 补偿负责最终收敛；智能侧使用风险与复杂度自适应 Agent 图生成受限策略，再由规则引擎确定性执行。
 
 ### 2 分钟版本
 
 项目包含买家购物、秒杀、支付、物流、评价、退款申诉，以及商家商品、活动、订单、客服和运营 Agent。核心设计是把概率性智能与确定性交易分开：LLM 负责分析和生成受限 DSL，高风险动作经 Critic 与人工确认，线上交易只执行已发布、可回滚的规则。
 
-秒杀链路以 `(activityId, activitySkuId, userId)` 形成稳定业务身份。Redis Lua 原子预扣并快速拒绝，Kafka 将落单从请求线程移出，消费者按至少一次语义处理，数据库唯一键和库存条件更新做最终正确性兜底。退款链路中，RAG 只解释政策，订单和金额来自 MySQL；Agent 先生成草稿，用户确认后才调用售后状态机。
+秒杀链路以 `(activityId, activitySkuId, userId)` 形成稳定业务身份。旧方案把 SETNX、扣库存和发消息分开，存在占位未扣减、扣减未发消息的故障窗口；现在由 Lua 原子创建包含完整订单载荷的 Reservation 并登记 ZSET 截止时间。Kafka 正常时异步落库，异常时同步收敛或由补偿器重放同一数据库事务；唯一键和条件更新保证重放无重复副作用。完整追问见 [可恢复库存预留协议](RECOVERABLE-SECKILL-PROTOCOL.md)。
 
 评测不是只测 RAG。云服务器实测包含 40 条 RAG 集和 50 条 Agent 集。50 条 Single-Agent 为 30/30 正向成功、20/20 安全拦截，P95 6.887 秒，平均 475.22 token；同集 Multi-Agent 质量没有提升，但 P95 55.008 秒、平均 4237.02 token，因此当前证据支持“默认单 Agent，复杂任务再路由多 Agent”，而不是盲目多 Agent。
 

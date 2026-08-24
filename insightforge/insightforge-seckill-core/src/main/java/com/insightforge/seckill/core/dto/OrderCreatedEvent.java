@@ -31,8 +31,11 @@ public class OrderCreatedEvent implements Serializable {
     /** 活动 id */
     private Long activityId;
 
-    /** SKU id（= activity_sku.id，本项目里请求里的 skuId 即为活动库存表主键） */
+    /** 活动库存行 id（= activity_sku.id，请求里的 skuId） */
     private Long skuId;
+
+    /** 商品 id；事件显式携带，避免异步建单混淆 product.id 与 activity_sku.id。 */
+    private Long productId;
 
     /** 购买数量 */
     private Integer qty;

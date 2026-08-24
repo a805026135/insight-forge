@@ -90,7 +90,7 @@ sequenceDiagram
 阅读入口：
 
 - `SeckillService`：路径选择与业务订单号。
-- `RedisIdempotentService` 和 Lua 脚本：快速幂等/扣减。
+- `RedisStockService` 和 `seckill_reserve.lua`：原子完成快速幂等、扣减、恢复凭证和补偿索引。
 - `ActivitySkuMapper.decrementStockIfEnough`：`WHERE stock >= qty`。
 - V1 的订单唯一约束、`SeckillNoOversellTest`。
 
