@@ -114,6 +114,9 @@ insightforge:
     order-consumer-concurrency: ${INSIGHTFORGE_ORDER_CONSUMER_CONCURRENCY:3}
     # sync-ack 只用于 A/B 基线；生产默认 async-reservation。
     kafka-publish-mode: ${INSIGHTFORGE_KAFKA_PUBLISH_MODE:async-reservation}
+    # 活动状态是读多写少元数据；2s Caffeine TTL 消除热路径 DB 读，A/B 可关闭。
+    # 权威库存仍由 Redis Lua 管理，不依赖该缓存。
+    activity-cache-enabled: ${INSIGHTFORGE_SECKILL_ACTIVITY_CACHE_ENABLED:true}
   auth:
     # JWT 签名密钥（HS256 需要 ≥32 字节）。生产必须用环境变量覆盖！
     jwt-secret: ${INSIGHTFORGE_AUTH_JWT_SECRET:insightforge-demo-secret-please-override-0123456789}

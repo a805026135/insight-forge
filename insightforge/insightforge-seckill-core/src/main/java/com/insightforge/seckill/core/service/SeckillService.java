@@ -3,11 +3,11 @@ package com.insightforge.seckill.core.service;
 import com.insightforge.common.result.ApiResult;
 import com.insightforge.persistence.entity.Activity;
 import com.insightforge.persistence.entity.ActivitySku;
-import com.insightforge.persistence.mapper.ActivityMapper;
 import com.insightforge.seckill.core.dto.OrderCreatedEvent;
 import com.insightforge.seckill.core.dto.SalesTickEvent;
 import com.insightforge.seckill.core.dto.SeckillRequest;
 import com.insightforge.seckill.core.dto.StockInfo;
+import com.insightforge.seckill.core.cache.ActivityCacheService;
 import com.insightforge.seckill.core.cache.SkuCacheService;
 import com.insightforge.seckill.core.kafka.OrderEventProducer;
 import com.insightforge.seckill.core.kafka.SalesTickProducer;
@@ -42,7 +42,7 @@ public class SeckillService {
 
     private static final Logger log = LoggerFactory.getLogger(SeckillService.class);
 
-    private final ActivityMapper activityMapper;
+    private final ActivityCacheService activityCacheService;
     private final ObjectMapper objectMapper;
     /** SKU 多级缓存（Phase 5）：高频读走 L1 Caffeine + L2 Redis，避免每次打 DB。 */
     private final SkuCacheService skuCacheService;
@@ -55,14 +55,14 @@ public class SeckillService {
     /** 销售心跳生产者（集成缝：扣减成功 → sales.tick，驱动规则引擎）：仅非 local 存在。 */
     private final ObjectProvider<SalesTickProducer> salesTickProducer;
 
-    public SeckillService(ActivityMapper activityMapper,
+    public SeckillService(ActivityCacheService activityCacheService,
                           ObjectMapper objectMapper,
                           SkuCacheService skuCacheService,
                           ObjectProvider<RedisStockService> redisStockService,
                           OrderCreationService orderCreationService,
                           ObjectProvider<OrderEventProducer> orderEventProducer,
                           ObjectProvider<SalesTickProducer> salesTickProducer) {
-        this.activityMapper = activityMapper;
+        this.activityCacheService = activityCacheService;
         this.objectMapper = objectMapper;
         this.skuCacheService = skuCacheService;
         this.redisStockService = redisStockService;
@@ -89,7 +89,7 @@ public class SeckillService {
         if (req.getActivityId() == null || req.getSkuId() == null || req.getUserId() == null) {
             return ApiResult.fail(400, "activityId/skuId/userId 不能为空");
         }
-        Activity activity = activityMapper.selectById(req.getActivityId());
+        Activity activity = activityCacheService.getActivity(req.getActivityId());
         if (activity == null) {
             return ApiResult.fail(404, "活动不存在");
         }
