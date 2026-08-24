@@ -1,0 +1,17 @@
+{
+  "generatedAt": "2026-08-24T15:32:20+08:00",
+  "environment": {"host": "Alibaba Cloud", "cpuCores": 2, "memoryGiB": 3.4, "deploymentCommit": "b2962a5"},
+  "scope": "API container network; 1000 distinct authenticated users; login excluded from timed phase",
+  "design": {
+    "requestsPerVariant": 1000,
+    "concurrency": 100,
+    "stockPerVariant": 1000,
+    "baseline": "sync Kafka ACK + per-request activity DB read",
+    "optimized": "recoverable async reservation + 2s Caffeine activity metadata cache"
+  },
+  "baseline": {"durationSeconds": 25.387, "acceptedQps": 39.39, "accepted": 1000, "businessRejected": 0, "infrastructureError": 0, "meanMs": 2501.85, "p50Ms": 1997.02, "p95Ms": 4751.86, "p99Ms": 5256.10},
+  "optimized": {"durationSeconds": 21.843, "acceptedQps": 45.78, "accepted": 1000, "businessRejected": 0, "infrastructureError": 0, "meanMs": 2123.74, "p50Ms": 1893.26, "p95Ms": 4109.34, "p99Ms": 4970.13},
+  "deltaPercent": {"acceptedQps": 16.22, "meanLatency": -15.11, "p95Latency": -13.52, "p99Latency": -5.44},
+  "settlementAudit": {"baselineOrders": 1000, "optimizedOrders": 1000, "baselineDbStock": 0, "optimizedDbStock": 0, "baselineRedisStock": 0, "optimizedRedisStock": 0, "oversell": false},
+  "limitation": "One controlled evidence run per variant, not a long-duration capacity ceiling. Repeat at least three rounds and report the median before treating it as an SLO."
+}
