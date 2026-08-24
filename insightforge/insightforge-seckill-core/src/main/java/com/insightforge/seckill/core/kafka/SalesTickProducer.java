@@ -46,7 +46,10 @@ public class SalesTickProducer {
                             event.getActivityId() + ":" + event.getSkuId(), payload);
             kafkaTemplate.send(record);
             return true;
-        } catch (JsonProcessingException e) {
+        } catch (JsonProcessingException | RuntimeException e) {
+            // sales.tick only drives auxiliary rule evaluation. A synchronous Kafka
+            // metadata/buffer failure must never turn an accepted order into HTTP 500.
+            // Order durability is owned independently by order.created + reservations.
             return false;
         }
     }
