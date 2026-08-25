@@ -64,10 +64,16 @@ docker compose version
 ## 三、获取代码并认识 Git
 
 ```powershell
-git clone https://gitee.com/paper-umbrella/insight-forge.git
+git clone https://github.com/a805026135/insight-forge.git
 cd insight-forge
 git status
 git branch --show-current
+```
+
+如果 GitHub 网络不稳定，可改用同步镜像：
+
+```powershell
+git clone https://gitee.com/paper-umbrella/insight-forge.git
 ```
 
 第一次应位于 `master`，且工作区干净。学习或修改功能时建立自己的分支：
@@ -266,7 +272,7 @@ POST /api/dashboard/rag-evaluation/run
 通用步骤：
 
 ```bash
-git clone https://gitee.com/paper-umbrella/insight-forge.git
+git clone https://github.com/a805026135/insight-forge.git
 cd insight-forge
 cp deploy/.env.example deploy/.env
 # 编辑 deploy/.env：填强 JWT 密钥、Grafana 密码和需要的模型密钥

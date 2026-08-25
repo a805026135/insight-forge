@@ -2,7 +2,11 @@
 
 本文内容已经按中文技术简历格式压缩，可以直接复制。推荐优先使用“一页简历推荐版”，再根据岗位替换为 Agent 或 Java 后端版本。
 
-项目仓库：[https://gitee.com/paper-umbrella/insight-forge](https://gitee.com/paper-umbrella/insight-forge)
+项目仓库：[https://github.com/a805026135/insight-forge](https://github.com/a805026135/insight-forge)
+
+在线演示：[http://47.99.63.190/](http://47.99.63.190/)
+
+国内镜像：[https://gitee.com/paper-umbrella/insight-forge](https://gitee.com/paper-umbrella/insight-forge)
 
 ## 一、一页简历推荐版
 
@@ -142,7 +146,7 @@ Redis 负责在热点前快速拒绝和削减数据库压力，数据库负责�
 - 根据 JD 只选择 Agent 版或 Java 版，不同时粘贴两套。
 - 一页简历最多保留 4～5 条项目成果，每条控制在两行左右。
 - 仓库中不能出现 API Key、密码、个人隐私或测试账号密码。
-- 投递前验证 Gitee 仓库可访问、README 首页清晰、项目地址正确。
+- 投递前验证 GitHub 主仓库与在线演示可访问、README 首页清晰、项目地址正确；Gitee 仅作为国内同步镜像。
 - 准备现场画出总架构、退款状态机和秒杀幂等时序。
 - 能说明每个百分比、延迟和吞吐的样本、环境、分母及局限。
 - 不声称百万 QPS、严格 exactly-once、GraphRAG、生产 100% 准确率或最新云端全量测试全部通过；本地 154 条通过不能替代云端中间件复测。

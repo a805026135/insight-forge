@@ -2,6 +2,12 @@
 
 面向 Agent 应用工程师 / Java 后端岗位的智能电商项目：既包含完整商城、售后与客服闭环，也包含高并发秒杀、Agent 调价、商家隔离 RAG、评测与可观测能力。
 
+- GitHub 主仓库：[github.com/a805026135/insight-forge](https://github.com/a805026135/insight-forge)
+- Gitee 同步镜像：[gitee.com/paper-umbrella/insight-forge](https://gitee.com/paper-umbrella/insight-forge)
+- 在线演示：[http://47.99.63.190/](http://47.99.63.190/)
+
+> 在线演示运行在资源受限的小型云服务器上，主要用于功能体验；README 中的本机 QPS 数据来自固定资源、同镜像 A/B，不代表该演示服务器的生产容量。
+
 > 核心设计：LLM 只在离线控制面做规划，风险与复杂度路由器按目标动态选择最小必要 Agent；在线交易热路径由 Redis Lua、数据库约束和 Drools 确定性执行。模型可以提出策略，但不能绕过护栏直接修改价格、库存或退款状态。
 
 ## 第一次来这里，从这三份文档开始
@@ -27,7 +33,7 @@
 前置要求：JDK 21、Maven 3.9+、Node.js 20+。最小模式使用 H2 和本地 Agent 兜底，不需要 MySQL、Redis、Kafka、Milvus 或模型密钥。
 
 ```powershell
-git clone https://gitee.com/paper-umbrella/insight-forge.git
+git clone https://github.com/a805026135/insight-forge.git
 cd insight-forge
 
 cd insightforge
