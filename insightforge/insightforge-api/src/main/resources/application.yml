@@ -117,6 +117,12 @@ insightforge:
     # 活动状态是读多写少元数据；2s Caffeine TTL 消除热路径 DB 读，A/B 可关闭。
     # 权威库存仍由 Redis Lua 管理，不依赖该缓存。
     activity-cache-enabled: ${INSIGHTFORGE_SECKILL_ACTIVITY_CACHE_ENABLED:true}
+    # 单 API 实例可用 local-fast：保护层在有界 Caffeine 滑动窗口完成，避免每单一次 Redis RTT；
+    # 多 API 实例使用 distributed，获得跨实例统一配额。订单幂等始终由 Reservation 保证。
+    rate-limit-mode: ${INSIGHTFORGE_SECKILL_RATE_LIMIT_MODE:distributed}
+    # sales.tick 只触发规则引擎读取最新库存，不承担订单可靠性；单机可按 SKU 50ms 语义合并。
+    sales-tick-mode: ${INSIGHTFORGE_SECKILL_SALES_TICK_MODE:per-order}
+    sales-tick-flush-ms: ${INSIGHTFORGE_SECKILL_SALES_TICK_FLUSH_MS:50}
   auth:
     # JWT 签名密钥（HS256 需要 ≥32 字节）。生产必须用环境变量覆盖！
     jwt-secret: ${INSIGHTFORGE_AUTH_JWT_SECRET:insightforge-demo-secret-please-override-0123456789}

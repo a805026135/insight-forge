@@ -8,9 +8,13 @@ idempotency hits. The report separates business rejection from infrastructure fa
 from __future__ import annotations
 
 import argparse
+import base64
 import concurrent.futures
+import hashlib
+import hmac
 import json
 import math
+import os
 import statistics
 import time
 import urllib.error
@@ -53,6 +57,34 @@ def login_tokens(base_url: str, prefix: str, password: str,
         return [future.result() for future in futures]
 
 
+def local_benchmark_tokens(secret: str, first_user_id: int, count: int) -> list[str]:
+    """Generate HS256 JWTs for pre-seeded local benchmark users without disk token files.
+
+    This mode is deliberately gated by an environment variable and is only suitable for an
+    isolated local benchmark whose API uses the same non-production secret.
+    """
+    def encode(value: bytes) -> str:
+        return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+    now = int(time.time())
+    header = encode(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    tokens = []
+    for user_id in range(first_user_id, first_user_id + count):
+        payload = encode(json.dumps({
+            "sub": str(user_id),
+            "username": f"qps-local-{user_id}",
+            "role": "user",
+            "displayName": f"QPS User {user_id}",
+            "merchantId": 0,
+            "iat": now,
+            "exp": now + 3600,
+        }, separators=(",", ":")).encode())
+        signing_input = f"{header}.{payload}"
+        signature = encode(hmac.new(secret.encode(), signing_input.encode(), hashlib.sha256).digest())
+        tokens.append(f"{signing_input}.{signature}")
+    return tokens
+
+
 def request_once(url: str, token: str, activity_id: int, sku_id: int) -> dict:
     payload = json.dumps({
         "activityId": activity_id, "skuId": sku_id, "qty": 1,
@@ -83,6 +115,10 @@ def main() -> None:
                         help="one distinct user's JWT per line; never commit this file")
     parser.add_argument("--login-prefix", help="login pre-seeded users prefix00001..N")
     parser.add_argument("--login-password", default="QpsTest123!")
+    parser.add_argument("--local-jwt-secret-env",
+                        help="environment variable containing the isolated local benchmark JWT secret")
+    parser.add_argument("--user-id-start", type=int, default=1,
+                        help="first pre-seeded user id for --local-jwt-secret-env")
     parser.add_argument("--activity-id", type=int, required=True)
     parser.add_argument("--sku-id", type=int, required=True,
                         help="activity_sku.id, not product.id")
@@ -95,11 +131,16 @@ def main() -> None:
 
     if args.tokens_file:
         tokens = load_tokens(args.tokens_file)
+    elif args.local_jwt_secret_env and args.requests:
+        secret = os.environ.get(args.local_jwt_secret_env, "")
+        if len(secret.encode()) < 32:
+            raise SystemExit("local benchmark JWT secret must be at least 32 bytes")
+        tokens = local_benchmark_tokens(secret, args.user_id_start, args.requests)
     elif args.login_prefix and args.requests:
         tokens = login_tokens(args.base_url, args.login_prefix, args.login_password,
                               args.requests, args.concurrency)
     else:
-        raise SystemExit("provide --tokens-file or --login-prefix together with --requests")
+        raise SystemExit("provide --tokens-file, --local-jwt-secret-env, or --login-prefix with --requests")
     count = args.requests or len(tokens)
     if count > len(tokens):
         raise SystemExit("requests cannot exceed distinct token count; token reuse only measures duplicates")

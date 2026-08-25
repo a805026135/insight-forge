@@ -88,7 +88,9 @@ public class OrderCreatedConsumer {
         boolean inserted = orderCreationService.createOrderIdempotent(
                 req, evt.getOrderId(), evt.getPrice(), evt.getProductId());
 
-        log.info("异步建单完成：orderId={}, inserted={}", evt.getOrderId(), inserted);
+        // 成功逐单 INFO 会与请求线程争抢 stdout/json-file 锁；成功路径由指标统计，
+        // 仅异常保留高等级日志。需要逐单排障时可临时打开 DEBUG。
+        log.debug("异步建单完成：orderId={}, inserted={}", evt.getOrderId(), inserted);
     }
 
     /** DB 提交后才删除恢复凭证，避免“先 ACK、后回滚”造成永久丢单。 */

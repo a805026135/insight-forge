@@ -4,9 +4,15 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.insightforge.seckill.core.dto.SalesTickEvent;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 销售心跳生产者（集成缝：秒杀 → sales.tick）。
@@ -26,10 +32,21 @@ public class SalesTickProducer {
 
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
+    private final boolean coalesced;
+    private final ConcurrentHashMap<String, PendingTick> pending = new ConcurrentHashMap<>();
 
-    public SalesTickProducer(KafkaTemplate<String, String> kafkaTemplate, ObjectMapper objectMapper) {
+    @Autowired
+    public SalesTickProducer(KafkaTemplate<String, String> kafkaTemplate,
+                             ObjectMapper objectMapper,
+                             @Value("${insightforge.seckill.sales-tick-mode:per-order}") String mode) {
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
+        this.coalesced = "coalesced".equalsIgnoreCase(mode);
+    }
+
+    /** Test/backward-compatible constructor: preserves the original per-order behavior. */
+    public SalesTickProducer(KafkaTemplate<String, String> kafkaTemplate, ObjectMapper objectMapper) {
+        this(kafkaTemplate, objectMapper, "per-order");
     }
 
     /**
@@ -38,6 +55,45 @@ public class SalesTickProducer {
      * @return true=已成功发出（broker 已 ack）；false=序列化/发送失败（调用方可忽略，tick 丢失不阻塞抢购）。
      */
     public boolean send(SalesTickEvent event) {
+        if (coalesced) {
+            String key = event.getActivityId() + ":" + event.getSkuId();
+            pending.compute(key, (ignored, existing) -> {
+                PendingTick tick = existing == null
+                        ? new PendingTick(event.getActivityId(), event.getSkuId()) : existing;
+                tick.qty.addAndGet(event.getQty());
+                tick.lastTimestamp.set(event.getTs());
+                return tick;
+            });
+            return true;
+        }
+        return sendNow(event);
+    }
+
+    /**
+     * Rule evaluation only needs a wake-up to read the latest Redis stock. Coalescing all
+     * updates for one SKU in a short window removes per-order JSON/Kafka work without
+     * weakening the durable order.created + Reservation path.
+     */
+    @Scheduled(fixedDelayString = "${insightforge.seckill.sales-tick-flush-ms:50}")
+    public void flushCoalesced() {
+        if (!coalesced) {
+            return;
+        }
+        pending.forEach((key, tick) -> {
+            long qty = tick.qty.getAndSet(0);
+            if (qty <= 0) {
+                return;
+            }
+            SalesTickEvent event = SalesTickEvent.of(tick.activityId, tick.skuId,
+                    Math.toIntExact(Math.min(qty, Integer.MAX_VALUE)));
+            event.setTs(tick.lastTimestamp.get());
+            if (!sendNow(event)) {
+                tick.qty.addAndGet(qty);
+            }
+        });
+    }
+
+    private boolean sendNow(SalesTickEvent event) {
         try {
             String payload = objectMapper.writeValueAsString(event);
             // key = activityId:skuId：同 SKU 同分区，保序 + 便于消费端按 key 串行处理
@@ -51,6 +107,18 @@ public class SalesTickProducer {
             // metadata/buffer failure must never turn an accepted order into HTTP 500.
             // Order durability is owned independently by order.created + reservations.
             return false;
+        }
+    }
+
+    private static final class PendingTick {
+        private final long activityId;
+        private final long skuId;
+        private final AtomicLong qty = new AtomicLong();
+        private final AtomicLong lastTimestamp = new AtomicLong();
+
+        private PendingTick(long activityId, long skuId) {
+            this.activityId = activityId;
+            this.skuId = skuId;
         }
     }
 }

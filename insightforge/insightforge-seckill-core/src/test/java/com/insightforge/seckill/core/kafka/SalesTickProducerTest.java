@@ -13,6 +13,7 @@ import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -47,5 +48,23 @@ class SalesTickProducerTest {
         boolean ok = producer.send(SalesTickEvent.of(1L, 1L, 1));
 
         assertFalse(ok);
+    }
+
+    @Test
+    void coalescedModePublishesOneAggregatedWakeupPerSku() {
+        KafkaTemplate<String, String> kafka = mock(KafkaTemplate.class);
+        SalesTickProducer producer = new SalesTickProducer(kafka, new ObjectMapper(), "coalesced");
+
+        producer.send(SalesTickEvent.of(7L, 9L, 2));
+        producer.send(SalesTickEvent.of(7L, 9L, 3));
+        verify(kafka, never()).send(any(ProducerRecord.class));
+
+        producer.flushCoalesced();
+
+        var captor = forClass(ProducerRecord.class);
+        verify(kafka).send(captor.capture());
+        ProducerRecord<String, String> rec = captor.getValue();
+        assertEquals("7:9", rec.key());
+        assertTrue(rec.value().contains("\"qty\":5"));
     }
 }

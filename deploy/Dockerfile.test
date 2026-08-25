@@ -1,0 +1,8 @@
+FROM maven:3.9.9-eclipse-temurin-21
+WORKDIR /workspace
+COPY . .
+RUN --mount=type=cache,target=/root/.m2/repository \
+    mkdir -p /root/.m2 && cp maven-settings.xml /root/.m2/settings.xml && \
+    mvn -B -pl insightforge-seckill-core,insightforge-api -am \
+    -Dtest=SalesTickProducerTest,SeckillRateLimitTest \
+    -Dsurefire.failIfNoSpecifiedTests=false test
