@@ -4,7 +4,7 @@
 
 项目仓库：[https://github.com/a805026135/insight-forge](https://github.com/a805026135/insight-forge)
 
-在线演示：[http://47.99.63.190/](http://47.99.63.190/)
+在线演示：[http://47.114.83.112/](http://47.114.83.112/)
 
 国内镜像：[https://gitee.com/paper-umbrella/insight-forge](https://gitee.com/paper-umbrella/insight-forge)
 

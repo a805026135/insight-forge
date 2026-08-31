@@ -4,7 +4,7 @@
 
 - GitHub 主仓库：[github.com/a805026135/insight-forge](https://github.com/a805026135/insight-forge)
 - Gitee 同步镜像：[gitee.com/paper-umbrella/insight-forge](https://gitee.com/paper-umbrella/insight-forge)
-- 在线演示：[http://47.99.63.190/](http://47.99.63.190/)
+- 在线演示：[http://47.114.83.112/](http://47.114.83.112/)
 
 > 在线演示运行在资源受限的小型云服务器上，主要用于功能体验；README 中的本机 QPS 数据来自固定资源、同镜像 A/B，不代表该演示服务器的生产容量。
 
